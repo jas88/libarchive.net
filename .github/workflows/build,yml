@@ -1,0 +1,27 @@
+name: Build
+
+# Run this workflow every time a new commit pushed to your repository
+
+on: push
+
+env:
+  DOTNET_NOLOGO: 1
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  linux:
+    name: Build Linux x86-64 code and wrapper
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Setup .NET Core
+        uses: actions/setup-dotnet@v2
+        with:
+          dotnet-version: 6.0.x
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+      - name: Build native library
+        run: |
+          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          ./native/build.sh
