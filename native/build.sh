@@ -14,7 +14,7 @@ curl -sL https://gitlab.gnome.org/GNOME/libxml2/-/archive/v2.9.14/libxml2-v2.9.1
 curl -sL https://www.sourceware.org/pub/bzip2/bzip2-latest.tar.gz | tar xzf -
 curl -sL https://zlib.net/zlib-1.2.12.tar.xz | tar xJf -
 curl -sL https://tukaani.org/xz/xz-5.2.5.tar.xz | tar xJf -
-        
+
 cd musl-cross-make-0.9.9
 cat > config.mak <<EOC
 TARGET=x86_64-linux-musl
@@ -22,7 +22,7 @@ COMMON_CONFIG += --disable-nls
 GCC_CONFIG += --disable-libitm
 GCC_CONFIG += --enable-default-pie
 EOC
-make -sj`nproc` install OUTPUT=$PREFIX &> musl.log || cat musl.log
+make -sj`nproc` install OUTPUT=$PREFIX
 
 export CC=x86_64-linux-musl-gcc
 export CXX=x86_64-linux-musl-g++
