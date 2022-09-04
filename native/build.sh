@@ -22,7 +22,7 @@ COMMON_CONFIG += --disable-nls
 GCC_CONFIG += --disable-libitm
 GCC_CONFIG += --enable-default-pie
 EOC
-make -sj`nproc` install OUTPUT=$PREFIX
+make -sj`nproc` install OUTPUT=$PREFIX 2>&1 >musl.log || cat musl.log
 
 export CC=x86_64-linux-musl-gcc
 export CXX=x86_64-linux-musl-g++
