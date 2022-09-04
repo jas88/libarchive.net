@@ -60,3 +60,6 @@ int main() {
 EOT
 gcc -o test test.c
 ./test
+file libarchive.so
+ldd libarchive.so
+
