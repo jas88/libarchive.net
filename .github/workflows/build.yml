@@ -13,6 +13,8 @@ jobs:
     name: Build Linux x86-64 code and wrapper
     runs-on: ubuntu-22.04
     steps:
+      - name: Ubuntu packages
+        run: sudo apt-get install -y libeatmydata1 python3-all-dev
       - name: Checkout code
         uses: actions/checkout@v3
       - name: Setup .NET Core
