@@ -38,8 +38,7 @@ cd ../xz-5.2.5
 make -sj`nproc` install
 
 cd ../libxml2-v2.9.14
-./autogen.sh
-./configure --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX
+./autogen.sh --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=../zlib-1.2.12 --with-lzma=../xz-5.2.5
 make -sj`nproc` install
 
 cd ../libarchive-*
