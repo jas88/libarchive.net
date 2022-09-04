@@ -22,30 +22,31 @@ COMMON_CONFIG += --disable-nls
 GCC_CONFIG += --disable-libitm
 GCC_CONFIG += --enable-default-pie
 EOC
-make -sj`nproc` install OUTPUT=$PREFIX
+make -sj`nproc` install OUTPUT=$PREFIX &> musl.log || cat musl.log
 
 export CC=x86_64-linux-musl-gcc
 export CXX=x86_64-linux-musl-g++
 cd ..
-make -C bzip2-1.0.8 install PREFIX=$PREFIX CFLAGS="-fPIC -O2 -D_FILE_OFFSET_BITS=64" CC=$CC
+make -j`nproc` -sC bzip2-1.0.8 install PREFIX=$PREFIX CFLAGS="-fPIC -O2 -D_FILE_OFFSET_BITS=64" CC=$CC
 
 cd zlib-1.2.12
 ./configure --static --prefix=$PREFIX
-make -sj4 install
+make -sj`nproc` install
 
 cd ../xz-5.2.5
 ./configure --with-pic --disable-shared --prefix=$PREFIX
-make -sj4 install
+make -sj`nproc` install
 
 cd ../libxml2-v2.9.14
+./autogen.sh
 ./configure --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX
-make -sj4 install
+make -sj`nproc` install
 
 cd ../libarchive-*
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
 export LIBXML2_PC_LIBS=-L$PREFIX
 ./configure --prefix=$PREFIX --disable-bsd{tar,cat,cpio} --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2
-make -sj4 install
+make -sj`nproc` install
 
 cd ..
 gcc -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive local/lib/liblzma.a local/lib/libz.a local/lib/libbz2.a  local/x86_64-linux-musl/lib/libc.a -nostdlib
