@@ -44,7 +44,7 @@ make -sj`nproc` install
 cd ../libarchive-*
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
 export LIBXML2_PC_LIBS=-L$PREFIX
-./configure --prefix=$PREFIX --disable-bsd{tar,cat,cpio} --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2
+./configure --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2
 make -sj`nproc` install
 
 cd ..
