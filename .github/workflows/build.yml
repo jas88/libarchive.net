@@ -26,7 +26,7 @@ jobs:
       - name: Build native library
         run: |
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
-          ./native/build.sh
+          ./native/build-linux.sh
       - name: Archive production artifacts
         uses: actions/upload-artifact@v3
         with:
