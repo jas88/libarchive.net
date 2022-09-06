@@ -1,7 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Text;
 using Microsoft.Win32.SafeHandles;
 
 namespace LibArchive.Net;
@@ -22,11 +22,33 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     {
         return archive_read_free(handle) == 0;
     }
-    
+
+    public IEnumerable<Entry> Entries()
+    {
+        while (archive_read_next_header(handle, out var entry)==0)
+        {
+            var name = Marshal.PtrToStringUTF8(archive_entry_pathname(entry));
+            yield return new Entry(name, handle);
+        }
+    }
+
+    public class Entry
+    {
+        public string Name { get; }
+        private readonly IntPtr handle;
+        public FileStream Stream => new FileStream(handle);
+
+        internal Entry(string name, IntPtr handle)
+        {
+            this.Name = name;
+            this.handle = handle;
+        }
+    }
+
     public class FileStream : Stream
     {
         private readonly IntPtr _archive;
-        protected FileStream(IntPtr archive)
+        internal FileStream(IntPtr archive)
         {
             this._archive = archive;
         }
@@ -80,6 +102,12 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     [DllImport("archive")]
     private static extern int archive_read_data(IntPtr a, ref byte buff, int size);
+
+    [DllImport("archive")]
+    private static extern int archive_read_next_header(IntPtr a, out IntPtr entry);
+
+    [DllImport("archive")]
+    private static extern IntPtr archive_entry_pathname(IntPtr entry);
 
     [DllImport("archive")]
     private static extern int archive_read_free(IntPtr a);
