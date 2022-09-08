@@ -73,5 +73,5 @@ gcc -o test test.c
 file libarchive.so
 ldd libarchive.so
 
-gcc -o nativetest nativetest.c local/lib/libarchive.a -Llocal/lib -Ilocal/include -llz4 -lzstd -liconv -lbz2
+gcc -o nativetest native/nativetest.c local/lib/libarchive.a -Llocal/lib -Ilocal/include -llz4 -lzstd -liconv -lbz2
 ./nativetest
