@@ -17,7 +17,6 @@ curl -sL https://zlib.net/zlib-1.2.12.tar.xz | tar xJf -
 curl -sL https://tukaani.org/xz/xz-5.2.5.tar.xz | tar xJf -
 
 make -j$NCPU -sC lz4-1.9.4 install
-make -j$NCPU -sC zstd-1.5.2 install
 make -j$NCPU -sC bzip2-1.0.8 install PREFIX=$PREFIX
 
 cd lzo-2.10
@@ -33,6 +32,8 @@ make -sj$NCPU install
 cd ../libxml2-v2.9.14
 ./autogen.sh --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX/../zlib-1.2.12 --with-lzma=$PREFIX/../xz-5.2.5
 make -sj$NCPU install
+
+make -j$NCPU -sC ../zstd-1.5.2 install
 
 cd ../libarchive-*
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
