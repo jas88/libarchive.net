@@ -39,7 +39,7 @@ cd lzo-2.10
 ./configure --prefix=$PREFIX
 make -sj$NCPU install
 
-cd zlib-1.2.12
+cd ../zlib-1.2.12
 ./configure --static --prefix=$PREFIX
 make -sj$NCPU install
 
