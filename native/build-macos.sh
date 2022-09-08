@@ -19,8 +19,8 @@ curl -sL https://www.sourceware.org/pub/bzip2/bzip2-latest.tar.gz | tar xzf -
 curl -sL https://zlib.net/zlib-1.2.12.tar.xz | tar xJf -
 curl -sL https://tukaani.org/xz/xz-5.2.5.tar.xz | tar xJf -
 
-make -j$NCPU -sC lz4-1.9.4 install PREFIX=$PREFIX CFLAGS=$CFLAGS
-make -j$NCPU -sC bzip2-1.0.8 install PREFIX=$PREFIX CFLAGS=$CFLAGS
+make -j$NCPU -sC lz4-1.9.4 install PREFIX=$PREFIX CFLAGS="$CFLAGS"
+make -j$NCPU -sC bzip2-1.0.8 install PREFIX=$PREFIX CFLAGS="$CFLAGS"
 
 cd lzo-2.10
 ./configure --prefix=$PREFIX
