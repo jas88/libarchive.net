@@ -40,7 +40,6 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     }
     public LibArchiveReader(string filename) : base(true)
     {
-        Console.Error.WriteLine("Hello test world");
         using var uName = new SafeStringBuffer(filename);
         handle = archive_read_new();
         archive_read_support_filter_all(handle);
