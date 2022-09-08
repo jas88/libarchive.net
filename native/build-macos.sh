@@ -1,6 +1,9 @@
 #!/bin/sh
 
 set -e
+
+brew install autoconf automake
+
 export PREFIX=`pwd`/local
 export NCPU=`sysctl -n hw.ncpu`
 export CPPFLAGS="-I$PREFIX/include"
