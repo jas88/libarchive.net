@@ -54,7 +54,8 @@ jobs:
       - name: Built .Net package and test
         run: |
           mkdir -p LibArchive.Net/runtimes/osx-any64 LibArchive.Net/runtimes/linux-x64
-          mv libarchive.so LibArchive.Net/runtimes/linux-x64
+          mv libarchive.so LibArchive.Net/runtimes/linux-x64/
+          mv libarchive.dylib LibArchive.Net/runtimes/osx-any64/
           dotnet test
           dotnet pack -o .
       - name: Archive production artifacts
