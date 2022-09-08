@@ -4,18 +4,54 @@ using System.IO;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 
+[assembly: DefaultDllImportSearchPaths(DllImportSearchPath.AssemblyDirectory)]
 namespace LibArchive.Net;
 
 public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 {
+    private enum ARCHIVE_RESULT
+    {
+        ARCHIVE_OK = 0,
+        ARCHIVE_EOF = 1,
+        ARCHIVE_RETRY=-10,
+        ARCHIVE_WARN=-20,
+        ARCHIVE_FAILED=-25,
+        ARCHIVE_FATAL=-30
+    }
+
+    static LibArchiveReader()
+    {
+        NativeLibrary.SetDllImportResolver(typeof(LibArchiveReader).Assembly,
+            (name, asm, path) =>
+            {
+                // Currently supported: Linux+Win+OSX on x64, OSX only on arm64
+                if (RuntimeInformation.ProcessArchitecture != Architecture.X64 &&
+                    (RuntimeInformation.ProcessArchitecture != Architecture.Arm64 ||
+                     !RuntimeInformation.IsOSPlatform(OSPlatform.OSX)))
+                    throw new PlatformNotSupportedException();
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                    return NativeLibrary.Load($"{AppDomain.CurrentDomain.BaseDirectory}runtimes/linux-x64/libarchive.so");
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                    return NativeLibrary.Load($"{AppDomain.CurrentDomain.BaseDirectory}runtimes/osx-any64/libarchive.dylib");
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                    return NativeLibrary.Load($"{AppDomain.CurrentDomain.BaseDirectory}runtimes/win-x64/archive.dll");
+                throw new PlatformNotSupportedException();
+            });
+    }
     public LibArchiveReader(string filename) : base(true)
     {
+        Console.Error.WriteLine("Hello test world");
         using var uName = new SafeStringBuffer(filename);
         handle = archive_read_new();
         archive_read_support_filter_all(handle);
         archive_read_support_format_all(handle);
         if (archive_read_open_filename(handle, uName.Ptr, 16384) != 0)
             throw new ApplicationException("TODO: Archive open failed");
+    }
+
+    private void Throw()
+    {
+        throw new ApplicationException($"{Marshal.PtrToStringUTF8(archive_error_string(handle))}");
     }
 
     protected override bool ReleaseHandle()
@@ -25,11 +61,16 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     public IEnumerable<Entry> Entries()
     {
-        while (archive_read_next_header(handle, out var entry)==0)
+        int r;
+        while ((r=archive_read_next_header(handle, out var entry))==0)
         {
             var name = Marshal.PtrToStringUTF8(archive_entry_pathname(entry));
-            yield return new Entry(name, handle);
+            if (name is not null)
+                yield return new Entry(name, handle);
         }
+
+        if (r != (int)ARCHIVE_RESULT.ARCHIVE_EOF)
+            Throw();
     }
 
     public class Entry
@@ -111,4 +152,7 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     [DllImport("archive")]
     private static extern int archive_read_free(IntPtr a);
+
+    [DllImport("archive")]
+    private static extern IntPtr archive_error_string(IntPtr a);
 }
