@@ -41,7 +41,7 @@ cd lzo-2.10
 make -sj$NCPU install
 
 cd ../zlib-1.2.12
-./configure --cache-file=$CONFIGCACHE --static --prefix=$PREFIX
+./configure --static --prefix=$PREFIX
 make -sj$NCPU install
 
 cd ../xz-5.2.5
