@@ -65,8 +65,9 @@ jobs:
           mv libarchive.so LibArchive.Net/runtimes/linux-x64/
           mv libarchive.dylib LibArchive.Net/runtimes/osx-any64/
           dotnet test
-          echo dotnet pack -o -p:PackageVersion=$GitVersion_NuGetVersion
-          dotnet pack -o -p:PackageVersion=$GitVersion_NuGetVersion
+          echo dotnet pack -o . -p:PackageVersion=$GitVersion_NuGetVersion
+          dotnet pack -o . -p:PackageVersion=$GitVersion_NuGetVersion
+          ls -lh *.nupkg
       - name: Archive production artifacts
         uses: actions/upload-artifact@v3
         with:
