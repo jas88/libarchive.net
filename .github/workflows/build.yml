@@ -36,6 +36,10 @@ jobs:
         run: sudo apt-get install -y libeatmydata1
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Determine versioning
+        uses: gittools/actions/gitversion/execute@0.9.7
       - name: Retrieve MacOS library
         uses: actions/download-artifact@v3
         with:
@@ -57,7 +61,7 @@ jobs:
           mv libarchive.so LibArchive.Net/runtimes/linux-x64/
           mv libarchive.dylib LibArchive.Net/runtimes/osx-any64/
           dotnet test
-          dotnet pack -o .
+          dotnet pack -o -p:PackageVersion=$GITVERSION_NUGETVERSION
       - name: Archive production artifacts
         uses: actions/upload-artifact@v3
         with:
