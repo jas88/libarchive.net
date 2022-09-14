@@ -20,6 +20,11 @@ jobs:
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ github.job }}-${{ matrix.os }}
+      - name: Cache autoconf
+        uses: actions/cache@v3
+        with:
+          path: configcache
+          key: ${{ runner.os }}-configcache
       - name: Build
         run: |
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
@@ -60,6 +65,11 @@ jobs:
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ github.job }}-${{ matrix.os }}
+      - name: Cache autoconf
+        uses: actions/cache@v3
+        with:
+          path: configcache
+          key: ${{ runner.os }}-configcache
       - name: Build native library
         run: |
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"

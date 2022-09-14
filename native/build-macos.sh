@@ -6,6 +6,7 @@ brew install autoconf automake
 
 export PREFIX=`pwd`/local
 export NCPU=`sysctl -n hw.ncpu`
+export CONFIGCACHE=`pwd`/configcache
 export CPPFLAGS="-I$PREFIX/include"
 export LDFLAGS="-L$PREFIX/lib -liconv"
 export CFLAGS="-fPIC -O2 -D_FILE_OFFSET_BITS=64 -arch arm64 -arch x86_64"
@@ -23,14 +24,14 @@ make -j$NCPU -sC lz4-1.9.4 install PREFIX=$PREFIX CFLAGS="$CFLAGS"
 make -j$NCPU -sC bzip2-1.0.8 install PREFIX=$PREFIX CFLAGS="$CFLAGS"
 
 cd lzo-2.10
-./configure --prefix=$PREFIX
+./configure --cache-file=$CONFIGCACHE --prefix=$PREFIX
 make -sj$NCPU install
 
 cd ../zlib-1.2.12
-./configure --static --prefix=$PREFIX
+./configure --cache-file=$CONFIGCACHE --static --prefix=$PREFIX
 make -sj$NCPU install
 cd ../xz-5.2.5
-./configure --with-pic --disable-shared --prefix=$PREFIX
+./configure --cache-file=$CONFIGCACHE --with-pic --disable-shared --prefix=$PREFIX
 make -sj$NCPU install
 cd ../libxml2-v2.9.14
 ./autogen.sh --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX/../zlib-1.2.12 --with-lzma=$PREFIX/../xz-5.2.5
@@ -41,7 +42,7 @@ make -j$NCPU -sC ../zstd-1.5.2 install
 cd ../libarchive-*
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
 export LIBXML2_PC_LIBS="-L$PREFIX -lxml2"
-./configure --prefix=$PREFIX --enable-silent-rules --disable-dependency-tracking --enable-static --disable-shared --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-rpath --enable-posix-regex-lib=libc --enable-xattr --enable-acl --enable-largefile --with-pic --with-zlib --with-bz2lib --with-libb2 --with-iconv --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-cng
+./configure --cache-file=$CONFIGCACHE --prefix=$PREFIX --enable-silent-rules --disable-dependency-tracking --enable-static --disable-shared --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-rpath --enable-posix-regex-lib=libc --enable-xattr --enable-acl --enable-largefile --with-pic --with-zlib --with-bz2lib --with-libb2 --with-iconv --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-cng
 make -sj$NCPU install
 cd ..
 
