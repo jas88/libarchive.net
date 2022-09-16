@@ -4,11 +4,21 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <RuntimeIdentifiers>win-x64;linux-x64;osx-x64;osx-arm64</RuntimeIdentifiers>
+    <PackageLicenseExpression>BSD-2-Clause</PackageLicenseExpression>
+    <PackageId>LibArchive.Net</PackageId>
+    <PackageTags>Compression;Libarchive;Tar;Zip;7Zip;Rar</PackageTags>
+    <Description>This package provides access to the native libarchive compression library (included) on 64 bit Linux, Windows and MacOS platforms (x86-64 for all three, plus arm64/M1 for Mac)</Description>
+    <Authors>James A Sutherland</Authors>
+    <Copyright>Copyright 2022</Copyright>
+    <Title>LibArchive.Net</Title>
   </PropertyGroup>
   <ItemGroup>
     <Content Include="runtimes\**" CopyToOutputDirectory="PreserveNewest" PackagePath="runtimes">
       <Pack>true</Pack>
       <PackageCopyToOutput>true</PackageCopyToOutput>
     </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All"/>
   </ItemGroup>
 </Project>
