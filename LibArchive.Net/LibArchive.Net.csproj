@@ -11,6 +11,7 @@
     <Authors>James A Sutherland</Authors>
     <Copyright>Copyright 2022</Copyright>
     <Title>LibArchive.Net</Title>
+    <DebugType>embedded</DebugType>
   </PropertyGroup>
   <ItemGroup>
     <Content Include="runtimes\**" CopyToOutputDirectory="PreserveNewest" PackagePath="runtimes">
