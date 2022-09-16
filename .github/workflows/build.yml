@@ -79,12 +79,26 @@ jobs:
           mkdir -p LibArchive.Net/runtimes/osx-any64 LibArchive.Net/runtimes/linux-x64
           mv libarchive.so LibArchive.Net/runtimes/linux-x64/
           mv libarchive.dylib LibArchive.Net/runtimes/osx-any64/
+          touch libarchive.dylib
           dotnet test --nologo
           dotnet pack -o . -p:PackageVersion=$GitVersion_NuGetVersion --nologo
           ls -lh *.nupkg
+      - name: Upload built packages
+        uses: svenstaro/upload-release-action@2.3.0
+        if: contains(github.ref, 'refs/tags/v')
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: '*.nupkg'
+          tag: ${{ github.ref }}
+          overwrite: true
+          file_glob: true
+      - name: Upload Nuget package
+        if: contains(github.ref, 'refs/tags/v')
+        run: dotnet nuget push *.nupkg -k ${{ secrets.NUGET_KEY }} --source https://api.nuget.org/v3/index.json
       - name: Archive production artifacts
         uses: actions/upload-artifact@v3
         with:
           name: dist
           path: |
             *.nupkg
+            libarchive.dylib
