@@ -70,6 +70,10 @@ jobs:
         with:
           path: configcache
           key: ${{ runner.os }}-configcache
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: ['csharp']
       - name: Build native library
         run: |
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
