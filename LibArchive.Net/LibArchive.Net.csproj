@@ -14,7 +14,8 @@
     <DebugType>embedded</DebugType>
   </PropertyGroup>
   <ItemGroup>
-    <Content Include="runtimes\**" CopyToOutputDirectory="PreserveNewest" PackagePath="runtimes">
+    <NativeLibs Include="$(MSBuildThisFileDirectory)runtimes\**"/>
+    <Content Include="@(NativeLibs)" CopyToOutputDirectory="PreserveNewest">
       <Pack>true</Pack>
       <PackageCopyToOutput>true</PackageCopyToOutput>
     </Content>
