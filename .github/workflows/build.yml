@@ -71,6 +71,7 @@ jobs:
           path: configcache
           key: ${{ runner.os }}-configcache
       - name: Initialize CodeQL
+        if: false
         uses: github/codeql-action/init@v2
         with:
           languages: 'csharp'
@@ -88,6 +89,7 @@ jobs:
           dotnet pack -o . -p:PackageVersion=$GitVersion_NuGetVersion --nologo
           ls -lh *.nupkg
       - name: Perform CodeQL Analysis
+        if: false
         uses: github/codeql-action/analyze@v2
       - name: Upload built packages
         uses: svenstaro/upload-release-action@2.3.0
