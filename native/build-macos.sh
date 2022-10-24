@@ -17,7 +17,7 @@ curl -sL https://github.com/facebook/zstd/releases/download/v1.5.2/zstd-1.5.2.ta
 curl -sL http://www.oberhumer.com/opensource/lzo/download/lzo-2.10.tar.gz | tar xzf -
 curl -sL https://gitlab.gnome.org/GNOME/libxml2/-/archive/v2.9.14/libxml2-v2.9.14.tar.bz2 | tar xjf -
 curl -sL https://www.sourceware.org/pub/bzip2/bzip2-latest.tar.gz | tar xzf -
-curl -sL https://zlib.net/zlib-1.2.12.tar.xz | tar xJf -
+curl -sL https://zlib.net/zlib-1.2.13.tar.xz | tar xJf -
 curl -sL https://tukaani.org/xz/xz-5.2.5.tar.xz | tar xJf -
 
 make -j$NCPU -sC lz4-1.9.4 install PREFIX=$PREFIX CFLAGS="$CFLAGS"
@@ -27,14 +27,14 @@ cd lzo-2.10
 ./configure --cache-file=$CONFIGCACHE --prefix=$PREFIX
 make -sj$NCPU install
 
-cd ../zlib-1.2.12
+cd ../zlib-1.2.13
 ./configure --static --prefix=$PREFIX
 make -sj$NCPU install
 cd ../xz-5.2.5
 ./configure --cache-file=$CONFIGCACHE --with-pic --disable-shared --prefix=$PREFIX
 make -sj$NCPU install
 cd ../libxml2-v2.9.14
-./autogen.sh --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX/../zlib-1.2.12 --with-lzma=$PREFIX/../xz-5.2.5
+./autogen.sh --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX/../zlib-1.2.13 --with-lzma=$PREFIX/../xz-5.2.5
 make -sj$NCPU install
 
 make -j$NCPU -sC ../zstd-1.5.2 install
