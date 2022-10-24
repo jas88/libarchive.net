@@ -40,7 +40,7 @@ cd lzo-2.10
 ./configure --cache-file=$CONFIGCACHE --prefix=$PREFIX
 make -sj$NCPU install
 
-cd ../zlib-1.2.12
+cd ../zlib-1.2.13
 ./configure --static --prefix=$PREFIX
 make -sj$NCPU install
 
@@ -49,7 +49,7 @@ cd ../xz-5.2.5
 make -sj$NCPU install
 
 cd ../libxml2-v2.9.14
-./autogen.sh --cache-file=$CONFIGCACHE --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX/../zlib-1.2.12 --with-lzma=$PREFIX/../xz-5.2.5
+./autogen.sh --cache-file=$CONFIGCACHE --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX/../zlib-1.2.13 --with-lzma=$PREFIX/../xz-5.2.5
 make -sj$NCPU install
 
 cd ../libarchive-*
