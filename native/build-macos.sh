@@ -17,7 +17,7 @@ curl -sL https://github.com/facebook/zstd/releases/download/v1.5.2/zstd-1.5.2.ta
 curl -sL http://www.oberhumer.com/opensource/lzo/download/lzo-2.10.tar.gz | tar xzf -
 curl -sL https://gitlab.gnome.org/GNOME/libxml2/-/archive/v2.9.14/libxml2-v2.9.14.tar.bz2 | tar xjf -
 curl -sL https://www.sourceware.org/pub/bzip2/bzip2-latest.tar.gz | tar xzf -
-curl -sL https://zlib.net/zlib-1.2.12.tar.xz | tar xJf -
+curl -sL https://zlib.net/zlib-1.2.13.tar.xz | tar xJf -
 curl -sL https://tukaani.org/xz/xz-5.2.5.tar.xz | tar xJf -
 
 make -j$NCPU -sC lz4-1.9.4 install PREFIX=$PREFIX CFLAGS="$CFLAGS"
