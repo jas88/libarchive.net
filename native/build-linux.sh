@@ -10,7 +10,9 @@ export CXXFLAGS="-fPIC -O2 -I$PREFIX/x86_64-linux-musl/include/c++/9.2.0 -I$PREF
 export LDFLAGS="-L$PREFIX/lib -static"
 export PATH="$PREFIX/bin:$PREFIX/x86_64-linux-musl/bin:$PATH"
 
-curl -sL https://github.com/richfelker/musl-cross-make/archive/refs/tags/v0.9.9.tar.gz | tar xzf -
+curl -sL https://github.com/richfelker/musl-cross-make/archive/refs/heads/master.zip > musl-git.zip
+unzip musl-git.zip
+rm musl-git.zip
 curl -sL https://github.com/libarchive/libarchive/releases/download/v3.6.1/libarchive-3.6.1.tar.xz | tar xJf -
 curl -sL https://github.com/lz4/lz4/archive/refs/tags/v1.9.4.tar.gz | tar xzf -
 curl -sL https://github.com/facebook/zstd/releases/download/v1.5.2/zstd-1.5.2.tar.gz | tar xzf -
@@ -20,7 +22,7 @@ curl -sL https://www.sourceware.org/pub/bzip2/bzip2-latest.tar.gz | tar xzf -
 curl -sL https://zlib.net/zlib-1.2.13.tar.xz | tar xJf -
 curl -sL https://tukaani.org/xz/xz-5.2.5.tar.xz | tar xJf -
 
-cd musl-cross-make-0.9.9
+cd musl-cross-make-master
 cat > config.mak <<EOC
 TARGET=x86_64-linux-musl
 COMMON_CONFIG += --disable-nls
