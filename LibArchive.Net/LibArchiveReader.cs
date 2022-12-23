@@ -38,13 +38,20 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
                 throw new PlatformNotSupportedException();
             });
     }
-    public LibArchiveReader(string filename) : base(true)
+
+    /// <summary>
+    /// Open the named archive for read access with the specified block size
+    /// </summary>
+    /// <param name="filename"></param>
+    /// <param name="blockSize">Block size in bytes, default 1 MiB</param>
+    /// <exception cref="ApplicationException"></exception>
+    public LibArchiveReader(string filename,uint blockSize = 1<<20) : base(true)
     {
         using var uName = new SafeStringBuffer(filename);
         handle = archive_read_new();
         archive_read_support_filter_all(handle);
         archive_read_support_format_all(handle);
-        if (archive_read_open_filename(handle, uName.Ptr, 16384) != 0)
+        if (archive_read_open_filename(handle, uName.Ptr, (int)blockSize) != 0)
             throw new ApplicationException("TODO: Archive open failed");
     }
 
