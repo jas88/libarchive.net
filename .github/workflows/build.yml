@@ -100,9 +100,6 @@ jobs:
           tag: ${{ github.ref }}
           overwrite: true
           file_glob: true
-      - name: Upload Nuget package
-        if: contains(github.ref, 'refs/tags/v')
-        run: dotnet nuget push *.nupkg -k ${{ secrets.NUGET_KEY }} --source https://api.nuget.org/v3/index.json
       - name: Archive production artifacts
         uses: actions/upload-artifact@v3
         with:
