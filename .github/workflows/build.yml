@@ -86,7 +86,7 @@ jobs:
           mv libarchive.dylib LibArchive.Net/runtimes/osx-any64/
           touch libarchive.dylib
           dotnet test --nologo
-          dotnet pack -o . -p:PackageVersion=$GitVersion_NuGetVersion --nologo
+          dotnet pack LibArchive.Net/LibArchive.Net.csproj -o . -p:PackageVersion=$GitVersion_NuGetVersion --nologo
           ls -lh *.nupkg
       - name: Perform CodeQL Analysis
         if: false
