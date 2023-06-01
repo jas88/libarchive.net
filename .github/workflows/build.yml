@@ -92,7 +92,7 @@ jobs:
         if: false
         uses: github/codeql-action/analyze@v2
       - name: Upload built packages
-        uses: svenstaro/upload-release-action@2.6.0
+        uses: svenstaro/upload-release-action@2.6.1
         if: contains(github.ref, 'refs/tags/v')
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
@@ -108,7 +108,7 @@ jobs:
             *.nupkg
             libarchive.dylib
       - name: Upload built packages
-        uses: svenstaro/upload-release-action@2.6.0
+        uses: svenstaro/upload-release-action@2.6.1
         if: contains(github.ref, 'refs/tags/v')
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
