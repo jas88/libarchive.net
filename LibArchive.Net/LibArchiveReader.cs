@@ -192,6 +192,9 @@ public class DisposableStringArray : IDisposable
         strings = a.Select(s => new SafeStringBuffer(s)).ToArray();
         for (int i=0;i<strings.Length;i++)
         {
+            bool ok=true;
+            strings[i].DangerousAddRef(ref ok);
+            if (!ok) throw new ApplicationException("Ref count failure");
             backing[i] = strings[i].DangerousGetHandle();
         }
         backing[strings.Length] = IntPtr.Zero;
@@ -205,6 +208,9 @@ public class DisposableStringArray : IDisposable
         GC.SuppressFinalize(this);
         handle.Free();
         foreach (var s in strings)
+        {
+            s.DangerousRelease();
             s.Dispose();
+        }
     }
 }
