@@ -11,7 +11,7 @@ public class SafeStringBuffer : SafeHandleZeroOrMinusOneIsInvalid
     public SafeStringBuffer(string s) : base(true)
     {
         if (s is null)
-            throw new ArgumentException(nameof(s));
+            throw new ArgumentNullException(nameof(s));
         handle = Marshal.StringToCoTaskMemUTF8(s);
     }
 
