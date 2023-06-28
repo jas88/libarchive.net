@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 
@@ -52,6 +53,19 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         archive_read_support_filter_all(handle);
         archive_read_support_format_all(handle);
         if (archive_read_open_filename(handle, uName.Ptr, (int)blockSize) != 0)
+            throw new ApplicationException("TODO: Archive open failed");
+    }
+
+    /// <summary>
+    /// 
+    /// </summary>
+    public LibArchiveReader(string[] filenames,uint blockSize=1<<20) : base(true)
+    {
+        using var names = new DisposableStringArray(filenames);
+        handle = archive_read_new();
+        archive_read_support_filter_all(handle);
+        archive_read_support_format_all(handle);
+        if (archive_read_open_filenames(handle, names.Ptr, (int)blockSize) != 0)
             throw new ApplicationException("TODO: Archive open failed");
     }
 
@@ -148,6 +162,9 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     private static extern int archive_read_open_filename(IntPtr a, IntPtr filename, int blocksize);
 
     [DllImport("archive")]
+    private static extern int archive_read_open_filenames(IntPtr a, IntPtr filename, int blocksize);
+
+    [DllImport("archive")]
     private static extern int archive_read_data(IntPtr a, ref byte buff, int size);
 
     [DllImport("archive")]
@@ -161,4 +178,32 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     [DllImport("archive")]
     private static extern IntPtr archive_error_string(IntPtr a);
+}
+
+public class DisposableStringArray : IDisposable
+{
+    private readonly GCHandle handle;
+    private readonly SafeStringBuffer[] strings;
+
+    public DisposableStringArray(string[] a)
+    {
+        IntPtr[] backing = new IntPtr[a.Length+1];
+        handle = GCHandle.Alloc(backing);
+        strings = a.Select(s => new SafeStringBuffer(s)).ToArray();
+        for (int i=0;i<strings.Length;i++)
+        {
+            backing[i] = strings[i].DangerousGetHandle();
+        }
+        backing[strings.Length] = IntPtr.Zero;
+    }
+
+    public IntPtr Ptr => GCHandle.ToIntPtr(handle);
+
+    public void Dispose()
+    {
+        GC.SuppressFinalize(this);
+        handle.Free();
+        foreach (var s in strings)
+            s.Dispose();
+    }
 }
