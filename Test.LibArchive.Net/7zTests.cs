@@ -28,7 +28,9 @@ public class SevenZipTests
     [Test]
     public void TestMultiRar()
     {
-        using var rar = new LibArchiveReader(Directory.GetFiles(".", "rartest*.rar").ToArray());
+        var files = Directory.GetFiles(".", "rartest*.rar").ToArray();
+        Console.WriteLine(string.Join(';', files));
+        using var rar = new LibArchiveReader(files);
         foreach (var e in rar.Entries())
         {
             using var s = e.Stream;
