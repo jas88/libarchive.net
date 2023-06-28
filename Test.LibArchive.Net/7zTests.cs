@@ -16,6 +16,7 @@ public class SevenZipTests
         {
             using var s = e.Stream;
             StringBuilder sb = new(e.Name,e.Name.Length+33);
+            sb.Append(' ');
             foreach (var d in hash.ComputeHash(s))
             {
                 sb.Append(d.ToString("x2"));
@@ -28,13 +29,15 @@ public class SevenZipTests
     [Test]
     public void TestMultiRar()
     {
-        var files = Directory.GetFiles(".", "rartest*.rar").ToArray();
+        var files = Directory.GetFiles(TestContext.CurrentContext.TestDirectory, "rartest*.rar");
+        Assert.That(4 == files.Length, "Expected 4 RAR segments");
         Console.WriteLine(string.Join(';', files));
         using var rar = new LibArchiveReader(files);
         foreach (var e in rar.Entries())
         {
             using var s = e.Stream;
             StringBuilder sb = new(e.Name, e.Name.Length + 33);
+            sb.Append(' ');
             foreach (var d in hash.ComputeHash(s))
             {
                 sb.Append(d.ToString("x2"));
