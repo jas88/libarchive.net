@@ -182,12 +182,13 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
 public class DisposableStringArray : IDisposable
 {
+    private readonly IntPtr[] backing;
     private readonly GCHandle handle;
     private readonly SafeStringBuffer[] strings;
 
     public DisposableStringArray(string[] a)
     {
-        IntPtr[] backing = new IntPtr[a.Length+1];
+        backing = new IntPtr[a.Length+1];
         handle = GCHandle.Alloc(backing);
         strings = a.Select(s => new SafeStringBuffer(s)).ToArray();
         for (int i=0;i<strings.Length;i++)
