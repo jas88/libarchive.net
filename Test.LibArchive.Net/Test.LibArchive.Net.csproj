@@ -17,5 +17,9 @@
     </ItemGroup>
     <ItemGroup>
         <None Update="7ztest.7z" CopyToOutputDirectory="PreserveNewest" />
+        <None Update="rartest.part00001.rar" CopyToOutputDirectory="PreserveNewest" />
+        <None Update="rartest.part00002.rar" CopyToOutputDirectory="PreserveNewest" />
+        <None Update="rartest.part00003.rar" CopyToOutputDirectory="PreserveNewest" />
+        <None Update="rartest.part00004.rar" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 </Project>
