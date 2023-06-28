@@ -189,13 +189,13 @@ public class DisposableStringArray : IDisposable
     public DisposableStringArray(string[] a)
     {
         backing = new IntPtr[a.Length+1];
-        handle = GCHandle.Alloc(backing);
         strings = a.Select(s => new SafeStringBuffer(s)).ToArray();
         for (int i=0;i<strings.Length;i++)
         {
             backing[i] = strings[i].DangerousGetHandle();
         }
         backing[strings.Length] = IntPtr.Zero;
+        handle = GCHandle.Alloc(backing, GCHandleType.Pinned);
     }
 
     public IntPtr Ptr => GCHandle.ToIntPtr(handle);
