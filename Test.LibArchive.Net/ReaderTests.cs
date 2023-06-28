@@ -30,9 +30,8 @@ public class SevenZipTests
     [Test]
     public void TestMultiRar()
     {
-        Console.WriteLine($"Test directory is '{TestContext.CurrentContext.TestDirectory}', containing {string.Join('\n',Directory.GetFiles(TestContext.CurrentContext.TestDirectory,"*"))}");
-
         var files = Directory.GetFiles(TestContext.CurrentContext.TestDirectory, "rartest*.rar");
+        Array.Sort(files);
         Assert.That(files, Has.Length.EqualTo(4), "Expected 4 RAR segments");
         Console.WriteLine(string.Join(';', files));
         using var rar = new LibArchiveReader(files);
