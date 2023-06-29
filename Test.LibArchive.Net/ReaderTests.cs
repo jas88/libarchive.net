@@ -33,7 +33,6 @@ public class SevenZipTests
         var files = Directory.GetFiles(TestContext.CurrentContext.TestDirectory, "rartest*.rar");
         Array.Sort(files);
         Assert.That(files, Has.Length.EqualTo(4), "Expected 4 RAR segments");
-        Console.WriteLine(string.Join(';', files));
         using var rar = new LibArchiveReader(files);
         foreach (var e in rar.Entries())
         {
