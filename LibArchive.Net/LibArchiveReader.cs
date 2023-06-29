@@ -191,26 +191,18 @@ public class DisposableStringArray : IDisposable
         backing = new IntPtr[a.Length+1];
         strings = a.Select(s => new SafeStringBuffer(s)).ToArray();
         for (int i=0;i<strings.Length;i++)
-        {
-            bool ok=true;
-            strings[i].DangerousAddRef(ref ok);
-            if (!ok) throw new ApplicationException("Ref count failure");
-            backing[i] = strings[i].DangerousGetHandle();
-        }
+            backing[i] = strings[i].Ptr;
         backing[strings.Length] = IntPtr.Zero;
         handle = GCHandle.Alloc(backing, GCHandleType.Pinned);
     }
 
-    public IntPtr Ptr => GCHandle.ToIntPtr(handle);
+    public IntPtr Ptr => handle.AddrOfPinnedObject();
 
     public void Dispose()
     {
         GC.SuppressFinalize(this);
         handle.Free();
         foreach (var s in strings)
-        {
-            s.DangerousRelease();
             s.Dispose();
-        }
     }
 }
