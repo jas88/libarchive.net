@@ -10,7 +10,7 @@ public class SevenZipTests
     private readonly SHA256 hash = SHA256.Create();
     
     [OneTimeTearDownAttribute]
-      internal void OneTimeTearDown() {
+      public void OneTimeTearDown() {
         hash.Dispose();
       }
 
