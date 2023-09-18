@@ -8,6 +8,11 @@ namespace Test.LibArchive.Net;
 public class SevenZipTests
 {
     private readonly SHA256 hash = SHA256.Create();
+    
+    [OneTimeTearDownAttribute]
+      public void OneTimeTearDown() {
+        hash.Dispose();
+      }
 
     [Test]
     public void Test7z()
