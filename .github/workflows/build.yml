@@ -72,7 +72,7 @@ jobs:
           key: ${{ runner.os }}-configcache
       - name: Initialize CodeQL
         if: false
-        uses: github/codeql-action/init@v2
+        uses: github/codeql-action/init@v3
         with:
           languages: 'csharp'
       - name: Build native library
@@ -90,7 +90,7 @@ jobs:
           ls -lh *.nupkg
       - name: Perform CodeQL Analysis
         if: false
-        uses: github/codeql-action/analyze@v2
+        uses: github/codeql-action/analyze@v3
       - name: Upload built packages
         uses: svenstaro/upload-release-action@2.7.0
         if: contains(github.ref, 'refs/tags/v')
