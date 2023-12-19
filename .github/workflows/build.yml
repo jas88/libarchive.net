@@ -39,6 +39,10 @@ jobs:
     needs: [macos]
     name: Build Linux x86-64 code and wrapper
     runs-on: ubuntu-22.04
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
     steps:
       - name: Ubuntu packages
         run: sudo apt-get install -y libeatmydata1
@@ -70,7 +74,6 @@ jobs:
           path: configcache
           key: ${{ runner.os }}-configcache
       - name: Initialize CodeQL
-        if: false
         uses: github/codeql-action/init@v3
         with:
           languages: 'csharp'
@@ -88,7 +91,6 @@ jobs:
           dotnet pack LibArchive.Net/LibArchive.Net.csproj -o . -p:PackageVersion=$GitVersion_NuGetVersion --nologo
           ls -lh *.nupkg
       - name: Perform CodeQL Analysis
-        if: false
         uses: github/codeql-action/analyze@v3
       - name: Upload built packages
         uses: svenstaro/upload-release-action@2.7.0
