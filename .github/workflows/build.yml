@@ -32,7 +32,7 @@ jobs:
       - name: Archive MacOS library
         uses: actions/upload-artifact@v3
         with:
-          name: dist
+          name: libarchive.dylib
           path: |
             libarchive.dylib
   linux:
@@ -55,7 +55,7 @@ jobs:
       - name: Retrieve MacOS library
         uses: actions/download-artifact@v4
         with:
-          name: dist
+          name: libarchive.dylib
           path: libarchive.dylib
       - name: Setup .NET Core
         uses: actions/setup-dotnet@v4.0.0
