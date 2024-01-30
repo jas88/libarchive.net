@@ -17,7 +17,7 @@ curl -sL https://github.com/libarchive/libarchive/releases/download/v3.7.2/libar
 curl -sL https://github.com/lz4/lz4/archive/refs/tags/v1.9.4.tar.gz | tar xzf -
 curl -sL https://github.com/facebook/zstd/releases/download/v1.5.5/zstd-1.5.5.tar.gz | tar xzf -
 curl -sL https://www.oberhumer.com/opensource/lzo/download/lzo-2.10.tar.gz | tar xzf -
-curl -sL https://gitlab.gnome.org/GNOME/libxml2/-/archive/v2.10.3/libxml2-v2.10.3.tar.bz2 | tar xjf -
+curl -sL https://download.gnome.org/sources/libxml2/2.12/libxml2-2.12.4.tar.xz | tar xJf -
 curl -sL https://www.sourceware.org/pub/bzip2/bzip2-latest.tar.gz | tar xzf -
 curl -sL https://zlib.net/zlib-1.3.tar.xz | tar xJf -
 curl -sL https://tukaani.org/xz/xz-5.4.0.tar.xz | tar xJf -
@@ -50,7 +50,7 @@ cd ../xz-5.4.0
 ./configure --cache-file=$CONFIGCACHE --with-pic --disable-shared --prefix=$PREFIX
 make -sj$NCPU install
 
-cd ../libxml2-v2.10.3
+cd ../libxml2-v2.12.4
 ./autogen.sh --cache-file=$CONFIGCACHE --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX/../zlib-1.3 --with-lzma=$PREFIX/../xz-5.4.0
 make -sj$NCPU install
 
