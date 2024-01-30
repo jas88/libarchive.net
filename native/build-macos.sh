@@ -14,7 +14,7 @@ export CFLAGS="-fPIC -O2 -D_FILE_OFFSET_BITS=64 -arch arm64 -arch x86_64"
 curl -sL https://github.com/libarchive/libarchive/releases/download/v3.7.2/libarchive-3.7.2.tar.xz | tar xJf -
 curl -sL https://github.com/lz4/lz4/archive/refs/tags/v1.9.4.tar.gz | tar xzf -
 curl -sL https://github.com/facebook/zstd/releases/download/v1.5.5/zstd-1.5.5.tar.gz | tar xzf -
-curl -sL http://www.oberhumer.com/opensource/lzo/download/lzo-2.10.tar.gz | tar xzf -
+curl -sL https://www.oberhumer.com/opensource/lzo/download/lzo-2.10.tar.gz | tar xzf -
 curl -sL https://gitlab.gnome.org/GNOME/libxml2/-/archive/v2.10.3/libxml2-v2.10.3.tar.bz2 | tar xjf -
 curl -sL https://www.sourceware.org/pub/bzip2/bzip2-latest.tar.gz | tar xzf -
 curl -sL https://zlib.net/zlib-1.3.tar.xz | tar xJf -
