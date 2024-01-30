@@ -50,7 +50,7 @@ cd ../xz-5.4.6
 ./configure --cache-file=$CONFIGCACHE --with-pic --disable-shared --prefix=$PREFIX
 make -sj$NCPU install
 
-cd ../libxml2-v2.12.4
+cd ../libxml2-2.12.4
 ./autogen.sh --cache-file=$CONFIGCACHE --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX/../zlib-1.3.1 --with-lzma=$PREFIX/../xz-5.4.6
 make -sj$NCPU install
 
