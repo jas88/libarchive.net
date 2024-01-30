@@ -20,7 +20,7 @@ curl -sL https://www.oberhumer.com/opensource/lzo/download/lzo-2.10.tar.gz | tar
 curl -sL https://download.gnome.org/sources/libxml2/2.12/libxml2-2.12.4.tar.xz | tar xJf -
 curl -sL https://www.sourceware.org/pub/bzip2/bzip2-latest.tar.gz | tar xzf -
 curl -sL https://zlib.net/zlib-1.3.1.tar.xz | tar xJf -
-curl -sL https://tukaani.org/xz/xz-5.4.6.tar.xz | tar xJf -
+curl -sL https://github.com/tukaani-project/xz/releases/download/v5.4.6/xz-5.4.6.tar.xz | tar xJf -
 
 cd musl-cross-make-master
 cat > config.mak <<EOC

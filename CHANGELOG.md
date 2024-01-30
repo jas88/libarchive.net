@@ -6,6 +6,7 @@ v0.1.5 - Jan 29 2024
 - Fetch liblzo source using HTTPS not HTTP - all dependencies now HTTPS
 - Bump libxml2 from 2.10.3 to 2.12.4
 - Bump zlib from 1.3 to 1.3.1
+- Bump xz from 5.4.0 to 5.4.6, update download location to Github
 
 v0.1.4 - Jun 28 2023
 
