@@ -2,6 +2,7 @@ v0.1.5 - Jan 29 2024
 
 - Build Mac component on MacOS 12 not 11
 - Bump libarchive from 3.6.2 to 3.7.2
+- Bump libzstd from 1.5.2 to 1.5.5
 
 v0.1.4 - Jun 28 2023
 
