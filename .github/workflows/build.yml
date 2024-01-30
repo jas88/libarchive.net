@@ -12,7 +12,7 @@ env:
 jobs:
   macos:
     name: Build MacOS dylib (x86-64 and arm64)
-    runs-on: macos-11
+    runs-on: macos-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
