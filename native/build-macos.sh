@@ -11,7 +11,7 @@ export CPPFLAGS="-I$PREFIX/include"
 export LDFLAGS="-L$PREFIX/lib -liconv"
 export CFLAGS="-fPIC -O2 -D_FILE_OFFSET_BITS=64 -arch arm64 -arch x86_64"
 
-curl -sL https://github.com/libarchive/libarchive/releases/download/v3.6.2/libarchive-3.6.2.tar.xz | tar xJf -
+curl -sL https://github.com/libarchive/libarchive/releases/download/v3.7.2/libarchive-3.7.2.tar.xz | tar xJf -
 curl -sL https://github.com/lz4/lz4/archive/refs/tags/v1.9.4.tar.gz | tar xzf -
 curl -sL https://github.com/facebook/zstd/releases/download/v1.5.2/zstd-1.5.2.tar.gz | tar xzf -
 curl -sL http://www.oberhumer.com/opensource/lzo/download/lzo-2.10.tar.gz | tar xzf -

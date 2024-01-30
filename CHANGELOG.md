@@ -1,3 +1,8 @@
+v0.1.5 - Jan 29 2024
+
+- Build Mac component on MacOS 12 not 11
+- Bump libarchive from 3.6.2 to 3.7.2
+
 v0.1.4 - Jun 28 2023
 
 - Add support for multi-volume archives
