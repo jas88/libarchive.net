@@ -5,6 +5,7 @@ v0.1.5 - Jan 29 2024
 - Bump libzstd from 1.5.2 to 1.5.5
 - Fetch liblzo source using HTTPS not HTTP - all dependencies now HTTPS
 - Bump libxml2 from 2.10.3 to 2.12.4
+- Bump zlib from 1.3 to 1.3.1
 
 v0.1.4 - Jun 28 2023
 
