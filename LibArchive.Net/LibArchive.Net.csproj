@@ -12,6 +12,8 @@
     <Copyright>Copyright 2022-2024</Copyright>
     <Title>LibArchive.Net</Title>
     <DebugType>embedded</DebugType>
+    <PackageProjectUrl>https://github.com/jas88/libarchive.net/</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/jas88/libarchive.net.git</RepositoryUrl>
   </PropertyGroup>
   <ItemGroup>
     <NativeLibs Include="$(MSBuildThisFileDirectory)runtimes\**"/>
