@@ -30,15 +30,19 @@ jobs:
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
           ./native/build-macos.sh
       - name: Archive MacOS library
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: dist
+          name: libarchive.dylib
           path: |
             libarchive.dylib
   linux:
     needs: [macos]
     name: Build Linux x86-64 code and wrapper
     runs-on: ubuntu-22.04
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
     steps:
       - name: Ubuntu packages
         run: sudo apt-get install -y libeatmydata1
@@ -53,10 +57,9 @@ jobs:
       - name: Determine versioning
         uses: gittools/actions/gitversion/execute@v1.1.1
       - name: Retrieve MacOS library
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
-          name: dist
-          path: libarchive.dylib
+          name: libarchive.dylib
       - name: Setup .NET Core
         uses: actions/setup-dotnet@v4.0.0
         with:
@@ -71,7 +74,6 @@ jobs:
           path: configcache
           key: ${{ runner.os }}-configcache
       - name: Initialize CodeQL
-        if: false
         uses: github/codeql-action/init@v3
         with:
           languages: 'csharp'
@@ -89,7 +91,6 @@ jobs:
           dotnet pack LibArchive.Net/LibArchive.Net.csproj -o . -p:PackageVersion=$GitVersion_NuGetVersion --nologo
           ls -lh *.nupkg
       - name: Perform CodeQL Analysis
-        if: false
         uses: github/codeql-action/analyze@v3
       - name: Upload built packages
         uses: svenstaro/upload-release-action@2.9.0
