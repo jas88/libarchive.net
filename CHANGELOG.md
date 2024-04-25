@@ -2,6 +2,7 @@ v0.1.6 - Apr 25 2024
 
 - Bump libarchive from 3.7.2 to 3.7.3
 - Bump zstd from 1.5.5 to 1.5.6
+- Bump libxml2 from 2.12.4 to 2.12.6
 
 v0.1.5 - Jan 30 2024
 
