@@ -2,7 +2,7 @@
 
 set -e
 
-brew install autoconf automake
+brew install autoconf automake libtool
 
 export PREFIX=`pwd`/local
 export NCPU=`sysctl -n hw.ncpu`
