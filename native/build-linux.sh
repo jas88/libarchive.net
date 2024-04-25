@@ -13,7 +13,7 @@ export PATH="$PREFIX/bin:$PREFIX/x86_64-linux-musl/bin:$PATH"
 curl -sL https://github.com/richfelker/musl-cross-make/archive/refs/heads/master.zip > musl-git.zip
 unzip musl-git.zip
 rm musl-git.zip
-curl -sL https://github.com/libarchive/libarchive/releases/download/v3.7.2/libarchive-3.7.2.tar.xz | tar xJf -
+curl -sL https://github.com/libarchive/libarchive/releases/download/v3.7.3/libarchive-3.7.3.tar.xz | tar xJf -
 curl -sL https://github.com/lz4/lz4/archive/refs/tags/v1.9.4.tar.gz | tar xzf -
 curl -sL https://github.com/facebook/zstd/releases/download/v1.5.5/zstd-1.5.5.tar.gz | tar xzf -
 curl -sL https://www.oberhumer.com/opensource/lzo/download/lzo-2.10.tar.gz | tar xzf -

@@ -1,3 +1,7 @@
+v0.1.6 - Apr 25 2024
+
+- Bump libarchive from 3.7.2 to 3.7.3
+
 v0.1.5 - Jan 30 2024
 
 - Build Mac component on MacOS 12 not 11
