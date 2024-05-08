@@ -1,28 +1,32 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFrameworks>net6.0;net8.0</TargetFrameworks>
-    <Nullable>enable</Nullable>
-    <LangVersion>latest</LangVersion>
-    <RuntimeIdentifiers>win-x64;linux-x64;osx-x64;osx-arm64</RuntimeIdentifiers>
-    <PackageLicenseExpression>BSD-2-Clause</PackageLicenseExpression>
-    <PackageId>LibArchive.Net</PackageId>
-    <PackageTags>Compression;Libarchive;Tar;Zip;7Zip;Rar</PackageTags>
-    <Description>This package provides access to the native libarchive compression library (included) on 64 bit Linux, Windows and MacOS platforms (x86-64 for all three, plus arm64/M1 for Mac)</Description>
-    <Authors>James A Sutherland</Authors>
-    <Copyright>Copyright 2022-2024</Copyright>
-    <Title>LibArchive.Net</Title>
-    <DebugType>embedded</DebugType>
-    <PackageProjectUrl>https://github.com/jas88/libarchive.net/</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/jas88/libarchive.net.git</RepositoryUrl>
-  </PropertyGroup>
-  <ItemGroup>
-    <NativeLibs Include="$(MSBuildThisFileDirectory)runtimes\**"/>
-    <Content Include="@(NativeLibs)" CopyToOutputDirectory="PreserveNewest">
-      <Pack>true</Pack>
-      <PackageCopyToOutput>true</PackageCopyToOutput>
-    </Content>
-  </ItemGroup>
-  <ItemGroup>
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All"/>
-  </ItemGroup>
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFrameworks>netstandard2.1;net8.0</TargetFrameworks>
+		<Nullable>enable</Nullable>
+		<LangVersion>latest</LangVersion>
+		<RuntimeIdentifiers>win-x64;linux-x64;osx-x64;osx-arm64</RuntimeIdentifiers>
+		<PackageLicenseExpression>BSD-2-Clause</PackageLicenseExpression>
+		<PackageId>LibArchive.Net</PackageId>
+		<PackageTags>Compression;Libarchive;Tar;Zip;7Zip;Rar</PackageTags>
+		<Description>This package provides access to the native libarchive compression library (included) on 64 bit Linux, Windows and MacOS platforms (x86-64 for all three, plus arm64/M1 for Mac)</Description>
+		<Authors>James A Sutherland</Authors>
+		<Copyright>Copyright 2022-2024</Copyright>
+		<Title>LibArchive.Net</Title>
+		<DebugType>embedded</DebugType>
+		<PackageProjectUrl>https://github.com/jas88/libarchive.net/</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/jas88/libarchive.net.git</RepositoryUrl>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	</PropertyGroup>
+	<ItemGroup>
+		<NativeLibs Include="$(MSBuildThisFileDirectory)runtimes\**" />
+		<Content Include="@(NativeLibs)" CopyToOutputDirectory="PreserveNewest">
+			<Pack>true</Pack>
+			<PackageCopyToOutput>true</PackageCopyToOutput>
+		</Content>
+	</ItemGroup>
+	<ItemGroup>
+		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+	</ItemGroup>
+	<ItemGroup Condition=" '$(TargetFramework)' == 'netstandard2.1' ">
+		<PackageReference Include="Shim4DotNetFramework.NativeLibrary" Version="1.0.0" />
+	</ItemGroup>
 </Project>

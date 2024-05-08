@@ -8,36 +8,37 @@ using Microsoft.Win32.SafeHandles;
 [assembly: DefaultDllImportSearchPaths(DllImportSearchPath.AssemblyDirectory)]
 namespace LibArchive.Net;
 
-public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
+public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 {
     private enum ARCHIVE_RESULT
     {
         ARCHIVE_OK = 0,
         ARCHIVE_EOF = 1,
-        ARCHIVE_RETRY=-10,
-        ARCHIVE_WARN=-20,
-        ARCHIVE_FAILED=-25,
-        ARCHIVE_FATAL=-30
+        ARCHIVE_RETRY = -10,
+        ARCHIVE_WARN = -20,
+        ARCHIVE_FAILED = -25,
+        ARCHIVE_FATAL = -30
     }
 
     static LibArchiveReader()
     {
-        NativeLibrary.SetDllImportResolver(typeof(LibArchiveReader).Assembly,
-            (name, asm, path) =>
-            {
-                // Currently supported: Linux+Win+OSX on x64, OSX only on arm64
-                if (RuntimeInformation.ProcessArchitecture != Architecture.X64 &&
-                    (RuntimeInformation.ProcessArchitecture != Architecture.Arm64 ||
-                     !RuntimeInformation.IsOSPlatform(OSPlatform.OSX)))
-                    throw new PlatformNotSupportedException();
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-                    return NativeLibrary.Load($"{AppDomain.CurrentDomain.BaseDirectory}runtimes/linux-x64/libarchive.so");
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                    return NativeLibrary.Load($"{AppDomain.CurrentDomain.BaseDirectory}runtimes/osx-any64/libarchive.dylib");
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                    return NativeLibrary.Load($"{AppDomain.CurrentDomain.BaseDirectory}runtimes/win-x64/archive.dll");
+        NativeLibrary.SetDllImportResolver(typeof(LibArchiveReader).Assembly, static (name, asm, path) =>
+        {
+            // Currently supported: Linux+Win+OSX on x64, OSX only on arm64
+            if (RuntimeInformation.ProcessArchitecture != Architecture.X64 &&
+                (RuntimeInformation.ProcessArchitecture != Architecture.Arm64 ||
+                 !RuntimeInformation.IsOSPlatform(OSPlatform.OSX)))
                 throw new PlatformNotSupportedException();
-            });
+
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                return NativeLibrary.Load($"{AppDomain.CurrentDomain.BaseDirectory}runtimes/linux-x64/libarchive.so");
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                return NativeLibrary.Load($"{AppDomain.CurrentDomain.BaseDirectory}runtimes/osx-any64/libarchive.dylib");
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                return NativeLibrary.Load($"{AppDomain.CurrentDomain.BaseDirectory}runtimes/win-x64/archive.dll");
+
+            throw new PlatformNotSupportedException();
+        });
     }
 
     /// <summary>
@@ -46,7 +47,7 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     /// <param name="filename"></param>
     /// <param name="blockSize">Block size in bytes, default 1 MiB</param>
     /// <exception cref="ApplicationException"></exception>
-    public LibArchiveReader(string filename,uint blockSize = 1<<20) : base(true)
+    public LibArchiveReader(string filename, uint blockSize = 1 << 20) : base(true)
     {
         using var uName = new SafeStringBuffer(filename);
         handle = archive_read_new();
@@ -59,7 +60,7 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     /// <summary>
     /// 
     /// </summary>
-    public LibArchiveReader(string[] filenames,uint blockSize=1<<20) : base(true)
+    public LibArchiveReader(string[] filenames, uint blockSize = 1 << 20) : base(true)
     {
         using var names = new DisposableStringArray(filenames);
         handle = archive_read_new();
@@ -82,7 +83,7 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     public IEnumerable<Entry> Entries()
     {
         int r;
-        while ((r=archive_read_next_header(handle, out var entry))==0)
+        while ((r = archive_read_next_header(handle, out var entry)) == 0)
         {
             var name = Marshal.PtrToStringUTF8(archive_entry_pathname(entry));
             if (name is not null)
@@ -113,7 +114,7 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         {
             this._archive = archive;
         }
-        
+
         public override void Flush()
         {
         }
@@ -142,6 +143,7 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         public override bool CanSeek => false;
         public override bool CanWrite => false;
         public override long Length => throw new NotSupportedException();
+
         public override long Position
         {
             get => throw new NotSupportedException();
@@ -149,12 +151,13 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         }
     }
 
+#if NETSTANDARD
     [DllImport("archive")]
     private static extern IntPtr archive_read_new();
 
     [DllImport("archive")]
     private static extern void archive_read_support_filter_all(IntPtr a);
-    
+
     [DllImport("archive")]
     private static extern void archive_read_support_format_all(IntPtr a);
 
@@ -178,6 +181,37 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     [DllImport("archive")]
     private static extern IntPtr archive_error_string(IntPtr a);
+#else
+    [LibraryImport("archive")]
+    private static partial IntPtr archive_read_new();
+
+    [LibraryImport("archive")]
+    private static partial void archive_read_support_filter_all(IntPtr a);
+
+    [LibraryImport("archive")]
+    private static partial void archive_read_support_format_all(IntPtr a);
+
+    [LibraryImport("archive")]
+    private static partial int archive_read_open_filename(IntPtr a, IntPtr filename, int blocksize);
+
+    [LibraryImport("archive")]
+    private static partial int archive_read_open_filenames(IntPtr a, IntPtr filename, int blocksize);
+
+    [LibraryImport("archive")]
+    private static partial int archive_read_data(IntPtr a, ref byte buff, int size);
+
+    [LibraryImport("archive")]
+    private static partial int archive_read_next_header(IntPtr a, out IntPtr entry);
+
+    [LibraryImport("archive")]
+    private static partial IntPtr archive_entry_pathname(IntPtr entry);
+
+    [LibraryImport("archive")]
+    private static partial int archive_read_free(IntPtr a);
+
+    [LibraryImport("archive")]
+    private static partial IntPtr archive_error_string(IntPtr a);
+#endif
 }
 
 public class DisposableStringArray : IDisposable
@@ -188,9 +222,9 @@ public class DisposableStringArray : IDisposable
 
     public DisposableStringArray(string[] a)
     {
-        backing = new IntPtr[a.Length+1];
+        backing = new IntPtr[a.Length + 1];
         strings = a.Select(s => new SafeStringBuffer(s)).ToArray();
-        for (int i=0;i<strings.Length;i++)
+        for (int i = 0; i < strings.Length; i++)
             backing[i] = strings[i].Ptr;
         backing[strings.Length] = IntPtr.Zero;
         handle = GCHandle.Alloc(backing, GCHandleType.Pinned);

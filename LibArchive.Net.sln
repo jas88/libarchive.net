@@ -1,19 +1,24 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
-VisualStudioVersion = 16.0.30114.105
+# Visual Studio Version 17
+VisualStudioVersion = 17.9.34728.123
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LibArchive.Net", "LibArchive.Net\LibArchive.Net.csproj", "{9D915DEF-CBB2-487D-A721-996385126018}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LibArchive.Net", "LibArchive.Net\LibArchive.Net.csproj", "{9D915DEF-CBB2-487D-A721-996385126018}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Test.LibArchive.Net", "Test.LibArchive.Net\Test.LibArchive.Net.csproj", "{F28CFB8B-E308-4B43-91AB-BFFEF48F03BB}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Test.LibArchive.Net", "Test.LibArchive.Net\Test.LibArchive.Net.csproj", "{F28CFB8B-E308-4B43-91AB-BFFEF48F03BB}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{D31A040E-BBC6-41C7-9CD1-72F34247F606}"
+	ProjectSection(SolutionItems) = preProject
+		CHANGELOG.md = CHANGELOG.md
+		CODE_OF_CONDUCT.md = CODE_OF_CONDUCT.md
+		LICENSE.md = LICENSE.md
+		README.md = README.md
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
-	EndGlobalSection
-	GlobalSection(SolutionProperties) = preSolution
-		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{9D915DEF-CBB2-487D-A721-996385126018}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
@@ -24,5 +29,8 @@ Global
 		{F28CFB8B-E308-4B43-91AB-BFFEF48F03BB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F28CFB8B-E308-4B43-91AB-BFFEF48F03BB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F28CFB8B-E308-4B43-91AB-BFFEF48F03BB}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
 	EndGlobalSection
 EndGlobal
