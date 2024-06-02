@@ -30,13 +30,9 @@ public class SevenZipTests
     {
         using var lar = new LibArchiveReader("7ztest.7z");
 
-        var extracted = lar.Entries().Aggregate(new Dictionary<string, EntrySpec>(), (extracted, entry) =>
-        {
-            extracted[entry.Name] = ForEntry(entry);
-            return extracted;
-        });
+        var extracted = lar.Entries().ToDictionary(_ => _.Name, ToExtractedEntry);
 
-        Assert.That(extracted, Is.EquivalentTo(new Dictionary<string, EntrySpec>
+        Assert.That(extracted, Is.EquivalentTo(new Dictionary<string, ExtractedEntry>
         {
             { "subdir/", new(emptyHash, true) },
             { "empty", new(emptyHash, false) },
@@ -52,13 +48,9 @@ public class SevenZipTests
         var files = Enumerable.Range(1, 4).Select(n => $"rartest.part0000{n}.rar").ToArray();
         using var lar = new LibArchiveReader(files);
 
-        var extracted = lar.Entries().Aggregate(new Dictionary<string, EntrySpec>(), (extracted, entry) =>
-        {
-            extracted[entry.Name] = ForEntry(entry);
-            return extracted;
-        });
+        var extracted = lar.Entries().ToDictionary(_ => _.Name, ToExtractedEntry);
 
-        Assert.That(extracted, Is.EquivalentTo(new Dictionary<string, EntrySpec>
+        Assert.That(extracted, Is.EquivalentTo(new Dictionary<string, ExtractedEntry>
         {
             { "subdir", new(emptyHash, true) },
             { "empty", new(emptyHash, false) },
@@ -70,9 +62,9 @@ public class SevenZipTests
 
     #region Support code
 
-    private record EntrySpec(string ContentHash, bool IsDirectory);
+    private record ExtractedEntry(string ContentHash, bool IsDirectory);
 
-    private EntrySpec ForEntry(LibArchiveReader.Entry entry) =>
+    private ExtractedEntry ToExtractedEntry(LibArchiveReader.Entry entry) =>
         new(ContentHash(entry), entry.IsDirectory);
 
     private string ContentHash(LibArchiveReader.Entry entry)
