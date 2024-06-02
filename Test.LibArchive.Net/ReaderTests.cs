@@ -30,19 +30,19 @@ public class SevenZipTests
     {
         using var lar = new LibArchiveReader("7ztest.7z");
 
-        var extracted = lar.Entries().Aggregate(new Dictionary<string, string>(), (extracted, entry) =>
+        var extracted = lar.Entries().Aggregate(new Dictionary<string, EntrySpec>(), (extracted, entry) =>
         {
-            extracted[entry.Name] = ContentHash(entry);
+            extracted[entry.Name] = ForEntry(entry);
             return extracted;
         });
 
-        Assert.That(extracted, Is.EquivalentTo(new Dictionary<string, string>
+        Assert.That(extracted, Is.EquivalentTo(new Dictionary<string, EntrySpec>
         {
-            { "subdir/", emptyHash },
-            { "empty", emptyHash },
-            { "subdir/empty", emptyHash },
-            { "1gzero", "49-BC-20-DF-15-E4-12-A6-44-72-42-1E-13-FE-86-FF-1C-51-65-E1-8B-2A-FC-CF-16-0D-4D-C1-9F-E6-8A-14" },
-            { "1krandom", "DA-26-F3-BE-7A-9A-2D-F1-0A-49-35-87-8B-18-C8-FF-FE-2B-96-13-EA-CD-E2-C8-67-DF-8A-A2-5D-41-0D-0A" },
+            { "subdir/", new(emptyHash, true) },
+            { "empty", new(emptyHash, false) },
+            { "subdir/empty", new(emptyHash, false) },
+            { "1gzero", new("49-BC-20-DF-15-E4-12-A6-44-72-42-1E-13-FE-86-FF-1C-51-65-E1-8B-2A-FC-CF-16-0D-4D-C1-9F-E6-8A-14", false) },
+            { "1krandom", new("DA-26-F3-BE-7A-9A-2D-F1-0A-49-35-87-8B-18-C8-FF-FE-2B-96-13-EA-CD-E2-C8-67-DF-8A-A2-5D-41-0D-0A", false) },
         }));
     }
 
@@ -52,23 +52,28 @@ public class SevenZipTests
         var files = Enumerable.Range(1, 4).Select(n => $"rartest.part0000{n}.rar").ToArray();
         using var lar = new LibArchiveReader(files);
 
-        var extracted = lar.Entries().Aggregate(new Dictionary<string, string>(), (extracted, entry) =>
+        var extracted = lar.Entries().Aggregate(new Dictionary<string, EntrySpec>(), (extracted, entry) =>
         {
-            extracted[entry.Name] = ContentHash(entry);
+            extracted[entry.Name] = ForEntry(entry);
             return extracted;
         });
 
-        Assert.That(extracted, Is.EquivalentTo(new Dictionary<string, string>
+        Assert.That(extracted, Is.EquivalentTo(new Dictionary<string, EntrySpec>
         {
-            { "subdir", emptyHash },
-            { "empty", emptyHash },
-            { "subdir/empty", emptyHash },
-            { "1gzero", "8B-A9-05-B1-20-A7-C8-D7-89-0F-AB-53-3B-75-65-C9-2C-3D-30-B7-E2-98-41-DF-52-C0-CF-F3-9D-3C-F1-A2" },
-            { "1krandom", "DA-26-F3-BE-7A-9A-2D-F1-0A-49-35-87-8B-18-C8-FF-FE-2B-96-13-EA-CD-E2-C8-67-DF-8A-A2-5D-41-0D-0A" },
+            { "subdir", new(emptyHash, true) },
+            { "empty", new(emptyHash, false) },
+            { "subdir/empty", new(emptyHash, false) },
+            { "1gzero", new("8B-A9-05-B1-20-A7-C8-D7-89-0F-AB-53-3B-75-65-C9-2C-3D-30-B7-E2-98-41-DF-52-C0-CF-F3-9D-3C-F1-A2", false) },
+            { "1krandom", new("DA-26-F3-BE-7A-9A-2D-F1-0A-49-35-87-8B-18-C8-FF-FE-2B-96-13-EA-CD-E2-C8-67-DF-8A-A2-5D-41-0D-0A", false) },
         }));
     }
 
     #region Support code
+
+    private record EntrySpec(string ContentHash, bool IsDirectory);
+
+    private EntrySpec ForEntry(LibArchiveReader.Entry entry) =>
+        new(ContentHash(entry), entry.IsDirectory);
 
     private string ContentHash(LibArchiveReader.Entry entry)
     {

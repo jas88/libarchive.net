@@ -97,10 +97,14 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     public class Entry
     {
+        private const int AE_IFDIR = 0x4000;
+
         protected readonly IntPtr entry;
         protected readonly IntPtr archive;
+        private readonly int fileType;
 
         public string Name { get; }
+        public bool IsDirectory => fileType == AE_IFDIR;
         public FileStream Stream => new(archive);
 
         protected Entry(IntPtr entry, IntPtr archive)
@@ -108,6 +112,7 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
             this.entry = entry;
             this.archive = archive;
             Name = Marshal.PtrToStringUTF8(archive_entry_pathname(entry)) ?? throw new ApplicationException("Unable to retrieve entry's pathname");
+            fileType = archive_entry_filetype(entry);
         }
 
         internal static Entry? Create(IntPtr entry, IntPtr archive)
@@ -190,6 +195,9 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     [DllImport("archive")]
     private static extern IntPtr archive_entry_pathname(IntPtr entry);
+
+    [DllImport("archive")]
+    private static extern int archive_entry_filetype(IntPtr entry);
 
     [DllImport("archive")]
     private static extern int archive_read_free(IntPtr a);
