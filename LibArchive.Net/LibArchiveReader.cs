@@ -97,29 +97,29 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     public class Entry
     {
-        protected readonly IntPtr entry;
-        protected readonly IntPtr archive;
+        protected readonly IntPtr entryHandle;
+        protected readonly IntPtr archiveHandle;
 
         public string Name { get; }
         public EntryType Type;
-        public FileStream Stream => new(archive);
+        public FileStream Stream => new(archiveHandle);
 
         public bool IsDirectory => Type == EntryType.Directory;
         public bool IsRegularFile => Type == EntryType.RegularFile;
 
-        protected Entry(IntPtr entry, IntPtr archive)
+        protected Entry(IntPtr entryHandle, IntPtr archiveHandle)
         {
-            this.entry = entry;
-            this.archive = archive;
-            Name = Marshal.PtrToStringUTF8(archive_entry_pathname(entry)) ?? throw new ApplicationException("Unable to retrieve entry's pathname");
-            Type = (EntryType)archive_entry_filetype(entry);
+            this.entryHandle = entryHandle;
+            this.archiveHandle = archiveHandle;
+            Name = Marshal.PtrToStringUTF8(archive_entry_pathname(entryHandle)) ?? throw new ApplicationException("Unable to retrieve entry's pathname");
+            Type = (EntryType)archive_entry_filetype(entryHandle);
         }
 
-        internal static Entry? Create(IntPtr entry, IntPtr archive)
+        internal static Entry? Create(IntPtr entryHandle, IntPtr archiveHandle)
         {
             try
             {
-                return new Entry(entry, archive);
+                return new Entry(entryHandle, archiveHandle);
             }
             catch (ApplicationException)
             {
@@ -136,11 +136,11 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     public class FileStream : Stream
     {
-        private readonly IntPtr archive;
+        private readonly IntPtr archiveHandle;
 
-        internal FileStream(IntPtr archive)
+        internal FileStream(IntPtr archiveHandle)
         {
-            this.archive = archive;
+            this.archiveHandle = archiveHandle;
         }
         
         public override void Flush()
@@ -149,7 +149,7 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
         public override int Read(byte[] buffer, int offset, int count)
         {
-            return archive_read_data(archive, ref MemoryMarshal.GetReference(buffer.AsSpan()[offset..]), count);
+            return archive_read_data(archiveHandle, ref MemoryMarshal.GetReference(buffer.AsSpan()[offset..]), count);
         }
 
         public override long Seek(long offset, SeekOrigin origin)
