@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 
@@ -22,8 +21,7 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     static LibArchiveReader()
     {
-        NativeLibrary.SetDllImportResolver(typeof(LibArchiveReader).Assembly,
-            (name, asm, path) =>
+        NativeLibrary.SetDllImportResolver(typeof(LibArchiveReader).Assembly, static (name, asm, path) =>
             {
                 // Currently supported: Linux+Win+OSX on x64, OSX only on arm64
                 if (RuntimeInformation.ProcessArchitecture != Architecture.X64 &&
@@ -210,31 +208,4 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     [DllImport("archive")]
     private static extern IntPtr archive_error_string(IntPtr a);
-}
-
-public class DisposableStringArray : IDisposable
-{
-    private readonly IntPtr[] backing;
-    private readonly GCHandle handle;
-    private readonly SafeStringBuffer[] strings;
-
-    public DisposableStringArray(string[] a)
-    {
-        backing = new IntPtr[a.Length+1];
-        strings = a.Select(s => new SafeStringBuffer(s)).ToArray();
-        for (int i=0;i<strings.Length;i++)
-            backing[i] = strings[i].Ptr;
-        backing[strings.Length] = IntPtr.Zero;
-        handle = GCHandle.Alloc(backing, GCHandleType.Pinned);
-    }
-
-    public IntPtr Ptr => handle.AddrOfPinnedObject();
-
-    public void Dispose()
-    {
-        GC.SuppressFinalize(this);
-        handle.Free();
-        foreach (var s in strings)
-            s.Dispose();
-    }
 }
