@@ -58,7 +58,7 @@ jobs:
           name: dist
           path: libarchive.dylib
       - name: Setup .NET Core
-        uses: actions/setup-dotnet@v4.0.1
+        uses: actions/setup-dotnet@v4.1.0
         with:
           dotnet-version: 6.0.x
       - name: ccache
