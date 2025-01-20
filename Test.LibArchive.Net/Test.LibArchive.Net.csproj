@@ -10,7 +10,7 @@
         <PackageReference Include="NUnit" Version="4.3.2" />
         <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
         <PackageReference Include="NUnit.Analyzers" Version="4.6.0" />
-        <PackageReference Include="coverlet.collector" Version="6.0.3" />
+        <PackageReference Include="coverlet.collector" Version="6.0.4" />
     </ItemGroup>
     <ItemGroup>
       <ProjectReference Include="..\LibArchive.Net\LibArchive.Net.csproj" />
