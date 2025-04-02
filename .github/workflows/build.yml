@@ -30,11 +30,12 @@ jobs:
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
           ./native/build-macos.sh
       - name: Archive MacOS library
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: dist
-          path: |
-            libarchive.dylib
+          name: maclib
+          path: libarchive.dylib
+          if-no-files-found: error
+          retention-days: 1
   linux:
     needs: [macos]
     name: Build Linux x86-64 code and wrapper
@@ -47,16 +48,15 @@ jobs:
         with:
           fetch-depth: 0
       - name: Install GitVersion
-        uses: gittools/actions/gitversion/setup@v3.1.11
+        uses: gittools/actions/gitversion/setup@v3.2.0
         with:
           versionSpec: '5.x'
       - name: Determine versioning
-        uses: gittools/actions/gitversion/execute@v3.1.11
+        uses: gittools/actions/gitversion/execute@v3.2.0
       - name: Retrieve MacOS library
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
-          name: dist
-          path: libarchive.dylib
+          name: maclib
       - name: Setup .NET Core
         uses: actions/setup-dotnet@v4.2.0
         with:
@@ -101,12 +101,11 @@ jobs:
           overwrite: true
           file_glob: true
       - name: Archive production artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: dist
           path: |
             *.nupkg
-            libarchive.dylib
       - name: Upload built packages
         uses: svenstaro/upload-release-action@2.9.0
         if: contains(github.ref, 'refs/tags/v')
