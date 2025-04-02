@@ -101,12 +101,11 @@ jobs:
           overwrite: true
           file_glob: true
       - name: Archive production artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: dist
           path: |
             *.nupkg
-            libarchive.dylib
       - name: Upload built packages
         uses: svenstaro/upload-release-action@2.9.0
         if: contains(github.ref, 'refs/tags/v')
