@@ -68,10 +68,6 @@ jobs:
         uses: actions/setup-dotnet@v4.3.1
         with:
           dotnet-version: 6.0.x
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: 'csharp'
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
@@ -85,12 +81,18 @@ jobs:
         run: |
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
           ./native/build-linux.sh
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: 'csharp'
+          build-mode: manual
       - name: Built .Net package and test
         run: |
           mkdir -p LibArchive.Net/runtimes/osx-any64 LibArchive.Net/runtimes/linux-x64
           mv libarchive.so LibArchive.Net/runtimes/linux-x64/
           mv libarchive.dylib LibArchive.Net/runtimes/osx-any64/
           touch libarchive.dylib
+          dotnet build --configuration Release
           dotnet test --nologo
           dotnet pack LibArchive.Net/LibArchive.Net.csproj -o . -p:PackageVersion=${{ steps.version.outputs.VERSION }} --nologo
           ls -lh *.nupkg
