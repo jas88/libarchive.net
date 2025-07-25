@@ -47,12 +47,19 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Install GitVersion
-        uses: gittools/actions/gitversion/setup@v3.2.1
-        with:
-          versionSpec: '5.x'
-      - name: Determine versioning
-        uses: gittools/actions/gitversion/execute@v3.2.1
+      - name: Extract version from tag
+        id: version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+            echo "IS_RELEASE=true" >> $GITHUB_OUTPUT
+          else
+            VERSION="0.0.0-dev"
+            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+            echo "IS_RELEASE=false" >> $GITHUB_OUTPUT
+          fi
+          echo "Extracted version: $VERSION"
       - name: Retrieve MacOS library
         uses: actions/download-artifact@v4
         with:
@@ -86,7 +93,7 @@ jobs:
           mv libarchive.dylib LibArchive.Net/runtimes/osx-any64/
           touch libarchive.dylib
           dotnet test --nologo
-          dotnet pack LibArchive.Net/LibArchive.Net.csproj -o . -p:PackageVersion=$GitVersion_NuGetVersion --nologo
+          dotnet pack LibArchive.Net/LibArchive.Net.csproj -o . -p:PackageVersion=${{ steps.version.outputs.VERSION }} --nologo
           ls -lh *.nupkg
       - name: Perform CodeQL Analysis
         if: false
