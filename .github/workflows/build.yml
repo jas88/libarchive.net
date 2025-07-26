@@ -96,6 +96,8 @@ jobs:
           dotnet test --nologo
           dotnet pack LibArchive.Net/LibArchive.Net.csproj -o . -p:PackageVersion=${{ steps.version.outputs.VERSION }} --nologo
           ls -lh *.nupkg
+          du -sh *
+          rm -rf local liblzo-* 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
       - name: Upload built packages
