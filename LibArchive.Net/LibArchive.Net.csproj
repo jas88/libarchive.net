@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net6.0;net8.0</TargetFrameworks>
+    <TargetFrameworks>netstandard2.0;net6.0;net8.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <RuntimeIdentifiers>win-x64;linux-x64;osx-x64;osx-arm64</RuntimeIdentifiers>
@@ -15,6 +15,12 @@
     <PackageProjectUrl>https://github.com/jas88/libarchive.net/</PackageProjectUrl>
     <RepositoryUrl>https://github.com/jas88/libarchive.net.git</RepositoryUrl>
   </PropertyGroup>
+  
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+    <PackageReference Include="System.Memory" Version="4.5.5" />
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />
+  </ItemGroup>
+  
   <ItemGroup>
     <NativeLibs Include="$(MSBuildThisFileDirectory)runtimes\**"/>
     <Content Include="@(NativeLibs)" CopyToOutputDirectory="PreserveNewest">
