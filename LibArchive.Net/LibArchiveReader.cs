@@ -1,8 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
+#if NETSTANDARD2_0
+using System.Text;
+#endif
 
 [assembly: DefaultDllImportSearchPaths(DllImportSearchPath.AssemblyDirectory)]
 namespace LibArchive.Net;
@@ -21,6 +24,7 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     static LibArchiveReader()
     {
+#if !NETSTANDARD2_0
         NativeLibrary.SetDllImportResolver(typeof(LibArchiveReader).Assembly, static (name, asm, path) =>
             {
                 // Currently supported: Linux+Win+OSX on x64, OSX only on arm64
@@ -36,6 +40,13 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
                     return NativeLibrary.Load($"{AppDomain.CurrentDomain.BaseDirectory}runtimes/win-x64/archive.dll");
                 throw new PlatformNotSupportedException();
             });
+#else
+        // For .NET Standard 2.0, ensure platform is supported
+        if (RuntimeInformation.ProcessArchitecture != Architecture.X64 &&
+            (RuntimeInformation.ProcessArchitecture != Architecture.Arm64 ||
+             !RuntimeInformation.IsOSPlatform(OSPlatform.OSX)))
+            throw new PlatformNotSupportedException();
+#endif
     }
 
     /// <summary>
@@ -69,7 +80,11 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     private void Throw()
     {
+#if !NETSTANDARD2_0
         throw new ApplicationException(Marshal.PtrToStringUTF8(archive_error_string(handle)));
+#else
+        throw new ApplicationException(PtrToStringUTF8(archive_error_string(handle)));
+#endif
     }
 
     protected override bool ReleaseHandle()
@@ -109,7 +124,11 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         {
             this.entryHandle = entryHandle;
             this.archiveHandle = archiveHandle;
+#if !NETSTANDARD2_0
             Name = Marshal.PtrToStringUTF8(archive_entry_pathname(entryHandle)) ?? throw new ApplicationException("Unable to retrieve entry's pathname");
+#else
+            Name = PtrToStringUTF8(archive_entry_pathname(entryHandle)) ?? throw new ApplicationException("Unable to retrieve entry's pathname");
+#endif
             Type = (EntryType)archive_entry_filetype(entryHandle);
         }
 
@@ -147,7 +166,25 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
         public override int Read(byte[] buffer, int offset, int count)
         {
+#if !NETSTANDARD2_0
             return archive_read_data(archiveHandle, ref MemoryMarshal.GetReference(buffer.AsSpan()[offset..]), count);
+#else
+            if (offset == 0)
+            {
+                return archive_read_data(archiveHandle, ref buffer[0], count);
+            }
+            else
+            {
+                // For .NET Standard 2.0, we need to handle offset differently
+                var tempBuffer = new byte[count];
+                var bytesRead = archive_read_data(archiveHandle, ref tempBuffer[0], count);
+                if (bytesRead > 0)
+                {
+                    Array.Copy(tempBuffer, 0, buffer, offset, bytesRead);
+                }
+                return bytesRead;
+            }
+#endif
         }
 
         public override long Seek(long offset, SeekOrigin origin)
@@ -208,4 +245,24 @@ public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     [DllImport("archive")]
     private static extern IntPtr archive_error_string(IntPtr a);
+
+#if NETSTANDARD2_0
+    private static string? PtrToStringUTF8(IntPtr ptr)
+    {
+        if (ptr == IntPtr.Zero)
+            return null;
+
+        // Find the null terminator
+        int len = 0;
+        while (Marshal.ReadByte(ptr, len) != 0)
+            len++;
+
+        if (len == 0)
+            return string.Empty;
+
+        byte[] buffer = new byte[len];
+        Marshal.Copy(ptr, buffer, 0, len);
+        return Encoding.UTF8.GetString(buffer);
+    }
+#endif
 }
