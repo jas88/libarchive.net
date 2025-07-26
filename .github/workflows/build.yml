@@ -95,7 +95,7 @@ jobs:
           dotnet pack LibArchive.Net/LibArchive.Net.csproj -o . -p:PackageVersion=${{ steps.version.outputs.VERSION }} --nologo
           ls -lh *.nupkg
           du -sh *
-          rm -rf local liblzo-* 
+          rm -rf local {bzip2,libarchive,libxml2,lz4,lzo,musl-cross-make,xz,zlib,zstd}-* musl-cross-make-master
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
       - name: Upload built packages
