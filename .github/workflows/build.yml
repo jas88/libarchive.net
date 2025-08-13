@@ -61,7 +61,7 @@ jobs:
           fi
           echo "Extracted version: $VERSION"
       - name: Retrieve MacOS library
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: maclib
       - name: Setup .NET Core
