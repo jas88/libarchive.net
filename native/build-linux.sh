@@ -24,6 +24,7 @@ curl -sL https://github.com/tukaani-project/xz/releases/download/v5.4.6/xz-5.4.6
 
 cd musl-cross-make-master
 cat > config.mak <<EOC
+GNU_SITE = https://mirrors.ocf.berkeley.edu/gnu/
 TARGET=x86_64-linux-musl
 COMMON_CONFIG += --disable-nls
 GCC_CONFIG += --disable-libitm
