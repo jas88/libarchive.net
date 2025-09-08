@@ -65,7 +65,7 @@ jobs:
         with:
           name: maclib
       - name: Setup .NET Core
-        uses: actions/setup-dotnet@v4.3.1
+        uses: actions/setup-dotnet@v5.0.0
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
