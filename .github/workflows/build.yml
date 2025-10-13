@@ -80,7 +80,7 @@ jobs:
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
           ./native/build-linux.sh
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: 'csharp'
           build-mode: manual
@@ -97,7 +97,7 @@ jobs:
           du -sh *
           rm -rf local {bzip2,libarchive,libxml2,lz4,lzo,musl-cross-make,xz,zlib,zstd}-* musl-cross-make-master
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
       - name: Upload built packages
         uses: svenstaro/upload-release-action@2.11.2
         if: contains(github.ref, 'refs/tags/v')
