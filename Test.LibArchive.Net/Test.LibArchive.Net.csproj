@@ -15,7 +15,8 @@
     </ItemGroup>
     <ItemGroup Condition="'$(UseLocalPackage)' == 'true'">
       <!-- Reference the NuGet package for realistic testing -->
-      <PackageReference Include="LibArchive.Net" Version="*" />
+      <!-- Version is passed from CI via LibArchiveNetVersion property -->
+      <PackageReference Include="LibArchive.Net" Version="$(LibArchiveNetVersion)" />
     </ItemGroup>
     <ItemGroup Condition="'$(UseLocalPackage)' != 'true'">
       <!-- Fall back to project reference for local development -->

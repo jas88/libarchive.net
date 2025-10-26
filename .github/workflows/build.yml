@@ -174,31 +174,25 @@ jobs:
           # Build and pack the library first
           dotnet pack LibArchive.Net/LibArchive.Net.csproj -o . -p:PackageVersion=${{ steps.version.outputs.VERSION }} --configuration Release --nologo
 
-          # Extract package to verify contents
-          echo "=== Package contents ==="
+          # Extract package info
           PACKAGE_FILE=$(ls LibArchive.Net.*.nupkg)
-          echo "Package file: $PACKAGE_FILE"
+          PACKAGE_VERSION=$(echo "$PACKAGE_FILE" | sed 's/LibArchive.Net.\(.*\).nupkg/\1/')
+          echo "=== Package: $PACKAGE_FILE (version: $PACKAGE_VERSION) ==="
           unzip -l "$PACKAGE_FILE" | grep -E "runtimes/|\.targets|lib/"
 
-          # Restore and test using the local NuGet package
-          echo "=== Testing with local NuGet package ==="
-          dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --source . --source https://api.nuget.org/v3/index.json /p:UseLocalPackage=true
+          # Clear old cached versions to force using local package
+          rm -rf ~/.nuget/packages/libarchive.net/
 
-          # Debug: Show what was restored
-          echo "=== NuGet packages restored ==="
-          ls -la ~/.nuget/packages/libarchive.net/ 2>/dev/null || echo "Package not in cache"
-
-          # Debug: Check project references
-          echo "=== Test project references ==="
-          dotnet msbuild Test.LibArchive.Net/Test.LibArchive.Net.csproj /t:_GetAllReferences /p:UseLocalPackage=true 2>&1 | grep -i libarchive || echo "No LibArchive.Net reference found"
-
-          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --no-restore /p:UseLocalPackage=true -v:n 2>&1 | grep -E "error|LibArchive" | head -20
+          # Restore and test using ONLY the local NuGet package
+          echo "=== Testing with local NuGet package version $PACKAGE_VERSION ==="
+          dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --source . --no-http-cache /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
+          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --no-restore /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
           # Debug: Show test output directory
           echo "=== Test output directory ==="
           ls -laR Test.LibArchive.Net/bin/Release/net9.0/runtimes/ 2>/dev/null || echo "No runtimes folder in test output!"
 
-          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --no-build --nologo /p:UseLocalPackage=true
+          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --no-build --nologo /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
           ls -lh *.nupkg
           du -sh *
           rm -rf local {bzip2,libarchive,libxml2,lz4,lzo,musl-cross-make,xz,zlib,zstd}-* musl-cross-make-master
