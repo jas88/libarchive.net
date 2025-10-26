@@ -112,7 +112,7 @@ cd ..
 echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
 export LIBXML2_CFLAGS="-I$PREFIX/include/libxml2"
-export LIBXML2_LIBS="-L$PREFIX/lib -lxml2"
+export LIBXML2_LIBS="-L$PREFIX/lib -lxml2 -lz -llzma"
 ./configure --host=${MINGW_PREFIX} --cache-file=$CONFIGCACHE --prefix=$PREFIX \
     --enable-silent-rules --disable-dependency-tracking \
     --enable-static --disable-shared \

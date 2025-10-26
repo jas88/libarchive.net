@@ -1,3 +1,13 @@
+v0.2.0 - TBD
+
+- Add .NET Standard 2.0 support for broader compatibility
+- Add Windows ARM64 native library support
+- Fix SYSLIB1050: Mark LibArchiveReader as partial for .NET 8.0 source generators
+- Statically link C runtime to eliminate UCRT/msvcrt dependency on Windows
+- Fix Windows build: Use LLVM-MinGW for ARM64 cross-compilation
+- Fix Windows build: Only build static libraries for lz4/zstd to avoid LLVM lld linker issues
+- Fix Windows build: Only install bzip2 library, not command-line programs
+
 v0.1.6 - Apr 25 2024
 
 - Bump libarchive from 3.7.2 to 3.7.3
