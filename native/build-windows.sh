@@ -129,11 +129,12 @@ cd ..
 
 echo "Creating Windows DLL..."
 # Use --start-group/--end-group for LLVM lld which doesn't do multiple passes
+# libarchive must be inside the group so the linker can resolve dependencies
 ${CC} -shared -o ${OUTPUT_NAME} \
+    -Wl,--start-group \
     -Wl,--whole-archive \
     $PREFIX/lib/libarchive.a \
     -Wl,--no-whole-archive \
-    -Wl,--start-group \
     $PREFIX/lib/libxml2.a \
     $PREFIX/lib/libbz2.a \
     $PREFIX/lib/libz.a \
