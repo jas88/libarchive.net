@@ -7,9 +7,11 @@ set -e
 . "$(dirname "$0")/build-config.sh"
 
 # Linux-specific build settings
-export CPPFLAGS="-I$PREFIX/include -I$PREFIX/x86_64-linux-musl/include -I$PREFIX/lib/gcc/x86_64-linux-musl/9.2.0/include"
+GCC_MAJOR=$(echo $GCC_VERSION | cut -d. -f1)
+GCC_MINOR=$(echo $GCC_VERSION | cut -d. -f2)
+export CPPFLAGS="-I$PREFIX/include -I$PREFIX/x86_64-linux-musl/include -I$PREFIX/lib/gcc/x86_64-linux-musl/${GCC_MAJOR}.${GCC_MINOR}.0/include"
 export CFLAGS="-fPIC -O2 $CPPFLAGS -static-libgcc"
-export CXXFLAGS="-fPIC -O2 -I$PREFIX/x86_64-linux-musl/include/c++/9.2.0 -I$PREFIX/x86_64-linux-musl/include/c++/9.2.0/x86_64-linux-musl $CPPFLAGS -static-libstdc++ -static-libgcc -include sys/time.h"
+export CXXFLAGS="-fPIC -O2 -I$PREFIX/x86_64-linux-musl/include/c++/${GCC_MAJOR}.${GCC_MINOR}.0 -I$PREFIX/x86_64-linux-musl/include/c++/${GCC_MAJOR}.${GCC_MINOR}.0/x86_64-linux-musl $CPPFLAGS -static-libstdc++ -static-libgcc -include sys/time.h"
 export LDFLAGS="-L$PREFIX/lib -static"
 export PATH="$PREFIX/bin:$PREFIX/x86_64-linux-musl/bin:$PATH"
 
@@ -26,6 +28,9 @@ cd musl-cross-make-master
 cat > config.mak <<EOC
 GNU_SITE = https://mirrors.ocf.berkeley.edu/gnu/
 TARGET=x86_64-linux-musl
+MUSL_VER = ${MUSL_VERSION}
+GCC_VER = ${GCC_VERSION}
+BINUTILS_VER = ${BINUTILS_VERSION}
 COMMON_CONFIG += --disable-nls
 GCC_CONFIG += --disable-libitm
 GCC_CONFIG += --enable-default-pie

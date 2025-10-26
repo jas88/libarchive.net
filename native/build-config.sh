@@ -12,6 +12,11 @@ ZLIB_VERSION="1.3.1"
 XZ_VERSION="5.4.6"
 BZIP2_VERSION="1.0.8"
 
+# musl toolchain versions (Linux only)
+MUSL_VERSION="1.2.5"
+GCC_VERSION="9.4.0"
+BINUTILS_VERSION="2.44"
+
 # Download URLs
 LIBARCHIVE_URL="https://github.com/libarchive/libarchive/releases/download/v${LIBARCHIVE_VERSION}/libarchive-${LIBARCHIVE_VERSION}.tar.xz"
 LZ4_URL="https://github.com/lz4/lz4/archive/refs/tags/v${LZ4_VERSION}.tar.gz"
@@ -69,5 +74,8 @@ echo "  libxml2: ${LIBXML2_VERSION}"
 echo "  zlib: ${ZLIB_VERSION}"
 echo "  xz: ${XZ_VERSION}"
 echo "  bzip2: ${BZIP2_VERSION}"
+echo "  musl: ${MUSL_VERSION:-N/A}"
+echo "  gcc: ${GCC_VERSION:-N/A}"
+echo "  binutils: ${BINUTILS_VERSION:-N/A}"
 echo "  CPUs: ${NCPU}"
 echo "  PREFIX: ${PREFIX}"

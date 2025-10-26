@@ -174,6 +174,19 @@ check_dependency "bzip2" "1.0.8" "web" \
     "https://www.sourceware.org/pub/bzip2/" \
     'bzip2-([0-9]+\.[0-9]+\.[0-9]+)\.tar\.gz'
 
+# musl toolchain (Linux only)
+check_dependency "musl" "1.2.5" "web" \
+    "https://musl.libc.org/releases/" \
+    'musl-([0-9]+\.[0-9]+\.[0-9]+)\.tar\.gz'
+
+check_dependency "gcc" "9.4.0" "web" \
+    "https://ftp.gnu.org/gnu/gcc/" \
+    'gcc-([0-9]+\.[0-9]+\.[0-9]+)/'
+
+check_dependency "binutils" "2.44" "web" \
+    "https://ftp.gnu.org/gnu/binutils/" \
+    'binutils-([0-9]+\.[0-9]+)\.tar'
+
 echo ""
 
 # Check if any updates were found
@@ -215,6 +228,18 @@ while IFS='|' read -r name old new; do
             echo "Note: bzip2 uses 'latest' tarball - manual update required"
             continue
             ;;
+        musl|gcc|binutils)
+            # Update build-config.sh for toolchain versions
+            config_script="$REPO_ROOT/native/build-config.sh"
+            var_name=$(echo "$name" | tr '[:lower:]' '[:upper:]')_VERSION
+            if [ "$DRY_RUN" = "1" ]; then
+                echo "  Would update $var_name in build-config.sh: $old -> $new"
+            else
+                sed -i.bak "s/^${var_name}=\"${old}\"$/${var_name}=\"${new}\"/" "$config_script"
+                rm -f "$config_script.bak"
+            fi
+            continue
+            ;;
     esac
 
     echo "Updating $name: $old -> $new"
@@ -250,7 +275,7 @@ echo "Creating branch: $branch_name"
 git checkout -b "$branch_name"
 
 echo "Committing changes..."
-git add "$LINUX_SCRIPT" "$MACOS_SCRIPT"
+git add "$LINUX_SCRIPT" "$MACOS_SCRIPT" "$REPO_ROOT/native/build-config.sh"
 git commit -m "$pr_title" -m "$update_list"
 
 echo "Pushing to origin..."
@@ -268,6 +293,7 @@ $(while IFS='|' read -r name old new; do
 done < "$UPDATES_FILE")
 
 ### Build Scripts Updated
+- \`native/build-config.sh\`
 - \`native/build-linux.sh\`
 - \`native/build-macos.sh\`
 
