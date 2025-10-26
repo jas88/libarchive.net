@@ -1,10 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
-        <TargetFrameworks>net$(NETCoreAppMaximumVersion)</TargetFrameworks>
+        <TargetFrameworks>net$(NETCoreAppMaximumVersion);net462</TargetFrameworks>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <IsPackable>false</IsPackable>
         <GenerateDocumentationFile>false</GenerateDocumentationFile>
+        <!-- Use C# 8 for net462 to avoid record types -->
+        <LangVersion Condition="'$(TargetFramework)' == 'net462'">8.0</LangVersion>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.0" />
