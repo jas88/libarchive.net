@@ -36,8 +36,42 @@ jobs:
           path: libarchive.dylib
           if-no-files-found: error
           retention-days: 1
+  windows:
+    name: Build Windows DLLs (x86, x64, arm64)
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        arch: [x86, x64, arm64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+      - name: Install MinGW
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: windows-${{ matrix.arch }}
+      - name: Cache autoconf
+        uses: actions/cache@v4
+        with:
+          path: configcache
+          key: ${{ runner.os }}-configcache
+      - name: Build Windows DLL
+        run: |
+          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          export ARCH=${{ matrix.arch }}
+          ./native/build-windows.sh
+      - name: Archive Windows DLL
+        uses: actions/upload-artifact@v4
+        with:
+          name: winlib-${{ matrix.arch }}
+          path: archive-*.dll
+          if-no-files-found: error
+          retention-days: 1
   linux:
-    needs: [macos]
+    needs: [macos, windows]
     name: Build Linux x86-64 code and wrapper
     runs-on: ubuntu-22.04
     steps:
@@ -64,6 +98,18 @@ jobs:
         uses: actions/download-artifact@v5
         with:
           name: maclib
+      - name: Retrieve Windows x86 DLL
+        uses: actions/download-artifact@v5
+        with:
+          name: winlib-x86
+      - name: Retrieve Windows x64 DLL
+        uses: actions/download-artifact@v5
+        with:
+          name: winlib-x64
+      - name: Retrieve Windows arm64 DLL
+        uses: actions/download-artifact@v5
+        with:
+          name: winlib-arm64
       - name: Setup .NET Core
         uses: actions/setup-dotnet@v5.0.0
       - name: ccache
@@ -86,11 +132,21 @@ jobs:
           build-mode: manual
       - name: Built .Net package and test
         run: |
-          mkdir -p LibArchive.Net/runtimes/osx-x64/native LibArchive.Net/runtimes/osx-arm64/native LibArchive.Net/runtimes/linux-x64/native LibArchive.Net/runtimes/linux-musl-x64/native
+          mkdir -p LibArchive.Net/runtimes/{osx-x64,osx-arm64,linux-x64,linux-musl-x64,win-x86,win-x64,win-arm64}/native
+
+          # Linux
           mv libarchive.so LibArchive.Net/runtimes/linux-x64/native/
           cp LibArchive.Net/runtimes/linux-x64/native/libarchive.so LibArchive.Net/runtimes/linux-musl-x64/native/
+
+          # macOS
           mv libarchive.dylib LibArchive.Net/runtimes/osx-x64/native/
           cp LibArchive.Net/runtimes/osx-x64/native/libarchive.dylib LibArchive.Net/runtimes/osx-arm64/native/
+
+          # Windows
+          mv archive-x86.dll LibArchive.Net/runtimes/win-x86/native/archive.dll
+          mv archive-x64.dll LibArchive.Net/runtimes/win-x64/native/archive.dll
+          mv archive-arm64.dll LibArchive.Net/runtimes/win-arm64/native/archive.dll
+
           touch libarchive.dylib
           dotnet build --configuration Release
           dotnet test --nologo
