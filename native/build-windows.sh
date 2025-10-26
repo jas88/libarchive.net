@@ -70,7 +70,12 @@ cp lz4.h lz4hc.h lz4frame.h $PREFIX/include/
 cd ../..
 
 echo "Building bzip2 ${BZIP2_VERSION}..."
-make -j$NCPU -C bzip2-${BZIP2_VERSION} install PREFIX=$PREFIX CC=$CC AR=$AR CFLAGS="$CFLAGS -D_FILE_OFFSET_BITS=64"
+cd bzip2-${BZIP2_VERSION}
+make -j$NCPU libbz2.a CC=$CC AR=$AR CFLAGS="$CFLAGS -D_FILE_OFFSET_BITS=64"
+mkdir -p $PREFIX/lib $PREFIX/include
+cp libbz2.a $PREFIX/lib/
+cp bzlib.h $PREFIX/include/
+cd ..
 
 echo "Building zlib ${ZLIB_VERSION}..."
 cd zlib-${ZLIB_VERSION}
