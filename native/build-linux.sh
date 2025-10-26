@@ -29,6 +29,7 @@ TARGET=x86_64-linux-musl
 COMMON_CONFIG += --disable-nls
 GCC_CONFIG += --disable-libitm
 GCC_CONFIG += --enable-default-pie
+DL_CMD = wget -c --no-check-certificate -O
 EOC
 echo "Building musl cross-compiler (this may take a while)..."
 make -sj$NCPU install OUTPUT=$PREFIX 2>&1 >musl.log || cat musl.log
