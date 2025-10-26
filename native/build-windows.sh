@@ -113,12 +113,15 @@ echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
 export LIBXML2_CFLAGS="-I$PREFIX/include/libxml2"
 export LIBXML2_LIBS="-L$PREFIX/lib -lxml2 -lz -llzma"
+# For static linking, configure needs all dependencies in LIBS
+export LIBS="-L$PREFIX/lib -lxml2 -lz -llzma"
 ./configure --host=${MINGW_PREFIX} --cache-file=$CONFIGCACHE --prefix=$PREFIX \
     --enable-silent-rules --disable-dependency-tracking \
     --enable-static --disable-shared \
     --disable-bsdtar --disable-bsdcat --disable-bsdcpio \
     --enable-posix-regex-lib=libc \
     --with-pic --with-zlib --with-bz2lib --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-xml2
+unset LIBS
 make -j$NCPU install
 cd ..
 
