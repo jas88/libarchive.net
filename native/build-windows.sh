@@ -80,7 +80,10 @@ cd ../..
 
 echo "Building bzip2 ${BZIP2_VERSION}..."
 cd bzip2-${BZIP2_VERSION}
-make -j$NCPU libbz2.a CC=$CC AR=$AR CFLAGS="$CFLAGS -D_FILE_OFFSET_BITS=64"
+make -j$NCPU libbz2.a CC=$CC AR=$AR RANLIB=$RANLIB CFLAGS="$CFLAGS -D_FILE_OFFSET_BITS=64"
+# Verify library was built and has symbols
+ls -lh libbz2.a
+${MINGW_PREFIX}-nm -g libbz2.a | grep BZ2_bzCompressInit || echo "WARNING: BZ2_bzCompressInit not found in libbz2.a"
 mkdir -p $PREFIX/lib $PREFIX/include
 cp libbz2.a $PREFIX/lib/
 cp bzlib.h $PREFIX/include/
@@ -134,6 +137,14 @@ make -j$NCPU install
 cd ..
 
 echo "Creating Windows DLL..."
+# Verify all libraries exist before linking
+for lib in libarchive libxml2 libz liblzma liblzo2 libzstd liblz4 libbz2; do
+    if [ ! -f "$PREFIX/lib/${lib}.a" ]; then
+        echo "ERROR: $PREFIX/lib/${lib}.a not found!"
+        exit 1
+    fi
+    echo "$PREFIX/lib/${lib}.a: $(ls -lh $PREFIX/lib/${lib}.a | awk '{print $5}')"
+done
 # Use --start-group for all dependency libraries to allow multi-pass symbol resolution
 # This is needed because libxml2 depends on libz and liblzma
 ${CC} -shared -o ${OUTPUT_NAME} \
