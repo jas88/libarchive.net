@@ -62,7 +62,7 @@ download_all_libraries
 
 # Build compression libraries
 echo "Building lz4 ${LZ4_VERSION}..."
-make -j$NCPU -C lz4-${LZ4_VERSION} install PREFIX=$PREFIX CC=$CC AR=$AR
+make -j$NCPU -C lz4-${LZ4_VERSION}/lib install PREFIX=$PREFIX CC=$CC AR=$AR
 
 echo "Building bzip2 ${BZIP2_VERSION}..."
 make -j$NCPU -C bzip2-${BZIP2_VERSION} install PREFIX=$PREFIX CC=$CC AR=$AR CFLAGS="$CFLAGS -D_FILE_OFFSET_BITS=64"
@@ -86,9 +86,7 @@ make -j$NCPU install
 cd ..
 
 echo "Building zstd ${ZSTD_VERSION}..."
-cd zstd-${ZSTD_VERSION}
-make -j$NCPU -C lib install PREFIX=$PREFIX CC=$CC AR=$AR
-cd ..
+make -j$NCPU -C zstd-${ZSTD_VERSION}/lib install PREFIX=$PREFIX CC=$CC AR=$AR
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
 cd libxml2-${LIBXML2_VERSION}
