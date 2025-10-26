@@ -114,8 +114,9 @@ cd libarchive-${LIBARCHIVE_VERSION}
 export LIBXML2_CFLAGS="-I$PREFIX/include/libxml2"
 export LIBXML2_LIBS="-L$PREFIX/lib -lxml2 -lz -llzma"
 # For static linking, configure needs all dependencies in LIBS
+# Don't use cache file since LIBS affects cache validity
 export LIBS="-L$PREFIX/lib -lxml2 -lz -llzma"
-./configure --host=${MINGW_PREFIX} --cache-file=$CONFIGCACHE --prefix=$PREFIX \
+./configure --host=${MINGW_PREFIX} --prefix=$PREFIX \
     --enable-silent-rules --disable-dependency-tracking \
     --enable-static --disable-shared \
     --disable-bsdtar --disable-bsdcat --disable-bsdcpio \
