@@ -1,13 +1,23 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net6.0;net8.0</TargetFrameworks>
+    <TargetFrameworks>netstandard2.0;net6.0;net8.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
-    <RuntimeIdentifiers>win-x64;linux-x64;osx-x64;osx-arm64</RuntimeIdentifiers>
+    <!-- Allow unsafe code for UTF-8 string handling in .NET Standard 2.0 -->
+    <AllowUnsafeBlocks Condition="'$(TargetFramework)' == 'netstandard2.0'">true</AllowUnsafeBlocks>
+    <RuntimeIdentifiers>win-x86;win-x64;win-arm64;linux-x64;linux-musl-x64;osx-x64;osx-arm64</RuntimeIdentifiers>
+
+    <!-- AOT and Trimming Support (for .NET 6+) -->
+    <IsAotCompatible Condition="!$([MSBuild]::GetTargetFrameworkIdentifier('$(TargetFramework)')) == '.NETStandard'">true</IsAotCompatible>
+    <IsTrimmable Condition="!$([MSBuild]::GetTargetFrameworkIdentifier('$(TargetFramework)')) == '.NETStandard'">true</IsTrimmable>
+    <EnableTrimAnalyzer Condition="!$([MSBuild]::GetTargetFrameworkIdentifier('$(TargetFramework)')) == '.NETStandard'">true</EnableTrimAnalyzer>
+    <EnableAotAnalyzer Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net8.0'))">true</EnableAotAnalyzer>
+
+    <!-- Package Metadata -->
     <PackageLicenseExpression>BSD-2-Clause</PackageLicenseExpression>
     <PackageId>LibArchive.Net</PackageId>
-    <PackageTags>Compression;Libarchive;Tar;Zip;7Zip;Rar</PackageTags>
-    <Description>This package provides access to the native libarchive compression library (included) on 64 bit Linux, Windows and MacOS platforms (x86-64 for all three, plus arm64/M1 for Mac)</Description>
+    <PackageTags>Compression;Libarchive;Tar;Zip;7Zip;Rar;AOT;NativeAOT;Trimming</PackageTags>
+    <Description>This package provides access to the native libarchive compression library (included) on Linux (x64, musl-x64), Windows (x86, x64, arm64), and macOS (x64, arm64) platforms. Supports Native AOT and trimming for .NET 6+.</Description>
     <Authors>James A Sutherland</Authors>
     <Copyright>Copyright 2022-2024</Copyright>
     <Title>LibArchive.Net</Title>
@@ -23,6 +33,8 @@
     </Content>
   </ItemGroup>
   <ItemGroup>
+    <!-- Add System.Text.Encoding.CodePages for frameworks that don't have built-in UTF-8 guarantees -->
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" Condition="!$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'netcoreapp3.1'))" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All"/>
   </ItemGroup>
 </Project>

@@ -396,3 +396,9 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# Claude Code / Claude Flow
+.claude/
+.claude-flow/
+.swarm/
+CLAUDE.md

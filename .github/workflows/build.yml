@@ -86,9 +86,11 @@ jobs:
           build-mode: manual
       - name: Built .Net package and test
         run: |
-          mkdir -p LibArchive.Net/runtimes/osx-any64 LibArchive.Net/runtimes/linux-x64
-          mv libarchive.so LibArchive.Net/runtimes/linux-x64/
-          mv libarchive.dylib LibArchive.Net/runtimes/osx-any64/
+          mkdir -p LibArchive.Net/runtimes/osx-x64/native LibArchive.Net/runtimes/osx-arm64/native LibArchive.Net/runtimes/linux-x64/native LibArchive.Net/runtimes/linux-musl-x64/native
+          mv libarchive.so LibArchive.Net/runtimes/linux-x64/native/
+          cp LibArchive.Net/runtimes/linux-x64/native/libarchive.so LibArchive.Net/runtimes/linux-musl-x64/native/
+          mv libarchive.dylib LibArchive.Net/runtimes/osx-x64/native/
+          cp LibArchive.Net/runtimes/osx-x64/native/libarchive.dylib LibArchive.Net/runtimes/osx-arm64/native/
           touch libarchive.dylib
           dotnet build --configuration Release
           dotnet test --nologo
@@ -125,3 +127,50 @@ jobs:
       - name: Upload Nuget package
         if: contains(github.ref, 'refs/tags/v')
         run: dotnet nuget push *.nupkg -k ${{ secrets.NUGET_KEY }} --source https://api.nuget.org/v3/index.json
+
+  mono-test:
+    name: Test .NET Standard 2.0 with Mono
+    needs: [linux]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Install Mono
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mono-complete mono-devel
+          mono --version
+
+      - name: Setup .NET Core
+        uses: actions/setup-dotnet@v5.0.0
+
+      - name: Retrieve build artifacts
+        uses: actions/download-artifact@v5
+        with:
+          name: dist
+
+      - name: Extract and setup libraries
+        run: |
+          # Extract the nupkg to get the native libraries
+          unzip -q *.nupkg -d extracted
+          mkdir -p LibArchive.Net/runtimes
+          cp -r extracted/runtimes/* LibArchive.Net/runtimes/
+          ls -laR LibArchive.Net/runtimes/
+
+      - name: Build test project for .NET Framework
+        run: |
+          dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj
+          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --framework net462 --no-restore
+
+      - name: Run tests with Mono (.NET Standard 2.0)
+        run: |
+          # Run tests targeting net462 which uses the netstandard2.0 library
+          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --framework net462 --no-build --verbosity normal
+
+      - name: Display test results
+        if: always()
+        run: |
+          echo "Mono version used:"
+          mono --version
+          echo "Test completed for .NET Standard 2.0 compatibility"
