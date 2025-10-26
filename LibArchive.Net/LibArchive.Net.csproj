@@ -32,9 +32,4 @@
       <PackageCopyToOutput>true</PackageCopyToOutput>
     </Content>
   </ItemGroup>
-  <ItemGroup>
-    <!-- Add System.Text.Encoding.CodePages for frameworks that don't have built-in UTF-8 guarantees -->
-    <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" Condition="!$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'netcoreapp3.1'))" />
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All"/>
-  </ItemGroup>
 </Project>
