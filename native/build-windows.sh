@@ -128,10 +128,9 @@ make -j$NCPU install
 cd ..
 
 echo "Creating Windows DLL..."
-# Use --start-group/--end-group for LLVM lld which doesn't do multiple passes
-# libarchive must be inside the group so the linker can resolve dependencies
+# LLVM lld has issues with --whole-archive inside --start-group
+# List libraries in dependency order and repeat to allow symbol resolution
 ${CC} -shared -o ${OUTPUT_NAME} \
-    -Wl,--start-group \
     -Wl,--whole-archive \
     $PREFIX/lib/libarchive.a \
     -Wl,--no-whole-archive \
@@ -142,7 +141,10 @@ ${CC} -shared -o ${OUTPUT_NAME} \
     $PREFIX/lib/liblzo2.a \
     $PREFIX/lib/libzstd.a \
     $PREFIX/lib/liblz4.a \
-    -Wl,--end-group \
+    $PREFIX/lib/libxml2.a \
+    $PREFIX/lib/libbz2.a \
+    $PREFIX/lib/libz.a \
+    $PREFIX/lib/liblzma.a \
     -static -static-libgcc -static-libstdc++ \
     -lws2_32 -lbcrypt -lkernel32
 
