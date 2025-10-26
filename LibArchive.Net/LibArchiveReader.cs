@@ -11,6 +11,10 @@ using System.Text;
 [assembly: DefaultDllImportSearchPaths(DllImportSearchPath.AssemblyDirectory)]
 namespace LibArchive.Net;
 
+/// <summary>
+/// Provides read-only access to archive files using the libarchive library.
+/// Supports various formats including zip, rar, 7zip, tar, gzip, bzip2, lzo, and lzma.
+/// </summary>
 public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 {
     private enum ARCHIVE_RESULT
@@ -52,11 +56,11 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
 
     /// <summary>
-    /// Open the named archive for read access with the specified block size
+    /// Opens the specified archive file for read access with the specified block size.
     /// </summary>
-    /// <param name="filename"></param>
-    /// <param name="blockSize">Block size in bytes, default 1 MiB</param>
-    /// <exception cref="ApplicationException"></exception>
+    /// <param name="filename">The path to the archive file.</param>
+    /// <param name="blockSize">Block size in bytes for reading, default is 1 MiB (1048576 bytes).</param>
+    /// <exception cref="ApplicationException">Thrown when the archive cannot be opened.</exception>
     public LibArchiveReader(string filename,uint blockSize = 1<<20) : base(true)
     {
         using var uName = new SafeStringBuffer(filename);
@@ -68,8 +72,12 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     }
 
     /// <summary>
-    /// 
+    /// Opens a multi-volume archive for read access with the specified block size.
+    /// All volume files must be in the same directory.
     /// </summary>
+    /// <param name="filenames">The paths to all volume files of the archive.</param>
+    /// <param name="blockSize">Block size in bytes for reading, default is 1 MiB (1048576 bytes).</param>
+    /// <exception cref="ApplicationException">Thrown when the archive cannot be opened.</exception>
     public LibArchiveReader(string[] filenames,uint blockSize=1<<20) : base(true)
     {
         using var names = new DisposableStringArray(filenames);
@@ -85,11 +93,19 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         throw new ApplicationException(PtrToStringUTF8(archive_error_string(handle)) ?? "Unknown error");
     }
 
+    /// <summary>
+    /// Releases the archive handle.
+    /// </summary>
+    /// <returns>true if the handle is released successfully; otherwise, false.</returns>
     protected override bool ReleaseHandle()
     {
         return archive_read_free(handle) == 0;
     }
 
+    /// <summary>
+    /// Enumerates all entries in the archive.
+    /// </summary>
+    /// <returns>An enumerable collection of archive entries.</returns>
     public IEnumerable<Entry> Entries()
     {
         int r;
@@ -106,18 +122,47 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
             Throw();
     }
 
+    /// <summary>
+    /// Represents an entry (file or directory) within an archive.
+    /// </summary>
     public class Entry
     {
+        /// <summary>
+        /// The handle to the native archive entry.
+        /// </summary>
         protected readonly IntPtr entryHandle;
+        /// <summary>
+        /// The handle to the native archive.
+        /// </summary>
         protected readonly IntPtr archiveHandle;
 
+        /// <summary>
+        /// Gets the name of the entry.
+        /// </summary>
         public string Name { get; }
+        /// <summary>
+        /// Gets or sets the type of the entry.
+        /// </summary>
         public EntryType Type;
+        /// <summary>
+        /// Gets a stream to read the content of the entry.
+        /// </summary>
         public FileStream Stream => new(archiveHandle);
 
+        /// <summary>
+        /// Gets a value indicating whether this entry is a directory.
+        /// </summary>
         public bool IsDirectory => Type == EntryType.Directory;
+        /// <summary>
+        /// Gets a value indicating whether this entry is a regular file.
+        /// </summary>
         public bool IsRegularFile => Type == EntryType.RegularFile;
 
+        /// <summary>
+        /// Initializes a new instance of <see cref="Entry"/> with native handles.
+        /// </summary>
+        /// <param name="entryHandle">The handle to the native archive entry.</param>
+        /// <param name="archiveHandle">The handle to the native archive.</param>
         protected Entry(IntPtr entryHandle, IntPtr archiveHandle)
         {
             this.entryHandle = entryHandle;
@@ -139,12 +184,24 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         }
     }
 
+    /// <summary>
+    /// Specifies the type of an archive entry.
+    /// </summary>
     public enum EntryType
     {
+        /// <summary>
+        /// Represents a directory entry.
+        /// </summary>
         Directory = 0x4000,  // AE_IFDIR
+        /// <summary>
+        /// Represents a regular file entry.
+        /// </summary>
         RegularFile = 0x8000 // AE_IFREG
     }
 
+    /// <summary>
+    /// Provides a read-only stream for reading archive entry data.
+    /// </summary>
     public class FileStream : Stream
     {
         private readonly IntPtr archiveHandle;
@@ -153,11 +210,21 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         {
             this.archiveHandle = archiveHandle;
         }
-        
+
+        /// <summary>
+        /// Flushes any buffered data. This is a no-op for read-only streams.
+        /// </summary>
         public override void Flush()
         {
         }
 
+        /// <summary>
+        /// Reads a sequence of bytes from the current stream and advances the position within the stream by the number of bytes read.
+        /// </summary>
+        /// <param name="buffer">An array of bytes to read data into.</param>
+        /// <param name="offset">The zero-based byte offset in buffer at which to begin storing data.</param>
+        /// <param name="count">The maximum number of bytes to read.</param>
+        /// <returns>The total number of bytes read into the buffer.</returns>
         public override int Read(byte[] buffer, int offset, int count)
         {
 #if NETSTANDARD2_0
@@ -175,25 +242,61 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 #endif
         }
 
+        /// <summary>
+        /// Sets the position within the current stream. Not supported for archive streams.
+        /// </summary>
+        /// <param name="offset">A byte offset relative to the origin parameter.</param>
+        /// <param name="origin">A value of type SeekOrigin indicating the reference point.</param>
+        /// <returns>The new position within the current stream.</returns>
+        /// <exception cref="NotSupportedException">Seeking is not supported.</exception>
         public override long Seek(long offset, SeekOrigin origin)
         {
             throw new NotSupportedException();
         }
 
+        /// <summary>
+        /// Sets the length of the current stream. Not supported for archive streams.
+        /// </summary>
+        /// <param name="value">The desired length of the current stream in bytes.</param>
+        /// <exception cref="NotSupportedException">Setting length is not supported.</exception>
         public override void SetLength(long value)
         {
             throw new NotSupportedException();
         }
 
+        /// <summary>
+        /// Writes a sequence of bytes to the current stream. Not supported for read-only archive streams.
+        /// </summary>
+        /// <param name="buffer">An array of bytes to write.</param>
+        /// <param name="offset">The zero-based byte offset in buffer at which to begin copying bytes.</param>
+        /// <param name="count">The number of bytes to write.</param>
+        /// <exception cref="NotSupportedException">Writing is not supported.</exception>
         public override void Write(byte[] buffer, int offset, int count)
         {
             throw new NotSupportedException();
         }
 
+        /// <summary>
+        /// Gets a value indicating whether the current stream supports reading. Always returns true.
+        /// </summary>
         public override bool CanRead => true;
+        /// <summary>
+        /// Gets a value indicating whether the current stream supports seeking. Always returns false.
+        /// </summary>
         public override bool CanSeek => false;
+        /// <summary>
+        /// Gets a value indicating whether the current stream supports writing. Always returns false.
+        /// </summary>
         public override bool CanWrite => false;
+        /// <summary>
+        /// Gets the length in bytes of the stream. Not supported for archive streams.
+        /// </summary>
+        /// <exception cref="NotSupportedException">Length is not supported.</exception>
         public override long Length => throw new NotSupportedException();
+        /// <summary>
+        /// Gets or sets the position within the current stream. Not supported for archive streams.
+        /// </summary>
+        /// <exception cref="NotSupportedException">Position is not supported.</exception>
         public override long Position
         {
             get => throw new NotSupportedException();

@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
-        <TargetFrameworks>net$(NETCoreAppMaximumVersion);net462</TargetFrameworks>
+        <TargetFrameworks>net$(NETCoreAppMaximumVersion)</TargetFrameworks>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <IsPackable>false</IsPackable>

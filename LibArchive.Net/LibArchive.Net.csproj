@@ -1,10 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.0;net6.0;net8.0</TargetFrameworks>
+    <TargetFrameworks>netstandard2.0;net6.0;net8.0;net9.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
-    <!-- Allow unsafe code for UTF-8 string handling in .NET Standard 2.0 -->
-    <AllowUnsafeBlocks Condition="'$(TargetFramework)' == 'netstandard2.0'">true</AllowUnsafeBlocks>
+    <!-- Allow unsafe code for UTF-8 string handling and LibraryImportAttribute -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RuntimeIdentifiers>win-x86;win-x64;win-arm64;linux-x64;linux-musl-x64;osx-x64;osx-arm64</RuntimeIdentifiers>
 
     <!-- AOT and Trimming Support (for .NET 6+) -->
