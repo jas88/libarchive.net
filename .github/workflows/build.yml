@@ -101,9 +101,16 @@ jobs:
             echo "=== Building Windows $arch ==="
             mkdir -p build-win-$arch
             cd build-win-$arch
+
+            # Use architecture-specific config cache
+            export CONFIGCACHE="$(pwd)/configcache-$arch"
+            export PREFIX="$(pwd)/local-$arch"
+
             ARCH=$arch ../native/build-windows.sh
             mv archive-*.dll ../
             cd ..
+
+            # Clean up to avoid conflicts with next architecture
             rm -rf build-win-$arch
             echo "✓ Windows $arch build complete"
           done
