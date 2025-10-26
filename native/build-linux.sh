@@ -39,14 +39,8 @@ EOC
 echo "Building musl cross-compiler (this may take a while)..."
 make -sj$NCPU install OUTPUT=$PREFIX 2>&1 >musl.log || cat musl.log
 
-# Use ccache if available
-if command -v ccache >/dev/null 2>&1; then
-    export CC="ccache x86_64-linux-musl-gcc"
-    export CXX="ccache x86_64-linux-musl-g++"
-else
-    export CC=x86_64-linux-musl-gcc
-    export CXX=x86_64-linux-musl-g++
-fi
+export CC=x86_64-linux-musl-gcc
+export CXX=x86_64-linux-musl-g++
 cd ..
 
 # Build compression libraries

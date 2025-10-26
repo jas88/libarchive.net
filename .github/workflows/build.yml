@@ -24,10 +24,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: configcache
-          key: ${{ runner.os }}-configcache
+          key: macos-configcache-ccache-v1
       - name: Build
         run: |
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          export CCACHE_COMPILERCHECK=content
           ./native/build-macos.sh
       - name: Archive MacOS library
         uses: actions/upload-artifact@v4
@@ -60,14 +61,27 @@ jobs:
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: windows-${{ matrix.arch }}
+      - name: Setup ccache for MinGW
+        run: |
+          mkdir -p $HOME/.ccache-bin
+          for tool in gcc g++; do
+            if [ "${{ matrix.arch }}" = "arm64" ]; then
+              ln -sf $(which ccache) $HOME/.ccache-bin/aarch64-w64-mingw32-$tool
+            elif [ "${{ matrix.arch }}" = "x64" ]; then
+              ln -sf $(which ccache) $HOME/.ccache-bin/x86_64-w64-mingw32-$tool
+            else
+              ln -sf $(which ccache) $HOME/.ccache-bin/i686-w64-mingw32-$tool
+            fi
+          done
+          echo "$HOME/.ccache-bin" >> $GITHUB_PATH
       - name: Cache autoconf
         uses: actions/cache@v4
         with:
           path: configcache
-          key: ${{ runner.os }}-configcache
+          key: windows-configcache-ccache-${{ matrix.arch }}-v1
       - name: Build Windows DLL
         run: |
-          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          export CCACHE_COMPILERCHECK=content
           export ARCH=${{ matrix.arch }}
           ./native/build-windows.sh
       - name: Archive Windows DLL
@@ -127,10 +141,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: configcache
-          key: ${{ runner.os }}-configcache
+          key: linux-configcache-ccache-v1
       - name: Build native library
         run: |
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          export CCACHE_COMPILERCHECK=content
           ./native/build-linux.sh
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
