@@ -95,12 +95,20 @@ jobs:
       - name: Build Windows DLLs (x86, x64, arm64)
         run: |
           export CCACHE_COMPILERCHECK=content
-          echo "Building Windows x86..."
-          ARCH=x86 ./native/build-windows.sh
-          echo "Building Windows x64..."
-          ARCH=x64 ./native/build-windows.sh
-          echo "Building Windows ARM64..."
-          ARCH=arm64 ./native/build-windows.sh
+
+          # Build each architecture in separate directory to avoid conflicts
+          for arch in x86 x64 arm64; do
+            echo "=== Building Windows $arch ==="
+            mkdir -p build-win-$arch
+            cd build-win-$arch
+            ARCH=$arch ../native/build-windows.sh
+            mv archive-*.dll ../
+            cd ..
+            rm -rf build-win-$arch
+            echo "✓ Windows $arch build complete"
+          done
+
+          ls -lh archive-*.dll
       - name: Build Linux library
         run: |
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
