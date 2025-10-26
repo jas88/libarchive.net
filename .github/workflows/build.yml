@@ -171,18 +171,23 @@ jobs:
 
           touch libarchive.dylib
 
-          # Debug: Show what files exist before building
-          echo "=== Native libraries in LibArchive.Net/runtimes/ ==="
-          find LibArchive.Net/runtimes -type f 2>/dev/null || echo "No runtimes folder"
+          # Build and pack the library first
+          dotnet pack LibArchive.Net/LibArchive.Net.csproj -o . -p:PackageVersion=${{ steps.version.outputs.VERSION }} --configuration Release --nologo
 
-          dotnet build --configuration Release
+          # Extract package to verify contents
+          echo "=== Package contents ==="
+          unzip -l LibArchive.Net.${{ steps.version.outputs.VERSION }}.nupkg | grep -E "runtimes/|\.targets"
 
-          # Debug: Show what files exist in test output after building
+          # Restore and test using the local NuGet package
+          echo "=== Testing with local NuGet package ==="
+          dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --source . --source https://api.nuget.org/v3/index.json /p:UseLocalPackage=true
+          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --no-restore /p:UseLocalPackage=true
+
+          # Debug: Show test output directory
           echo "=== Test output directory ==="
-          ls -laR Test.LibArchive.Net/bin/Release/net9.0/ | head -50
+          ls -laR Test.LibArchive.Net/bin/Release/net9.0/runtimes/ 2>/dev/null || echo "No runtimes folder in test output!"
 
-          dotnet test --nologo
-          dotnet pack LibArchive.Net/LibArchive.Net.csproj -o . -p:PackageVersion=${{ steps.version.outputs.VERSION }} --nologo
+          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --no-build --nologo /p:UseLocalPackage=true
           ls -lh *.nupkg
           du -sh *
           rm -rf local {bzip2,libarchive,libxml2,lz4,lzo,musl-cross-make,xz,zlib,zstd}-* musl-cross-make-master

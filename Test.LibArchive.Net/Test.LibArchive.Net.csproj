@@ -14,15 +14,10 @@
         <PackageReference Include="coverlet.collector" Version="6.0.4" />
     </ItemGroup>
     <ItemGroup>
-      <ProjectReference Include="..\LibArchive.Net\LibArchive.Net.csproj" />
-    </ItemGroup>
-
-    <!-- Explicitly copy native libraries from LibArchive.Net project -->
-    <ItemGroup>
-      <None Include="..\LibArchive.Net\runtimes\**\*.*" Condition="Exists('..\LibArchive.Net\runtimes')">
-        <Link>runtimes\%(RecursiveDir)%(Filename)%(Extension)</Link>
-        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      </None>
+      <!-- Reference the NuGet package instead of project for realistic testing -->
+      <PackageReference Include="LibArchive.Net" Version="*" Condition="'$(UseLocalPackage)' == 'true'" />
+      <!-- Fall back to project reference for local development -->
+      <ProjectReference Include="..\LibArchive.Net\LibArchive.Net.csproj" Condition="'$(UseLocalPackage)' != 'true'" />
     </ItemGroup>
 
     <ItemGroup>
