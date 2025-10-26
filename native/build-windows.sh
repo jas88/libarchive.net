@@ -138,10 +138,10 @@ ${CC} -shared -o ${OUTPUT_NAME} \
     $PREFIX/lib/libxml2.a \
     $PREFIX/lib/libz.a \
     $PREFIX/lib/liblzma.a \
-    $PREFIX/lib/libbz2.a \
     $PREFIX/lib/liblzo2.a \
     $PREFIX/lib/libzstd.a \
     $PREFIX/lib/liblz4.a \
+    $PREFIX/lib/libbz2.a \
     -Wl,--end-group \
     -static -static-libgcc -static-libstdc++ \
     -lws2_32 -lbcrypt -lkernel32
