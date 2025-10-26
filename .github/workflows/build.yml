@@ -178,7 +178,7 @@ jobs:
           echo "=== Package contents ==="
           PACKAGE_FILE=$(ls LibArchive.Net.*.nupkg)
           echo "Package file: $PACKAGE_FILE"
-          unzip -l "$PACKAGE_FILE" | grep -E "runtimes/|\.targets"
+          unzip -l "$PACKAGE_FILE" | grep -E "runtimes/|\.targets|lib/"
 
           # Restore and test using the local NuGet package
           echo "=== Testing with local NuGet package ==="
