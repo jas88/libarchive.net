@@ -127,9 +127,9 @@ cd ..
 echo "Creating Windows DLL..."
 ${CC} -shared -o ${OUTPUT_NAME} \
     -Wl,--whole-archive $PREFIX/lib/libarchive.a -Wl,--no-whole-archive \
+    $PREFIX/lib/libxml2.a \
     $PREFIX/lib/libbz2.a \
     $PREFIX/lib/libz.a \
-    $PREFIX/lib/libxml2.a \
     $PREFIX/lib/liblzma.a \
     $PREFIX/lib/liblzo2.a \
     $PREFIX/lib/libzstd.a \
