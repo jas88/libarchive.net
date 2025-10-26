@@ -183,9 +183,15 @@ jobs:
           # Clear old cached versions to force using local package
           rm -rf ~/.nuget/packages/libarchive.net/
 
-          # Restore and test using ONLY the local NuGet package
+          # Restore and test using the local NuGet package
           echo "=== Testing with local NuGet package version $PACKAGE_VERSION ==="
-          dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --source . --no-http-cache /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
+          # Use local source first, then nuget.org for other dependencies
+          dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --source . --source https://api.nuget.org/v3/index.json /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
+
+          # Verify the correct version was restored
+          echo "=== Restored LibArchive.Net version ==="
+          ls -la ~/.nuget/packages/libarchive.net/
+
           dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --no-restore /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
           # Debug: Show test output directory
