@@ -11,7 +11,7 @@ using System.Text;
 [assembly: DefaultDllImportSearchPaths(DllImportSearchPath.AssemblyDirectory)]
 namespace LibArchive.Net;
 
-public class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
+public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 {
     private enum ARCHIVE_RESULT
     {
