@@ -225,8 +225,7 @@ while IFS='|' read -r name old new; do
             url_pattern='https://www.oberhumer.com/opensource/lzo/download/lzo-%s.tar.gz'
             ;;
         bzip2)
-            echo "Note: bzip2 uses 'latest' tarball - manual update required"
-            continue
+            url_pattern='https://www.sourceware.org/pub/bzip2/bzip2-%s.tar.gz'
             ;;
         musl|gcc|binutils)
             # Update build-config.sh for toolchain versions
