@@ -1,12 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <TargetFrameworks>net$(NETCoreAppMaximumVersion);net462</TargetFrameworks>
-        <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <IsPackable>false</IsPackable>
         <GenerateDocumentationFile>false</GenerateDocumentationFile>
-        <!-- Use C# 8 for net462 to avoid record types -->
+        <!-- Use C# 8 for net462 to avoid modern language features -->
         <LangVersion Condition="'$(TargetFramework)' == 'net462'">8.0</LangVersion>
+        <!-- Disable implicit usings for net462 (generates global using which is C# 10+) -->
+        <ImplicitUsings Condition="'$(TargetFramework)' == 'net462'">disable</ImplicitUsings>
+        <ImplicitUsings Condition="'$(TargetFramework)' != 'net462'">enable</ImplicitUsings>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.0" />

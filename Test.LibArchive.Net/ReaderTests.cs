@@ -1,9 +1,15 @@
+#if NET462
+using System;
+using System.Collections.Generic;
+using System.Linq;
+#endif
 using System.Security.Cryptography;
 using LibArchive.Net;
 using NUnit.Framework;
 using static LibArchive.Net.LibArchiveReader;
 
-namespace Test.LibArchive.Net;
+namespace Test.LibArchive.Net
+{
 
 public class SevenZipTests
 {
@@ -98,4 +104,6 @@ public class SevenZipTests
         BitConverter.ToString(hash);
 
     #endregion
+}
+
 }
