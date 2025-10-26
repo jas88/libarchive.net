@@ -244,11 +244,13 @@ jobs:
         run: |
           PACKAGE_VERSION=$(ls LibArchive.Net.*.nupkg | sed 's/LibArchive.Net.\(.*\).nupkg/\1/')
 
-          # Build for net462
-          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --framework net462 --no-restore /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
+          # Build for net462 with verbose output to see if .targets runs
+          echo "=== Building for net462 ==="
+          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --framework net462 --no-restore /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION -v:n 2>&1 | grep -i "libarchive\|runtimes\|copying"
 
           echo "=== Checking for runtimes folder in net462 output ==="
-          ls -laR Test.LibArchive.Net/bin/Release/net462/runtimes/ || echo "No runtimes folder - .targets may not have run"
+          find Test.LibArchive.Net/bin/Release/net462/ -name "*.so" -o -name "*.dll" -o -name "*.dylib" | head -20
+          ls -laR Test.LibArchive.Net/bin/Release/net462/runtimes/ 2>/dev/null || echo "ERROR: No runtimes folder - .targets did not run!"
 
       - name: Run tests with Mono (.NET Standard 2.0 code paths)
         run: |
