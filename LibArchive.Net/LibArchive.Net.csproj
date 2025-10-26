@@ -47,7 +47,7 @@
     <!-- Include the .targets file in the NuGet package so it's automatically imported -->
     <None Include="LibArchive.Net.targets">
       <Pack>true</Pack>
-      <PackagePath>build\$(PackageId).targets;buildTransitive\$(PackageId).targets</PackagePath>
+      <PackagePath>build\$(PackageId).targets;buildTransitive\$(PackageId).targets;build\net462\$(PackageId).targets;buildTransitive\net462\$(PackageId).targets</PackagePath>
     </None>
   </ItemGroup>
 
