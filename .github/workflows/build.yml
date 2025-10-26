@@ -247,23 +247,24 @@ jobs:
           rm -rf ~/.nuget/packages/libarchive.net/
           dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --source . --source https://api.nuget.org/v3/index.json /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
-      - name: Build and run tests with Mono
+      - name: Build net462 target only (isolated from net9.0)
         run: |
           PACKAGE_VERSION=$(ls LibArchive.Net.*.nupkg | sed 's/LibArchive.Net.\(.*\).nupkg/\1/')
 
-          # Build for net462 with verbose output to see if .targets runs
-          echo "=== Building for net462 ==="
-          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --framework net462 --no-restore /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION -v:n 2>&1 | grep -i "libarchive\|runtimes\|copying"
+          # Build ONLY net462, not all targets simultaneously
+          echo "=== Building net462 target in isolation ==="
+          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --framework net462 --no-restore /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION -v:n 2>&1 | grep -E "LibArchive|Copying|OutputPath"
 
-          echo "=== Checking for runtimes folder in net462 output ==="
-          find Test.LibArchive.Net/bin/Release/net462/ -name "*.so" -o -name "*.dll" -o -name "*.dylib" | head -20
-          ls -laR Test.LibArchive.Net/bin/Release/net462/runtimes/ 2>/dev/null || echo "ERROR: No runtimes folder - .targets did not run!"
+          echo "=== Checking for native libraries in net462 output ==="
+          ls -laR Test.LibArchive.Net/bin/Release/net462/runtimes/ || echo "ERROR: No runtimes folder!"
 
       - name: Run tests with Mono (.NET Standard 2.0 code paths)
         run: |
+          PACKAGE_VERSION=$(ls LibArchive.Net.*.nupkg | sed 's/LibArchive.Net.\(.*\).nupkg/\1/')
+
           # Run tests targeting net462 which uses the netstandard2.0 library
           # This validates the conditional compilation blocks for netstandard2.0
-          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --framework net462 --no-build --verbosity normal
+          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --framework net462 --no-build --verbosity normal /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
       - name: Display test results
         if: always()
