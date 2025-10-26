@@ -4,34 +4,35 @@
     when they reference LibArchive.Net (either as NuGet package or project reference)
   -->
 
-  <ItemGroup>
+  <PropertyGroup>
+    <!-- Determine the correct runtimes folder location based on package layout -->
+    <_LibArchiveRuntimesPath Condition="Exists('$(MSBuildThisFileDirectory)runtimes')">$(MSBuildThisFileDirectory)runtimes</_LibArchiveRuntimesPath>
+    <_LibArchiveRuntimesPath Condition="'$(_LibArchiveRuntimesPath)' == '' AND Exists('$(MSBuildThisFileDirectory)..\runtimes')">$(MSBuildThisFileDirectory)..\runtimes</_LibArchiveRuntimesPath>
+    <_LibArchiveRuntimesPath Condition="'$(_LibArchiveRuntimesPath)' == '' AND Exists('$(MSBuildThisFileDirectory)..\..\runtimes')">$(MSBuildThisFileDirectory)..\..\runtimes</_LibArchiveRuntimesPath>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(_LibArchiveRuntimesPath)' != ''">
     <!-- Include all native libraries from the runtimes folder -->
-    <_LibArchiveNativeLibs Include="$(MSBuildThisFileDirectory)runtimes\**\*.*" Condition="Exists('$(MSBuildThisFileDirectory)runtimes')" />
-    <_LibArchiveNativeLibs Include="$(MSBuildThisFileDirectory)..\runtimes\**\*.*" Condition="!Exists('$(MSBuildThisFileDirectory)runtimes') AND Exists('$(MSBuildThisFileDirectory)..\runtimes')" />
+    <_LibArchiveNativeLibs Include="$(_LibArchiveRuntimesPath)\**\*.*" />
   </ItemGroup>
 
   <!-- Copy native libraries to consuming project's output directory -->
   <Target Name="_CopyLibArchiveNativeLibraries"
-          AfterTargets="ResolveProjectReferences;ResolvePackageAssets"
-          Condition="'@(_LibArchiveNativeLibs)' != ''"
-          DependsOnTargets="_PrepareLibArchiveNativeLibs">
-  </Target>
-
-  <Target Name="_PrepareLibArchiveNativeLibs"
+          AfterTargets="ResolveReferences"
           Condition="'@(_LibArchiveNativeLibs)' != ''">
-    <Message Text="LibArchive.Net: Copying @(_LibArchiveNativeLibs->Count()) native libraries to $(OutputPath)" Importance="High" />
+    <Message Text="LibArchive.Net: Copying @(_LibArchiveNativeLibs->Count()) native libraries from $(_LibArchiveRuntimesPath) to $(OutputPath)runtimes/" Importance="High" />
     <Copy SourceFiles="@(_LibArchiveNativeLibs)"
-          DestinationFiles="@(_LibArchiveNativeLibs->'$(OutputPath)%(RecursiveDir)%(Filename)%(Extension)')"
+          DestinationFiles="@(_LibArchiveNativeLibs->'$(OutputPath)runtimes\%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
   </Target>
 
   <!-- For publish scenarios -->
   <Target Name="_CopyLibArchiveNativeLibrariesOnPublish"
-          BeforeTargets="Publish"
+          AfterTargets="ComputeFilesToPublish"
           Condition="'@(_LibArchiveNativeLibs)' != ''">
+    <Message Text="LibArchive.Net: Copying @(_LibArchiveNativeLibs->Count()) native libraries to $(PublishDir)runtimes/" Importance="High" />
     <Copy SourceFiles="@(_LibArchiveNativeLibs)"
-          DestinationFiles="@(_LibArchiveNativeLibs->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')"
+          DestinationFiles="@(_LibArchiveNativeLibs->'$(PublishDir)runtimes\%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
-    <Message Text="Copied LibArchive.Net native libraries to $(PublishDir)" Importance="Low" />
   </Target>
 </Project>
