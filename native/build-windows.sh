@@ -62,7 +62,7 @@ download_all_libraries
 
 # Build compression libraries
 echo "Building lz4 ${LZ4_VERSION}..."
-make -j$NCPU -C lz4-${LZ4_VERSION}/lib install-static PREFIX=$PREFIX CC=$CC AR=$AR BUILD_SHARED=no
+make -j$NCPU -C lz4-${LZ4_VERSION}/lib install PREFIX=$PREFIX CC=$CC AR=$AR BUILD_STATIC=yes BUILD_SHARED=no
 
 echo "Building bzip2 ${BZIP2_VERSION}..."
 make -j$NCPU -C bzip2-${BZIP2_VERSION} install PREFIX=$PREFIX CC=$CC AR=$AR CFLAGS="$CFLAGS -D_FILE_OFFSET_BITS=64"
