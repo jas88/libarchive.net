@@ -62,7 +62,12 @@ download_all_libraries
 
 # Build compression libraries
 echo "Building lz4 ${LZ4_VERSION}..."
-make -j$NCPU -C lz4-${LZ4_VERSION}/lib install PREFIX=$PREFIX CC=$CC AR=$AR BUILD_STATIC=yes BUILD_SHARED=no
+cd lz4-${LZ4_VERSION}/lib
+make -j$NCPU liblz4.a CC=$CC AR=$AR
+mkdir -p $PREFIX/lib $PREFIX/include
+cp liblz4.a $PREFIX/lib/
+cp lz4.h lz4hc.h lz4frame.h $PREFIX/include/
+cd ../..
 
 echo "Building bzip2 ${BZIP2_VERSION}..."
 make -j$NCPU -C bzip2-${BZIP2_VERSION} install PREFIX=$PREFIX CC=$CC AR=$AR CFLAGS="$CFLAGS -D_FILE_OFFSET_BITS=64"
@@ -86,7 +91,12 @@ make -j$NCPU install
 cd ..
 
 echo "Building zstd ${ZSTD_VERSION}..."
-make -j$NCPU -C zstd-${ZSTD_VERSION}/lib install-static PREFIX=$PREFIX CC=$CC AR=$AR BUILD_SHARED=no
+cd zstd-${ZSTD_VERSION}/lib
+make -j$NCPU libzstd.a CC=$CC AR=$AR
+mkdir -p $PREFIX/lib $PREFIX/include
+cp libzstd.a $PREFIX/lib/
+cp zstd.h zstd_errors.h zdict.h $PREFIX/include/
+cd ../..
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
 cd libxml2-${LIBXML2_VERSION}
