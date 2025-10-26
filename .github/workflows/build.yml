@@ -48,7 +48,14 @@ jobs:
       - name: Install MinGW
         run: |
           sudo apt-get update
-          sudo apt-get install -y mingw-w64
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            # ARM64 requires LLVM-MinGW
+            curl -sL https://github.com/mstorsjo/llvm-mingw/releases/download/20240619/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64.tar.xz | tar xJ
+            echo "$(pwd)/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64/bin" >> $GITHUB_PATH
+          else
+            # x86 and x64 use standard mingw-w64
+            sudo apt-get install -y mingw-w64
+          fi
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
