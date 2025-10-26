@@ -183,7 +183,16 @@ jobs:
           # Restore and test using the local NuGet package
           echo "=== Testing with local NuGet package ==="
           dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --source . --source https://api.nuget.org/v3/index.json /p:UseLocalPackage=true
-          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --no-restore /p:UseLocalPackage=true
+
+          # Debug: Show what was restored
+          echo "=== NuGet packages restored ==="
+          ls -la ~/.nuget/packages/libarchive.net/ 2>/dev/null || echo "Package not in cache"
+
+          # Debug: Check project references
+          echo "=== Test project references ==="
+          dotnet msbuild Test.LibArchive.Net/Test.LibArchive.Net.csproj /t:_GetAllReferences /p:UseLocalPackage=true 2>&1 | grep -i libarchive || echo "No LibArchive.Net reference found"
+
+          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --no-restore /p:UseLocalPackage=true -v:n 2>&1 | grep -E "error|LibArchive" | head -20
 
           # Debug: Show test output directory
           echo "=== Test output directory ==="
