@@ -51,7 +51,6 @@ cd ..
 
 echo "Building zstd ${ZSTD_VERSION}..."
 make -j$NCPU -sC zstd-${ZSTD_VERSION} install
-cd ..
 
 echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
