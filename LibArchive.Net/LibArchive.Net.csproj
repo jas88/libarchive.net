@@ -8,9 +8,9 @@
     <RuntimeIdentifiers>win-x86;win-x64;win-arm64;linux-x64;linux-musl-x64;osx-x64;osx-arm64</RuntimeIdentifiers>
 
     <!-- AOT and Trimming Support (for .NET 6+) -->
-    <IsAotCompatible Condition="!$([MSBuild]::GetTargetFrameworkIdentifier('$(TargetFramework)')) == '.NETStandard'">true</IsAotCompatible>
-    <IsTrimmable Condition="!$([MSBuild]::GetTargetFrameworkIdentifier('$(TargetFramework)')) == '.NETStandard'">true</IsTrimmable>
-    <EnableTrimAnalyzer Condition="!$([MSBuild]::GetTargetFrameworkIdentifier('$(TargetFramework)')) == '.NETStandard'">true</EnableTrimAnalyzer>
+    <IsAotCompatible Condition="$([MSBuild]::GetTargetFrameworkIdentifier('$(TargetFramework)')) != '.NETStandard'">true</IsAotCompatible>
+    <IsTrimmable Condition="$([MSBuild]::GetTargetFrameworkIdentifier('$(TargetFramework)')) != '.NETStandard'">true</IsTrimmable>
+    <EnableTrimAnalyzer Condition="$([MSBuild]::GetTargetFrameworkIdentifier('$(TargetFramework)')) != '.NETStandard'">true</EnableTrimAnalyzer>
     <EnableAotAnalyzer Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net8.0'))">true</EnableAotAnalyzer>
 
     <!-- Package Metadata -->
