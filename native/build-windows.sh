@@ -4,11 +4,14 @@
 
 set -e
 
+# Detect platform and set up cross-compilation
+ARCH="${ARCH:-x86_64}"
+
 # Load shared configuration
 . "$(dirname "$0")/build-config.sh"
 
-# Detect platform and set up cross-compilation
-ARCH="${ARCH:-x86_64}"
+# Make cache architecture-specific to avoid conflicts when building in parallel
+export CONFIGCACHE="${CONFIGCACHE}-${ARCH}"
 case "$ARCH" in
     x86_64|x64)
         MINGW_PREFIX="x86_64-w64-mingw32"
