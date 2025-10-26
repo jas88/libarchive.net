@@ -40,7 +40,7 @@
     <Content Include="runtimes\**\*.*">
       <Pack>true</Pack>
       <PackagePath>runtimes\%(RecursiveDir)%(Filename)%(Extension)</PackagePath>
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Visible>false</Visible>
     </Content>
 
@@ -51,6 +51,11 @@
     </None>
   </ItemGroup>
 
-  <!-- Import the targets file for project references (not just NuGet) -->
-  <Import Project="LibArchive.Net.targets" />
+  <!-- Expose native libraries as content that flows to consuming projects -->
+  <ItemGroup>
+    <ContentWithTargetPath Include="runtimes\**\*.*" Condition="Exists('runtimes')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
+    </ContentWithTargetPath>
+  </ItemGroup>
 </Project>
