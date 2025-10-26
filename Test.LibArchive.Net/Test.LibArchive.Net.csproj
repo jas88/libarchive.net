@@ -16,16 +16,6 @@
     <ItemGroup>
       <ProjectReference Include="..\LibArchive.Net\LibArchive.Net.csproj" />
     </ItemGroup>
-
-    <!-- Copy native libraries from the referenced project to test output -->
-    <Target Name="CopyNativeLibrariesFromReferencedProject" AfterTargets="Build">
-      <ItemGroup>
-        <RuntimeFiles Include="..\LibArchive.Net\runtimes\**\*.*" Condition="Exists('..\LibArchive.Net\runtimes')" />
-      </ItemGroup>
-      <Copy SourceFiles="@(RuntimeFiles)"
-            DestinationFiles="@(RuntimeFiles->'$(OutputPath)runtimes\%(RecursiveDir)%(Filename)%(Extension)')"
-            SkipUnchangedFiles="true" />
-    </Target>
     <ItemGroup>
         <None Update="7ztest.7z" CopyToOutputDirectory="PreserveNewest" />
         <None Update="rartest.part00001.rar" CopyToOutputDirectory="PreserveNewest" />

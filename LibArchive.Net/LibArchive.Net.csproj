@@ -36,43 +36,21 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
-    <NativeLibs Include="$(MSBuildThisFileDirectory)runtimes\**"/>
-    <Content Include="@(NativeLibs)">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    <!-- Include native libraries in NuGet package -->
+    <Content Include="runtimes\**\*.*">
       <Pack>true</Pack>
-      <PackageCopyToOutput>true</PackageCopyToOutput>
-      <Link>%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <PackagePath>runtimes\%(RecursiveDir)%(Filename)%(Extension)</PackagePath>
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
       <Visible>false</Visible>
     </Content>
+
+    <!-- Include the .targets file in the NuGet package so it's automatically imported -->
+    <None Include="LibArchive.Net.targets">
+      <Pack>true</Pack>
+      <PackagePath>build\$(PackageId).targets;buildTransitive\$(PackageId).targets</PackagePath>
+    </None>
   </ItemGroup>
 
-  <!-- Copy native libraries to consuming projects (like test projects) -->
-  <Target Name="CopyNativeLibrariesToOutputDirectory" AfterTargets="Build">
-    <ItemGroup>
-      <NativeLibrariesToCopy Include="$(MSBuildThisFileDirectory)runtimes\**\*.*"/>
-    </ItemGroup>
-    <Copy SourceFiles="@(NativeLibrariesToCopy)"
-          DestinationFolder="$(OutputPath)\%(RecursiveDir)"
-          SkipUnchangedFiles="true"
-          Condition="Exists('$(MSBuildThisFileDirectory)runtimes')" />
-  </Target>
-
-  <!-- For projects that reference this one, copy the native libraries -->
-  <Target Name="GetNativeLibraries" Returns="@(NativeLibraryFiles)">
-    <ItemGroup>
-      <NativeLibraryFiles Include="$(MSBuildThisFileDirectory)runtimes\**\*.*">
-        <TargetPath>%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
-      </NativeLibraryFiles>
-    </ItemGroup>
-  </Target>
-
-  <Target Name="CopyNativeLibrariesToReferencingProjects"
-          AfterTargets="ResolveProjectReferences"
-          DependsOnTargets="GetNativeLibraries">
-    <Copy SourceFiles="@(NativeLibraryFiles)"
-          DestinationFolder="$(OutputPath)\%(NativeLibraryFiles.RecursiveDir)"
-          SkipUnchangedFiles="true"
-          Condition="'$(MSBuildProjectName)' != 'LibArchive.Net' AND Exists('$(MSBuildThisFileDirectory)runtimes')" />
-  </Target>
+  <!-- Import the targets file for project references (not just NuGet) -->
+  <Import Project="LibArchive.Net.targets" />
 </Project>
