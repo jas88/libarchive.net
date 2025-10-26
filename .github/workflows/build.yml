@@ -256,7 +256,15 @@ jobs:
           dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --framework net462 --no-restore /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION -v:n 2>&1 | grep -E "LibArchive|Copying|OutputPath"
 
           echo "=== Checking for native libraries in net462 output ==="
-          ls -laR Test.LibArchive.Net/bin/Release/net462/runtimes/ || echo "ERROR: No runtimes folder!"
+          if [ -d "Test.LibArchive.Net/bin/Release/net462/runtimes" ]; then
+            echo "✓ runtimes folder exists"
+            find Test.LibArchive.Net/bin/Release/net462/runtimes -type f
+            ls -lh Test.LibArchive.Net/bin/Release/net462/runtimes/linux-x64/native/libarchive.so
+          else
+            echo "✗ runtimes folder does NOT exist!"
+            echo "Searching for any .so files:"
+            find Test.LibArchive.Net/bin/Release/net462 -name "*.so" 2>/dev/null || echo "No .so files found"
+          fi
 
       - name: Run tests with Mono (.NET Standard 2.0 code paths)
         run: |
