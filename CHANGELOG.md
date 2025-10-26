@@ -2,7 +2,7 @@ v0.2.0 - TBD
 
 - Add .NET Standard 2.0 support for broader compatibility
 - Add Windows DLL build for X86 and ARM64 support, feature parity with Mac and Linux
-- Streamlined native library deployment with automatic MSBuild targets integration
+- Add streamlined native library deployment with automatic MSBuild targets integration
 
 v0.1.6 - Apr 25 2024
 

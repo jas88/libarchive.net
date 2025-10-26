@@ -276,8 +276,17 @@ jobs:
 
       - name: Build test project for .NET Framework
         run: |
+          # For net462, copy native libraries to test output manually
+          # since the project reference doesn't trigger the .targets file
           dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj
           dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --framework net462 --no-restore
+
+          # Copy runtimes folder to test output for net462
+          mkdir -p Test.LibArchive.Net/bin/Release/net462/runtimes
+          cp -r LibArchive.Net/runtimes/* Test.LibArchive.Net/bin/Release/net462/runtimes/
+
+          echo "=== Runtimes copied to net462 output ==="
+          ls -la Test.LibArchive.Net/bin/Release/net462/runtimes/linux-x64/native/
 
       - name: Run tests with Mono (.NET Standard 2.0 code paths)
         run: |
