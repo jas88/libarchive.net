@@ -130,7 +130,9 @@ cd ..
 echo "Creating Windows DLL..."
 # Use --start-group/--end-group for LLVM lld which doesn't do multiple passes
 ${CC} -shared -o ${OUTPUT_NAME} \
-    -Wl,--whole-archive,$PREFIX/lib/libarchive.a,--no-whole-archive \
+    -Wl,--whole-archive \
+    $PREFIX/lib/libarchive.a \
+    -Wl,--no-whole-archive \
     -Wl,--start-group \
     $PREFIX/lib/libxml2.a \
     $PREFIX/lib/libbz2.a \
