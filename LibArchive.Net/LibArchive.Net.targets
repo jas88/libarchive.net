@@ -21,9 +21,14 @@
           AfterTargets="ResolveReferences"
           Condition="'@(_LibArchiveNativeLibs)' != ''">
     <Message Text="LibArchive.Net: Copying @(_LibArchiveNativeLibs->Count()) native libraries from $(_LibArchiveRuntimesPath) to $(OutputPath)runtimes/" Importance="High" />
+    <Message Text="LibArchive.Net: OutputPath = $(OutputPath)" Importance="High" />
     <Copy SourceFiles="@(_LibArchiveNativeLibs)"
           DestinationFiles="@(_LibArchiveNativeLibs->'$(OutputPath)runtimes\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
+          SkipUnchangedFiles="true">
+      <Output TaskParameter="DestinationFiles" ItemName="_CopiedFiles"/>
+    </Copy>
+    <Message Text="LibArchive.Net: Copied @(_CopiedFiles->Count()) files" Importance="High" />
+    <Message Text="LibArchive.Net: First file: @(_CopiedFiles->'%(Identity)', ' | ')" Importance="High" Condition="'@(_CopiedFiles->Count())' != '0'" />
   </Target>
 
   <!-- For publish scenarios -->
