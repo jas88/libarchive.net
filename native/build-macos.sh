@@ -11,6 +11,11 @@ echo "Installing required build tools..."
 brew install autoconf automake libtool 2>/dev/null || true
 
 # macOS-specific build settings
+# Use ccache if available
+if command -v ccache >/dev/null 2>&1; then
+    export CC="ccache clang"
+    export CXX="ccache clang++"
+fi
 export CPPFLAGS="-I$PREFIX/include"
 export LDFLAGS="-L$PREFIX/lib -liconv"
 export CFLAGS="-fPIC -O2 -D_FILE_OFFSET_BITS=64 -arch arm64 -arch x86_64"

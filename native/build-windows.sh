@@ -47,8 +47,14 @@ if ! command -v ${MINGW_PREFIX}-gcc >/dev/null 2>&1; then
 fi
 
 # Windows-specific build settings
-export CC="${MINGW_PREFIX}-gcc"
-export CXX="${MINGW_PREFIX}-g++"
+# Use ccache if available
+if command -v ccache >/dev/null 2>&1; then
+    export CC="ccache ${MINGW_PREFIX}-gcc"
+    export CXX="ccache ${MINGW_PREFIX}-g++"
+else
+    export CC="${MINGW_PREFIX}-gcc"
+    export CXX="${MINGW_PREFIX}-g++"
+fi
 export AR="${MINGW_PREFIX}-ar"
 export RANLIB="${MINGW_PREFIX}-ranlib"
 export RC="${MINGW_PREFIX}-windres"
