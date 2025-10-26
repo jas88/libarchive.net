@@ -254,9 +254,9 @@ jobs:
         with:
           name: dist
 
-      - name: Extract and setup libraries from package
+      - name: Extract package and setup test with NuGet
         run: |
-          # Extract the nupkg to get the native libraries and assemblies
+          # Extract the nupkg to verify contents
           PACKAGE_FILE=$(ls LibArchive.Net.*.nupkg)
           PACKAGE_VERSION=$(echo "$PACKAGE_FILE" | sed 's/LibArchive.Net.\(.*\).nupkg/\1/')
           echo "Testing package: $PACKAGE_FILE (version: $PACKAGE_VERSION)"
@@ -269,24 +269,19 @@ jobs:
             exit 1
           fi
 
-          # Setup runtimes folder for test project
-          mkdir -p LibArchive.Net/runtimes
-          cp -r extracted/runtimes/* LibArchive.Net/runtimes/
-          ls -laR LibArchive.Net/runtimes/
+          # Clear cache and restore using the local package (like the main test does)
+          rm -rf ~/.nuget/packages/libarchive.net/
+          dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --source . --source https://api.nuget.org/v3/index.json /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
-      - name: Build test project for .NET Framework
+      - name: Build and run tests with Mono
         run: |
-          # For net462, copy native libraries to test output manually
-          # since the project reference doesn't trigger the .targets file
-          dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj
-          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --framework net462 --no-restore
+          PACKAGE_VERSION=$(ls LibArchive.Net.*.nupkg | sed 's/LibArchive.Net.\(.*\).nupkg/\1/')
 
-          # Copy runtimes folder to test output for net462
-          mkdir -p Test.LibArchive.Net/bin/Release/net462/runtimes
-          cp -r LibArchive.Net/runtimes/* Test.LibArchive.Net/bin/Release/net462/runtimes/
+          # Build for net462
+          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --framework net462 --no-restore /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
-          echo "=== Runtimes copied to net462 output ==="
-          ls -la Test.LibArchive.Net/bin/Release/net462/runtimes/linux-x64/native/
+          echo "=== Checking for runtimes folder in net462 output ==="
+          ls -laR Test.LibArchive.Net/bin/Release/net462/runtimes/ || echo "No runtimes folder - .targets may not have run"
 
       - name: Run tests with Mono (.NET Standard 2.0 code paths)
         run: |
