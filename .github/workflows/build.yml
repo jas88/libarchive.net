@@ -37,63 +37,9 @@ jobs:
           path: libarchive.dylib
           if-no-files-found: error
           retention-days: 1
-  windows:
-    name: Build Windows DLLs (x86, x64, arm64)
-    runs-on: ubuntu-22.04
-    strategy:
-      matrix:
-        arch: [x86, x64, arm64]
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-      - name: Install MinGW
-        run: |
-          sudo apt-get update
-          if [ "${{ matrix.arch }}" = "arm64" ]; then
-            # ARM64 requires LLVM-MinGW
-            curl -sL https://github.com/mstorsjo/llvm-mingw/releases/download/20240619/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64.tar.xz | tar xJ
-            echo "$(pwd)/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64/bin" >> $GITHUB_PATH
-          else
-            # x86 and x64 use standard mingw-w64
-            sudo apt-get install -y mingw-w64
-          fi
-      - name: ccache
-        uses: hendrikmuhs/ccache-action@v1.2
-        with:
-          key: windows-${{ matrix.arch }}
-      - name: Setup ccache for MinGW
-        run: |
-          mkdir -p $HOME/.ccache-bin
-          for tool in gcc g++; do
-            if [ "${{ matrix.arch }}" = "arm64" ]; then
-              ln -sf $(which ccache) $HOME/.ccache-bin/aarch64-w64-mingw32-$tool
-            elif [ "${{ matrix.arch }}" = "x64" ]; then
-              ln -sf $(which ccache) $HOME/.ccache-bin/x86_64-w64-mingw32-$tool
-            else
-              ln -sf $(which ccache) $HOME/.ccache-bin/i686-w64-mingw32-$tool
-            fi
-          done
-          echo "$HOME/.ccache-bin" >> $GITHUB_PATH
-      - name: Cache autoconf
-        uses: actions/cache@v4
-        with:
-          path: configcache
-          key: windows-configcache-ccache-${{ matrix.arch }}-v1
-      - name: Build Windows DLL
-        run: |
-          export CCACHE_COMPILERCHECK=content
-          export ARCH=${{ matrix.arch }}
-          ./native/build-windows.sh
-      - name: Archive Windows DLL
-        uses: actions/upload-artifact@v4
-        with:
-          name: winlib-${{ matrix.arch }}
-          path: archive-*.dll
-          if-no-files-found: error
-          retention-days: 1
   linux:
-    needs: [macos, windows]
-    name: Build Linux x86-64 code and wrapper
+    needs: [macos]
+    name: Build Windows DLLs, Linux library, and test
     runs-on: ubuntu-22.04
     steps:
       - name: Ubuntu packages
@@ -119,30 +65,43 @@ jobs:
         uses: actions/download-artifact@v5
         with:
           name: maclib
-      - name: Retrieve Windows x86 DLL
-        uses: actions/download-artifact@v5
-        with:
-          name: winlib-x86
-      - name: Retrieve Windows x64 DLL
-        uses: actions/download-artifact@v5
-        with:
-          name: winlib-x64
-      - name: Retrieve Windows arm64 DLL
-        uses: actions/download-artifact@v5
-        with:
-          name: winlib-arm64
+      - name: Install MinGW for Windows cross-compilation
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64
+          # Install LLVM-MinGW for ARM64
+          curl -sL https://github.com/mstorsjo/llvm-mingw/releases/download/20240619/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64.tar.xz | tar xJ
+          echo "$(pwd)/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64/bin" >> $GITHUB_PATH
       - name: Setup .NET Core
         uses: actions/setup-dotnet@v5.0.0
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: ${{ github.job }}-${{ matrix.os }}
+          key: all-native-builds
+      - name: Setup ccache for MinGW
+        run: |
+          mkdir -p $HOME/.ccache-bin
+          for arch in i686 x86_64 aarch64; do
+            for tool in gcc g++; do
+              ln -sf $(which ccache) $HOME/.ccache-bin/${arch}-w64-mingw32-$tool
+            done
+          done
+          echo "$HOME/.ccache-bin" >> $GITHUB_PATH
       - name: Cache autoconf
         uses: actions/cache@v4
         with:
           path: configcache
-          key: linux-configcache-ccache-v1
-      - name: Build native library
+          key: all-native-configcache-v1
+      - name: Build Windows DLLs (x86, x64, arm64)
+        run: |
+          export CCACHE_COMPILERCHECK=content
+          echo "Building Windows x86..."
+          ARCH=x86 ./native/build-windows.sh
+          echo "Building Windows x64..."
+          ARCH=x64 ./native/build-windows.sh
+          echo "Building Windows ARM64..."
+          ARCH=arm64 ./native/build-windows.sh
+      - name: Build Linux library
         run: |
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
           export CCACHE_COMPILERCHECK=content
