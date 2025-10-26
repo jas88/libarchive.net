@@ -176,7 +176,9 @@ jobs:
 
           # Extract package to verify contents
           echo "=== Package contents ==="
-          unzip -l LibArchive.Net.${{ steps.version.outputs.VERSION }}.nupkg | grep -E "runtimes/|\.targets"
+          PACKAGE_FILE=$(ls LibArchive.Net.*.nupkg)
+          echo "Package file: $PACKAGE_FILE"
+          unzip -l "$PACKAGE_FILE" | grep -E "runtimes/|\.targets"
 
           # Restore and test using the local NuGet package
           echo "=== Testing with local NuGet package ==="
