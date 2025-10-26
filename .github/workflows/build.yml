@@ -170,7 +170,17 @@ jobs:
           mv archive-arm64.dll LibArchive.Net/runtimes/win-arm64/native/archive.dll
 
           touch libarchive.dylib
+
+          # Debug: Show what files exist before building
+          echo "=== Native libraries in LibArchive.Net/runtimes/ ==="
+          find LibArchive.Net/runtimes -type f 2>/dev/null || echo "No runtimes folder"
+
           dotnet build --configuration Release
+
+          # Debug: Show what files exist in test output after building
+          echo "=== Test output directory ==="
+          ls -laR Test.LibArchive.Net/bin/Release/net9.0/ | head -50
+
           dotnet test --nologo
           dotnet pack LibArchive.Net/LibArchive.Net.csproj -o . -p:PackageVersion=${{ steps.version.outputs.VERSION }} --nologo
           ls -lh *.nupkg
