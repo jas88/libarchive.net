@@ -128,23 +128,21 @@ make -j$NCPU install
 cd ..
 
 echo "Creating Windows DLL..."
-# LLVM lld has issues with --whole-archive inside --start-group
-# List libraries in dependency order and repeat to allow symbol resolution
+# Use --start-group for all dependency libraries to allow multi-pass symbol resolution
+# This is needed because libxml2 depends on libz and liblzma
 ${CC} -shared -o ${OUTPUT_NAME} \
     -Wl,--whole-archive \
     $PREFIX/lib/libarchive.a \
     -Wl,--no-whole-archive \
+    -Wl,--start-group \
     $PREFIX/lib/libxml2.a \
-    $PREFIX/lib/libbz2.a \
     $PREFIX/lib/libz.a \
     $PREFIX/lib/liblzma.a \
+    $PREFIX/lib/libbz2.a \
     $PREFIX/lib/liblzo2.a \
     $PREFIX/lib/libzstd.a \
     $PREFIX/lib/liblz4.a \
-    $PREFIX/lib/libxml2.a \
-    $PREFIX/lib/libbz2.a \
-    $PREFIX/lib/libz.a \
-    $PREFIX/lib/liblzma.a \
+    -Wl,--end-group \
     -static -static-libgcc -static-libstdc++ \
     -lws2_32 -lbcrypt -lkernel32
 
