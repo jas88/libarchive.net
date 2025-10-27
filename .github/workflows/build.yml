@@ -172,9 +172,25 @@ jobs:
           echo "=== Test output directory ==="
           ls -laR Test.LibArchive.Net/bin/Release/net9.0/runtimes/ 2>/dev/null || echo "No runtimes folder in test output!"
 
-          # Run tests for net9.0 (net462 tests run in separate mono-test job)
+          # Run tests for net9.0
           echo "=== Running tests for net9.0 ==="
           dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net9.0 --configuration Release --no-build --nologo /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
+
+      - name: Install Mono for .NET Framework tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mono-complete mono-devel
+          mono --version
+
+      - name: Run .NET Framework tests with Mono
+        run: |
+          PACKAGE_VERSION=$(ls LibArchive.Net.*.nupkg | sed 's/LibArchive.Net.\(.*\).nupkg/\1/')
+
+          echo "=== Running tests for net462 with Mono ==="
+          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net462 --configuration Release --no-build --verbosity normal /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
+
+      - name: Cleanup build artifacts
+        run: |
           ls -lh *.nupkg
           du -sh *
           rm -rf local {bzip2,libarchive,libxml2,lz4,lzo,xz,zlib,zstd}-* x86_64--musl--stable-*
@@ -207,77 +223,3 @@ jobs:
       - name: Upload Nuget package
         if: contains(github.ref, 'refs/tags/v')
         run: dotnet nuget push *.nupkg -k ${{ secrets.NUGET_KEY }} --source https://api.nuget.org/v3/index.json
-
-  mono-test:
-    name: Test .NET Standard 2.0 with Mono
-    needs: [linux]
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-
-      - name: Install Mono
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y mono-complete mono-devel
-          mono --version
-
-      - name: Setup .NET Core
-        uses: actions/setup-dotnet@v5.0.0
-
-      - name: Retrieve build artifacts
-        uses: actions/download-artifact@v5
-        with:
-          name: dist
-
-      - name: Extract package and setup test with NuGet
-        run: |
-          # Extract the nupkg to verify contents
-          PACKAGE_FILE=$(ls LibArchive.Net.*.nupkg)
-          PACKAGE_VERSION=$(echo "$PACKAGE_FILE" | sed 's/LibArchive.Net.\(.*\).nupkg/\1/')
-          echo "Testing package: $PACKAGE_FILE (version: $PACKAGE_VERSION)"
-
-          unzip -q "$PACKAGE_FILE" -d extracted
-
-          # Verify netstandard2.0 assembly exists
-          if [ ! -f "extracted/lib/netstandard2.0/LibArchive.Net.dll" ]; then
-            echo "ERROR: netstandard2.0 assembly not found in package!"
-            exit 1
-          fi
-
-          # Clear cache and restore using the local package (like the main test does)
-          rm -rf ~/.nuget/packages/libarchive.net/
-          dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --source . --source https://api.nuget.org/v3/index.json /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
-
-      - name: Build net462 target only (isolated from net9.0)
-        run: |
-          PACKAGE_VERSION=$(ls LibArchive.Net.*.nupkg | sed 's/LibArchive.Net.\(.*\).nupkg/\1/')
-
-          # Build ONLY net462, not all targets simultaneously
-          echo "=== Building net462 target in isolation ==="
-          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --framework net462 --no-restore /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION -v:n 2>&1 | grep -E "LibArchive|Copying|OutputPath"
-
-          echo "=== Checking for native libraries in net462 output ==="
-          if [ -d "Test.LibArchive.Net/bin/Release/net462/runtimes" ]; then
-            echo "✓ runtimes folder exists"
-            find Test.LibArchive.Net/bin/Release/net462/runtimes -type f
-            ls -lh Test.LibArchive.Net/bin/Release/net462/runtimes/linux-x64/native/libarchive.so
-          else
-            echo "✗ runtimes folder does NOT exist!"
-            echo "Searching for any .so files:"
-            find Test.LibArchive.Net/bin/Release/net462 -name "*.so" 2>/dev/null || echo "No .so files found"
-          fi
-
-      - name: Run tests with Mono (.NET Standard 2.0 code paths)
-        run: |
-          PACKAGE_VERSION=$(ls LibArchive.Net.*.nupkg | sed 's/LibArchive.Net.\(.*\).nupkg/\1/')
-
-          # Run tests targeting net462 which uses the netstandard2.0 library
-          # This validates the conditional compilation blocks for netstandard2.0
-          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --framework net462 --no-build --verbosity normal /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
-
-      - name: Display test results
-        if: always()
-        run: |
-          echo "✓ Mono test completed - .NET Standard 2.0 code paths validated"
-          mono --version
