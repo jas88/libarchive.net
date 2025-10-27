@@ -64,7 +64,7 @@ jobs:
           fi
           echo "Extracted version: $VERSION"
       - name: Cache apt packages
-        uses: awalsh128/cache-apt-pkgs-action@latest
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.0
         with:
           packages: libeatmydata1 mingw-w64 mono-complete mono-devel
           version: 1.0
