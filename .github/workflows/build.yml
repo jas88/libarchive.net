@@ -19,7 +19,7 @@ jobs:
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: ${{ github.job }}-${{ matrix.os }}
+          key: macos-build
       - name: Cache autoconf
         uses: actions/cache@v4
         with:
@@ -29,7 +29,16 @@ jobs:
         run: |
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
           export CCACHE_COMPILERCHECK=content
+          export CC="ccache clang"
+          export CXX="ccache clang++"
+
+          echo "=== ccache stats before build ==="
+          ccache -s
+
           ./native/build-macos.sh
+
+          echo "=== ccache stats after build ==="
+          ccache -s
       - name: Archive MacOS library
         uses: actions/upload-artifact@v4
         with:
@@ -96,6 +105,9 @@ jobs:
         run: |
           export CCACHE_COMPILERCHECK=content
 
+          echo "=== ccache stats before build ==="
+          ccache -s
+
           # Build each architecture in separate directory to avoid conflicts
           for arch in x86 x64 arm64; do
             echo "=== Building Windows $arch ==="
@@ -115,12 +127,18 @@ jobs:
             echo "✓ Windows $arch build complete"
           done
 
+          echo "=== ccache stats after Windows build ==="
+          ccache -s
+
           ls -lh archive-*.dll
       - name: Build Linux library
         run: |
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
           export CCACHE_COMPILERCHECK=content
           ./native/build-linux.sh
+
+          echo "=== ccache stats after Linux build ==="
+          ccache -s
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
