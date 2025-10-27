@@ -32,10 +32,21 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     {
 #if NETSTANDARD2_0
         // .NET Standard 2.0 doesn't have automatic RID resolution, so we need manual loading
-        if (RuntimeInformation.ProcessArchitecture != Architecture.X64 &&
-            (RuntimeInformation.ProcessArchitecture != Architecture.Arm64 ||
-             !RuntimeInformation.IsOSPlatform(OSPlatform.OSX)))
-            throw new PlatformNotSupportedException();
+        // Supported platforms:
+        // - Windows: x64, x86, ARM64
+        // - Linux: x64, ARM, ARM64
+        // - macOS: x64, ARM64
+        var arch = RuntimeInformation.ProcessArchitecture;
+        var isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+        var isLinux = RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
+        var isMacOS = RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
+
+        var supported = (isWindows && (arch == Architecture.X64 || arch == Architecture.X86 || arch == Architecture.Arm64)) ||
+                       (isLinux && (arch == Architecture.X64 || arch == Architecture.Arm || arch == Architecture.Arm64)) ||
+                       (isMacOS && (arch == Architecture.X64 || arch == Architecture.Arm64));
+
+        if (!supported)
+            throw new PlatformNotSupportedException($"Unsupported platform/architecture: {RuntimeInformation.OSDescription} / {arch}");
 
         PreloadNativeLibrary();
 #endif
@@ -482,7 +493,14 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
-            return ("linux-x64", "libarchive.so");
+            var arch = RuntimeInformation.ProcessArchitecture switch
+            {
+                Architecture.X64 => "linux-x64",
+                Architecture.Arm => "linux-arm",
+                Architecture.Arm64 => "linux-arm64",
+                _ => throw new PlatformNotSupportedException($"Unsupported Linux architecture: {RuntimeInformation.ProcessArchitecture}")
+            };
+            return (arch, "libarchive.so");
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {

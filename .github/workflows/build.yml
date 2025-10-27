@@ -166,14 +166,30 @@ jobs:
           sccache --show-stats
 
           ls -lh archive-*.dll
-      - name: Build Linux library
+      - name: Build Linux libraries (x64, arm64, arm)
         run: |
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
           export CCACHE_COMPILERCHECK=content
-          ./native/build-linux.sh
 
-          echo "=== sccache stats after Linux build ==="
+          # Build x64
+          echo "=== Building Linux x64 ==="
+          ./native/build-linux.sh
+          mv libarchive.so libarchive-x64.so
+
+          # Build arm64
+          echo "=== Building Linux ARM64 ==="
+          ./native/build-linux-arm64.sh
+          mv libarchive.so libarchive-arm64.so
+
+          # Build armv7
+          echo "=== Building Linux ARM v7 ==="
+          ./native/build-linux-arm.sh
+          mv libarchive.so libarchive-arm.so
+
+          echo "=== sccache stats after Linux builds ==="
           sccache --show-stats
+
+          ls -lh libarchive-*.so
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
@@ -181,11 +197,19 @@ jobs:
           build-mode: manual
       - name: Built .Net package and test
         run: |
-          mkdir -p LibArchive.Net/runtimes/{osx-x64,osx-arm64,linux-x64,linux-musl-x64,win-x86,win-x64,win-arm64}/native
+          mkdir -p LibArchive.Net/runtimes/{osx-x64,osx-arm64,linux-x64,linux-musl-x64,linux-arm,linux-musl-arm,linux-arm64,linux-musl-arm64,win-x86,win-x64,win-arm64}/native
 
-          # Linux
-          mv libarchive.so LibArchive.Net/runtimes/linux-x64/native/
+          # Linux x64
+          mv libarchive-x64.so LibArchive.Net/runtimes/linux-x64/native/libarchive.so
           cp LibArchive.Net/runtimes/linux-x64/native/libarchive.so LibArchive.Net/runtimes/linux-musl-x64/native/
+
+          # Linux ARM64
+          mv libarchive-arm64.so LibArchive.Net/runtimes/linux-arm64/native/libarchive.so
+          cp LibArchive.Net/runtimes/linux-arm64/native/libarchive.so LibArchive.Net/runtimes/linux-musl-arm64/native/
+
+          # Linux ARM v7
+          mv libarchive-arm.so LibArchive.Net/runtimes/linux-arm/native/libarchive.so
+          cp LibArchive.Net/runtimes/linux-arm/native/libarchive.so LibArchive.Net/runtimes/linux-musl-arm/native/
 
           # macOS
           mv libarchive.dylib LibArchive.Net/runtimes/osx-x64/native/
