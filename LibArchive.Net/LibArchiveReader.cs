@@ -380,6 +380,15 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     // .NET Standard 2.0 Native Library Loading
     private static void PreloadNativeLibrary()
     {
+        // On Windows, [assembly: DefaultDllImportSearchPaths(DllImportSearchPath.AssemblyDirectory)]
+        // handles native library loading automatically, so we only need manual loading on Unix.
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            // No manual loading needed - .NET Framework will find the DLL via AssemblyDirectory
+            return;
+        }
+
+        // Unix platforms (Linux/macOS) need explicit dlopen() for Mono/.NET Framework
         var libraryPath = GetNativeLibraryPath();
 
         if (!File.Exists(libraryPath))
@@ -387,14 +396,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
             throw new DllNotFoundException($"Native library not found at: {libraryPath}");
         }
 
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            LoadWindowsLibrary(libraryPath);
-        }
-        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) || RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-        {
-            LoadUnixLibrary(libraryPath);
-        }
+        LoadUnixLibrary(libraryPath);
     }
 
     private static string GetNativeLibraryPath()
@@ -492,24 +494,6 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
             throw new PlatformNotSupportedException($"Unsupported platform: {RuntimeInformation.OSDescription}");
         }
     }
-
-    private static void LoadWindowsLibrary(string libraryPath)
-    {
-        if (!File.Exists(libraryPath))
-        {
-            throw new DllNotFoundException($"Native library not found at: {libraryPath}");
-        }
-
-        var handle = LoadLibrary(libraryPath);
-        if (handle == IntPtr.Zero)
-        {
-            var error = Marshal.GetLastWin32Error();
-            throw new DllNotFoundException($"Failed to load native library '{libraryPath}'. Win32 error: {error}");
-        }
-    }
-
-    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern IntPtr LoadLibrary(string lpFileName);
 
     private static void LoadUnixLibrary(string libraryPath)
     {
