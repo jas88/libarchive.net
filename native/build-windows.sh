@@ -10,8 +10,6 @@ ARCH="${ARCH:-x86_64}"
 # Load shared configuration
 . "$(dirname "$0")/build-config.sh"
 
-# Make cache architecture-specific to avoid conflicts when building in parallel
-export CONFIGCACHE="${CONFIGCACHE}-${ARCH}"
 case "$ARCH" in
     x86_64|x64)
         MINGW_PREFIX="x86_64-w64-mingw32"
@@ -96,13 +94,13 @@ cd ..
 
 echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
-./configure --host=${MINGW_PREFIX} --cache-file=$CONFIGCACHE --with-pic --disable-shared --prefix=$PREFIX --disable-scripts --disable-doc
+./configure --host=${MINGW_PREFIX} --with-pic --disable-shared --prefix=$PREFIX --disable-scripts --disable-doc
 make -j$NCPU install
 cd ..
 
 echo "Building lzo ${LZO_VERSION}..."
 cd lzo-${LZO_VERSION}
-./configure --host=${MINGW_PREFIX} --cache-file=$CONFIGCACHE --prefix=$PREFIX --disable-shared
+./configure --host=${MINGW_PREFIX} --prefix=$PREFIX --disable-shared
 make -j$NCPU install
 cd ..
 
@@ -116,7 +114,7 @@ cd ../..
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
 cd libxml2-${LIBXML2_VERSION}
-./configure --host=${MINGW_PREFIX} --cache-file=$CONFIGCACHE --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX --with-lzma=$PREFIX
+./configure --host=${MINGW_PREFIX} --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX --with-lzma=$PREFIX
 make -j$NCPU install
 cd ..
 

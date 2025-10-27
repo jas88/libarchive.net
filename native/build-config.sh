@@ -30,7 +30,6 @@ XZ_URL="https://github.com/tukaani-project/xz/releases/download/v${XZ_VERSION}/x
 
 # Common build settings
 export PREFIX="${PREFIX:-$(pwd)/local}"
-export CONFIGCACHE="${CONFIGCACHE:-$(pwd)/configcache}"
 
 # Function to download and extract a library
 download_library() {

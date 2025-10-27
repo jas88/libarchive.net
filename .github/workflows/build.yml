@@ -20,11 +20,6 @@ jobs:
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: macos-build-v2
-      - name: Cache autoconf
-        uses: actions/cache@v4
-        with:
-          path: configcache
-          key: macos-configcache-ccache-v2
       - name: Build
         run: |
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
@@ -120,11 +115,6 @@ jobs:
           chmod +x $HOME/.ccache-bin/aarch64-w64-mingw32-g++
 
           echo "$HOME/.ccache-bin" >> $GITHUB_PATH
-      - name: Cache autoconf
-        uses: actions/cache@v4
-        with:
-          path: configcache
-          key: all-native-configcache-v2
       - name: Download library sources once
         run: |
           # Load the download function and download all libraries once
@@ -144,8 +134,7 @@ jobs:
             mkdir -p build-win-$arch
             cd build-win-$arch
 
-            # Use architecture-specific config cache
-            export CONFIGCACHE="$(pwd)/configcache-$arch"
+            # Use architecture-specific prefix
             export PREFIX="$(pwd)/local-$arch"
 
             # Copy library sources from parent directory (already downloaded)
@@ -166,24 +155,81 @@ jobs:
           sccache --show-stats
 
           ls -lh archive-*.dll
+      - name: Setup sccache wrappers for Linux cross-compilers
+        run: |
+          # Create sccache wrappers for Linux ARM cross-compilers
+          # x86_64 compiler will be downloaded by build-linux.sh, wrap it after download
+
+          # Create wrapper for ARM64 cross-compiler (will be downloaded by build-linux-arm64.sh)
+          cat > $HOME/.ccache-bin/wrap-arm64-compiler.sh <<'WRAPPER'
+#!/bin/sh
+# This script wraps ARM64 compilers with sccache after toolchain is downloaded
+TOOLCHAIN_DIR=$(ls -d aarch64--musl--stable-* 2>/dev/null | head -1)
+if [ -n "$TOOLCHAIN_DIR" ]; then
+  TOOLCHAIN_BIN="$(pwd)/$TOOLCHAIN_DIR/bin"
+  for tool in gcc g++ ar ranlib; do
+    [ ! -f "$HOME/.ccache-bin/aarch64-linux-$tool" ] && \
+      echo "#!/bin/sh" > "$HOME/.ccache-bin/aarch64-linux-$tool" && \
+      echo "exec sccache $TOOLCHAIN_BIN/aarch64-linux-$tool \"\$@\"" >> "$HOME/.ccache-bin/aarch64-linux-$tool" && \
+      chmod +x "$HOME/.ccache-bin/aarch64-linux-$tool"
+  done
+fi
+WRAPPER
+          chmod +x $HOME/.ccache-bin/wrap-arm64-compiler.sh
+
+          # Create wrapper for ARM v7 cross-compiler
+          cat > $HOME/.ccache-bin/wrap-arm-compiler.sh <<'WRAPPER'
+#!/bin/sh
+# This script wraps ARM v7 compilers with sccache after toolchain is downloaded
+TOOLCHAIN_DIR=$(ls -d armv7-eabihf--musl--stable-* 2>/dev/null | head -1)
+if [ -n "$TOOLCHAIN_DIR" ]; then
+  TOOLCHAIN_BIN="$(pwd)/$TOOLCHAIN_DIR/bin"
+  for tool in gcc g++ ar ranlib; do
+    [ ! -f "$HOME/.ccache-bin/arm-linux-$tool" ] && \
+      echo "#!/bin/sh" > "$HOME/.ccache-bin/arm-linux-$tool" && \
+      echo "exec sccache $TOOLCHAIN_BIN/arm-linux-$tool \"\$@\"" >> "$HOME/.ccache-bin/arm-linux-$tool" && \
+      chmod +x "$HOME/.ccache-bin/arm-linux-$tool"
+  done
+fi
+WRAPPER
+          chmod +x $HOME/.ccache-bin/wrap-arm-compiler.sh
+
+          # Create wrapper for x86_64 cross-compiler
+          cat > $HOME/.ccache-bin/wrap-x64-compiler.sh <<'WRAPPER'
+#!/bin/sh
+# This script wraps x86_64 compilers with sccache after toolchain is downloaded
+TOOLCHAIN_DIR=$(ls -d x86-64--musl--stable-* 2>/dev/null | head -1)
+if [ -n "$TOOLCHAIN_DIR" ]; then
+  TOOLCHAIN_BIN="$(pwd)/$TOOLCHAIN_DIR/bin"
+  for tool in gcc g++ ar ranlib; do
+    [ ! -f "$HOME/.ccache-bin/x86_64-linux-$tool" ] && \
+      echo "#!/bin/sh" > "$HOME/.ccache-bin/x86_64-linux-$tool" && \
+      echo "exec sccache $TOOLCHAIN_BIN/x86_64-linux-$tool \"\$@\"" >> "$HOME/.ccache-bin/x86_64-linux-$tool" && \
+      chmod +x "$HOME/.ccache-bin/x86_64-linux-$tool"
+  done
+fi
+WRAPPER
+          chmod +x $HOME/.ccache-bin/wrap-x64-compiler.sh
       - name: Build Linux libraries (x64, arm64, arm)
         run: |
-          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
           export CCACHE_COMPILERCHECK=content
 
           # Build x64
           echo "=== Building Linux x64 ==="
           ./native/build-linux.sh
+          $HOME/.ccache-bin/wrap-x64-compiler.sh  # Wrap compilers with sccache
           mv libarchive.so libarchive-x64.so
 
           # Build arm64
           echo "=== Building Linux ARM64 ==="
           ./native/build-linux-arm64.sh
+          $HOME/.ccache-bin/wrap-arm64-compiler.sh  # Wrap compilers with sccache
           mv libarchive.so libarchive-arm64.so
 
           # Build armv7
           echo "=== Building Linux ARM v7 ==="
           ./native/build-linux-arm.sh
+          $HOME/.ccache-bin/wrap-arm-compiler.sh  # Wrap compilers with sccache
           mv libarchive.so libarchive-arm.so
 
           echo "=== sccache stats after Linux builds ==="
