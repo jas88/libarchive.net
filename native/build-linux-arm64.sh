@@ -125,9 +125,7 @@ gcc -o test test.c
 file libarchive.so
 ldd libarchive.so || true
 
-echo "Building native test..."
-gcc -o nativetest "${SCRIPT_DIR}/nativetest.c" local/lib/libarchive.a -Llocal/lib -Ilocal/include -llz4 -lzstd -lbz2
-./nativetest
+echo "Skipping native test (cross-compilation - cannot run ARM64 binary on x86_64 host)"
 
 echo "Copying output to ${OUTPUT_DIR}..."
 cp libarchive.so "${OUTPUT_DIR}/libarchive-linux-arm64.so"
