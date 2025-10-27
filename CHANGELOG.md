@@ -1,3 +1,20 @@
+v0.3.0 - TBD
+
+**Password-Protected Archive Support:**
+- Add password support for encrypted ZIP archives (traditional PKWARE and AES encryption)
+- New optional `password` parameter on `LibArchiveReader` constructors
+- `HasEncryptedEntries()` method to detect encrypted archives
+- Comprehensive test coverage for password functionality
+- **Note:** Only ZIP archives are supported - RAR and 7z encrypted archives are not supported by libarchive
+
+**Improved Error Handling:**
+- Enhanced `Read()` method to properly throw exceptions on errors (wrong password, unsupported encryption, checksum failures)
+- Better error messages for encrypted archive failures
+
+**Code Quality:**
+- Simplified `Read()` method implementation (removed unnecessary MemoryMarshal complexity)
+- Fixed nullability warnings
+
 v0.2.0 - October 27, 2025
 
 **Platform Support Expansion:**

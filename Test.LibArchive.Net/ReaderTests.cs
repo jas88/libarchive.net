@@ -83,6 +83,75 @@ public class SevenZipTests
         }));
     }
 
+    [Test]
+    public void TestPasswordProtectedZip()
+    {
+        // Test reading a password-protected ZIP file (traditional PKWARE encryption)
+        using var lar = new LibArchiveReader("test-password.zip", password: "testpass123");
+
+        string? content = null;
+        foreach (var entry in lar.Entries())
+        {
+            Assert.That(entry.Name, Is.EqualTo("test-password.txt"));
+
+            // Read content while still positioned at this entry
+            using var stream = entry.Stream;
+            using var reader = new System.IO.StreamReader(stream);
+            content = reader.ReadToEnd();
+        }
+
+        Assert.That(content, Is.Not.Null, "Should have read file content");
+        Assert.That(content, Is.EqualTo("This is a test file for password-protected archives\n"));
+    }
+
+    [Test]
+    public void TestPasswordProtectedZipWrongPassword()
+    {
+        // Opening with wrong password should fail when trying to read data
+        using var lar = new LibArchiveReader("test-password.zip", password: "wrongpassword");
+
+        // Attempting to read should fail with wrong password
+        Assert.Throws<ApplicationException>(() =>
+        {
+            foreach (var entry in lar.Entries())
+            {
+                using var stream = entry.Stream;
+                stream.ReadByte(); // This should trigger decryption and fail
+            }
+        });
+    }
+
+    [Test]
+    public void TestPasswordProtectedZipNoPassword()
+    {
+        // Opening encrypted ZIP without password should fail when trying to read
+        using var lar = new LibArchiveReader("test-password.zip");
+
+        // Attempting to read without password should fail
+        Assert.Throws<ApplicationException>(() =>
+        {
+            foreach (var entry in lar.Entries())
+            {
+                using var stream = entry.Stream;
+                stream.ReadByte();
+            }
+        });
+    }
+
+    [Test]
+    public void TestHasEncryptedEntries()
+    {
+        // Test encrypted archive detection (must read at least one header first)
+        using var encryptedArchive = new LibArchiveReader("test-password.zip", password: "testpass123");
+        var _ = encryptedArchive.Entries().First(); // Read first header
+        Assert.That(encryptedArchive.HasEncryptedEntries(), Is.GreaterThan(0), "Should detect encrypted entries");
+
+        // Test non-encrypted archive
+        using var normalArchive = new LibArchiveReader("7ztest.7z");
+        var __ = normalArchive.Entries().First(); // Read first header
+        Assert.That(normalArchive.HasEncryptedEntries(), Is.EqualTo(0), "Should not detect encryption in normal archive");
+    }
+
     #region Support code
 
 #if NET462
