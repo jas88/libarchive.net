@@ -1,0 +1,139 @@
+#!/bin/sh
+# Build libarchive for Linux x86 (32-bit i686) using musl-libc for static linking
+
+set -e
+
+# Set up isolated build directory
+BUILD_DIR="${HOME}/libarchive-linux-x86"
+OUTPUT_DIR="${HOME}/libarchive-native"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Create build and output directories
+mkdir -p "$BUILD_DIR"
+mkdir -p "$OUTPUT_DIR"
+
+# Change to build directory
+cd "$BUILD_DIR"
+
+# Load shared configuration
+. "${SCRIPT_DIR}/build-config.sh"
+
+echo "Downloading prebuilt musl cross-compiler toolchain from Bootlin..."
+# Use Bootlin's stable i686 musl toolchain (GCC 14.3.0, tested and verified)
+TOOLCHAIN_URL="https://toolchains.bootlin.com/downloads/releases/toolchains/x86-i686/tarballs/x86-i686--musl--stable-2025.08-1.tar.xz"
+TOOLCHAIN_DIR="x86-i686--musl--stable-2025.08-1"
+
+curl -sL "$TOOLCHAIN_URL" | tar xJf -
+
+# Set up toolchain paths
+export TOOLCHAIN_PREFIX="$(pwd)/${TOOLCHAIN_DIR}"
+export TOOLCHAIN_SYSROOT="$TOOLCHAIN_PREFIX/i686-buildroot-linux-musl/sysroot"
+export PATH="$TOOLCHAIN_PREFIX/bin:$PATH"
+export CC=i686-linux-gcc
+export CXX=i686-linux-g++
+export AR=i686-linux-ar
+export RANLIB=i686-linux-ranlib
+
+# Keep PREFIX for our built libraries (same as before)
+export PREFIX="${PREFIX:-$(pwd)/local}"
+
+# Set compiler flags for static linking
+export CPPFLAGS="-I$PREFIX/include"
+export CFLAGS="-fPIC -O2 $CPPFLAGS -static-libgcc"
+export CXXFLAGS="-fPIC -O2 $CPPFLAGS -static-libstdc++ -static-libgcc"
+export LDFLAGS="-L$PREFIX/lib -static"
+
+echo "Toolchain installed:"
+$CC --version | head -n1
+echo ""
+
+# Download and unpack fresh copies of all libraries
+echo "Setting up library sources..."
+download_all_libraries
+
+# Build compression libraries (static only to avoid conflicts with -static LDFLAGS)
+echo "Building lz4 ${LZ4_VERSION}..."
+cd lz4-${LZ4_VERSION}/lib
+make -j$NCPU liblz4.a CC=$CC AR=$AR
+mkdir -p $PREFIX/lib $PREFIX/include
+cp liblz4.a $PREFIX/lib/
+cp lz4.h lz4hc.h lz4frame.h $PREFIX/include/
+cd ../..
+
+echo "Building zstd ${ZSTD_VERSION}..."
+cd zstd-${ZSTD_VERSION}/lib
+make -j$NCPU libzstd.a CC=$CC AR=$AR
+mkdir -p $PREFIX/lib $PREFIX/include
+cp libzstd.a $PREFIX/lib/
+cp zstd.h zstd_errors.h zdict.h $PREFIX/include/
+cd ../..
+
+echo "Building bzip2 ${BZIP2_VERSION}..."
+cd bzip2-${BZIP2_VERSION}
+make -j$NCPU libbz2.a CC=$CC AR=$AR RANLIB=$RANLIB CFLAGS="-fPIC -O2 -D_FILE_OFFSET_BITS=64"
+mkdir -p $PREFIX/lib $PREFIX/include
+cp libbz2.a $PREFIX/lib/
+cp bzlib.h $PREFIX/include/
+cd ..
+
+echo "Building lzo ${LZO_VERSION}..."
+cd lzo-${LZO_VERSION}
+./configure --build=x86_64-pc-linux-gnu --host=i686-linux --prefix=$PREFIX --disable-shared --enable-static
+make -sj$NCPU install
+cd ..
+
+echo "Building zlib ${ZLIB_VERSION}..."
+cd zlib-${ZLIB_VERSION}
+CHOST=i686-linux ./configure --static --prefix=$PREFIX
+make -sj$NCPU install
+cd ..
+
+echo "Building xz ${XZ_VERSION}..."
+cd xz-${XZ_VERSION}
+./configure --build=x86_64-pc-linux-gnu --host=i686-linux --with-pic --disable-shared --prefix=$PREFIX
+make -sj$NCPU install
+cd ..
+
+echo "Building libxml2 ${LIBXML2_VERSION}..."
+cd libxml2-${LIBXML2_VERSION}
+./autogen.sh --build=x86_64-pc-linux-gnu --host=i686-linux --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX/../zlib-${ZLIB_VERSION} --with-lzma=$PREFIX/../xz-${XZ_VERSION}
+make -sj$NCPU install
+cd ..
+
+echo "Building libarchive ${LIBARCHIVE_VERSION}..."
+cd libarchive-${LIBARCHIVE_VERSION}
+export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
+export LIBXML2_PC_LIBS=-L$PREFIX
+./configure --build=x86_64-pc-linux-gnu --host=i686-linux --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2 --disable-shared --enable-static
+make -sj$NCPU install
+cd ..
+
+echo "Creating final shared library..."
+$CC -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/liblzo2.a local/lib/libzstd.a local/lib/liblz4.a ${TOOLCHAIN_SYSROOT}/lib/libc.a -nostdlib
+
+echo "Testing library..."
+cat > test.c <<EOT
+#include <stdio.h>
+#include <dlfcn.h>
+int main() {
+   printf("libarchive.so=%p\n",dlopen("./libarchive.so",RTLD_NOW));
+   return 0;
+}
+EOT
+gcc -o test test.c
+./test
+file libarchive.so
+ldd libarchive.so || true
+
+echo "Building native test..."
+gcc -o nativetest "${SCRIPT_DIR}/nativetest.c" local/lib/libarchive.a -Llocal/lib -Ilocal/include -llz4 -lzstd -lbz2
+./nativetest
+
+echo "Copying output to ${OUTPUT_DIR}..."
+cp libarchive.so "${OUTPUT_DIR}/libarchive-linux-x86.so"
+
+echo "Cleaning up build directory..."
+cd /
+rm -rf "${BUILD_DIR}"
+
+echo "Linux x86 build complete: ${OUTPUT_DIR}/libarchive-linux-x86.so"
