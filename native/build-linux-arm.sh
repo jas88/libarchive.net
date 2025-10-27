@@ -46,6 +46,7 @@ fi
 # Build compression libraries (static only to avoid conflicts with -static LDFLAGS)
 echo "Building lz4 ${LZ4_VERSION}..."
 cd lz4-${LZ4_VERSION}/lib
+make clean || true
 make -j$NCPU liblz4.a CC=$CC AR=$AR
 mkdir -p $PREFIX/lib $PREFIX/include
 cp liblz4.a $PREFIX/lib/
@@ -54,6 +55,7 @@ cd ../..
 
 echo "Building zstd ${ZSTD_VERSION}..."
 cd zstd-${ZSTD_VERSION}/lib
+make clean || true
 make -j$NCPU libzstd.a CC=$CC AR=$AR
 mkdir -p $PREFIX/lib $PREFIX/include
 cp libzstd.a $PREFIX/lib/
@@ -62,6 +64,7 @@ cd ../..
 
 echo "Building bzip2 ${BZIP2_VERSION}..."
 cd bzip2-${BZIP2_VERSION}
+make clean || true
 make -j$NCPU libbz2.a CC=$CC AR=$AR RANLIB=$RANLIB CFLAGS="-fPIC -O2 -D_FILE_OFFSET_BITS=64"
 mkdir -p $PREFIX/lib $PREFIX/include
 cp libbz2.a $PREFIX/lib/
