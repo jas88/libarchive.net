@@ -36,19 +36,19 @@ echo ""
 # Download all libraries
 download_all_libraries
 
-# Build compression libraries
+# Build compression libraries (static only to avoid conflicts with -static LDFLAGS)
 echo "Building lz4 ${LZ4_VERSION}..."
-make -j$NCPU -sC lz4-${LZ4_VERSION} install
+make -j$NCPU -sC lz4-${LZ4_VERSION} install PREFIX=$PREFIX BUILD_SHARED=no
 
 echo "Building zstd ${ZSTD_VERSION}..."
-make -j$NCPU -sC zstd-${ZSTD_VERSION} install
+make -j$NCPU -sC zstd-${ZSTD_VERSION} install PREFIX=$PREFIX BUILD_SHARED=no
 
 echo "Building bzip2 ${BZIP2_VERSION}..."
 make -j$NCPU -sC bzip2-${BZIP2_VERSION} install PREFIX=$PREFIX CFLAGS="-fPIC -O2 -D_FILE_OFFSET_BITS=64" CC=$CC
 
 echo "Building lzo ${LZO_VERSION}..."
 cd lzo-${LZO_VERSION}
-./configure --cache-file=$CONFIGCACHE --prefix=$PREFIX
+./configure --cache-file=$CONFIGCACHE --prefix=$PREFIX --disable-shared --enable-static
 make -sj$NCPU install
 cd ..
 
@@ -74,7 +74,7 @@ echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
 export LIBXML2_PC_LIBS=-L$PREFIX
-./configure --cache-file=$CONFIGCACHE --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2
+./configure --cache-file=$CONFIGCACHE --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2 --disable-shared --enable-static
 make -sj$NCPU install
 cd ..
 
