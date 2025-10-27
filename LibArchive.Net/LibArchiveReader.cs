@@ -239,19 +239,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         /// <returns>The total number of bytes read into the buffer.</returns>
         public override int Read(byte[] buffer, int offset, int count)
         {
-#if NETSTANDARD2_0
-            // Use traditional array slicing for .NET Standard 2.0
-            unsafe
-            {
-                fixed (byte* ptr = &buffer[offset])
-                {
-                    return archive_read_data(archiveHandle, ref *ptr, count);
-                }
-            }
-#else
-            // Use modern range syntax for .NET 6.0+
-            return archive_read_data(archiveHandle, ref MemoryMarshal.GetReference(buffer.AsSpan()[offset..]), count);
-#endif
+            return archive_read_data(archiveHandle, ref buffer[offset], count);
         }
 
         /// <summary>
