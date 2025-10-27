@@ -498,9 +498,14 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     private static void LoadUnixLibrary(string libraryPath)
     {
         // On .NET Framework (Mono), we need to explicitly load the library using dlopen
-        // RTLD_NOW = 2: Resolve all symbols immediately
-        const int RTLD_NOW = 2;
-        var handle = dlopen(libraryPath, RTLD_NOW);
+        // RTLD_NOW (0x2): Resolve all symbols immediately
+        // RTLD_GLOBAL (0x100): Make symbols available for subsequently loaded libraries
+        //                      AND for Mono's P/Invoke to find them
+        const int RTLD_NOW = 0x2;
+        const int RTLD_GLOBAL = 0x100;
+        const int flags = RTLD_NOW | RTLD_GLOBAL;
+
+        var handle = dlopen(libraryPath, flags);
         if (handle == IntPtr.Zero)
         {
             var error = dlerror();
