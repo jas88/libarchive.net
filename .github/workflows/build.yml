@@ -180,6 +180,19 @@ jobs:
           echo 'fi' >> $HOME/.ccache-bin/wrap-arm-compiler.sh
           chmod +x $HOME/.ccache-bin/wrap-arm-compiler.sh
 
+          # x86 (i686) wrapper script
+          echo '#!/bin/sh' > $HOME/.ccache-bin/wrap-x86-compiler.sh
+          echo 'TOOLCHAIN_DIR=$(ls -d x86-i686--musl--stable-* 2>/dev/null | head -1)' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
+          echo 'if [ -n "$TOOLCHAIN_DIR" ]; then' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
+          echo '  TOOLCHAIN_BIN="$(pwd)/$TOOLCHAIN_DIR/bin"' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
+          echo '  for tool in gcc g++ ar ranlib; do' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
+          echo '    echo "#!/bin/sh" > "$HOME/.ccache-bin/i686-linux-$tool"' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
+          echo '    echo "exec sccache $TOOLCHAIN_BIN/i686-linux-$tool \"\$@\"" >> "$HOME/.ccache-bin/i686-linux-$tool"' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
+          echo '    chmod +x "$HOME/.ccache-bin/i686-linux-$tool"' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
+          echo '  done' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
+          echo 'fi' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
+          chmod +x $HOME/.ccache-bin/wrap-x86-compiler.sh
+
           # x86_64 wrapper script
           echo '#!/bin/sh' > $HOME/.ccache-bin/wrap-x64-compiler.sh
           echo 'TOOLCHAIN_DIR=$(ls -d x86-64--musl--stable-* 2>/dev/null | head -1)' >> $HOME/.ccache-bin/wrap-x64-compiler.sh
@@ -199,6 +212,7 @@ jobs:
           # Build x86 (32-bit)
           echo "=== Building Linux x86 ==="
           ./native/build-linux-x86.sh
+          $HOME/.ccache-bin/wrap-x86-compiler.sh  # Wrap compilers with sccache
 
           # Build x64
           echo "=== Building Linux x64 ==="
