@@ -7,7 +7,6 @@ on: pull_request
 env:
   DOTNET_NOLOGO: 1
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
-  CCACHE_COMPILERCHECK: none
 
 jobs:
   macos:
@@ -20,10 +19,11 @@ jobs:
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: macos-build-v2
+        env:
+          CCACHE_COMPILERCHECK: mtime
       - name: Build
         run: |
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
-          export CCACHE_COMPILERCHECK=content
           export CC="ccache clang"
           export CXX="ccache clang++"
 
@@ -87,6 +87,8 @@ jobs:
         with:
           key: all-native-builds-v2
           variant: sccache
+        env:
+          CCACHE_COMPILERCHECK: mtime
       - name: Verify MinGW compilers are installed
         run: |
           echo "Checking for MinGW compilers..."
@@ -118,8 +120,6 @@ jobs:
 
       - name: Build Windows DLLs (x86, x64, arm64)
         run: |
-          export CCACHE_COMPILERCHECK=content
-
           echo "=== sccache stats before build ==="
           sccache --show-stats
 
@@ -208,8 +208,6 @@ jobs:
           chmod +x $HOME/.ccache-bin/wrap-x64-compiler.sh
       - name: Build Linux libraries (x64, arm64, arm)
         run: |
-          export CCACHE_COMPILERCHECK=content
-
           # Build x86 (32-bit)
           echo "=== Building Linux x86 ==="
           ./native/build-linux-x86.sh
