@@ -86,6 +86,12 @@ jobs:
         with:
           key: all-native-builds-v2
           variant: sccache
+      - name: Verify MinGW compilers are installed
+        run: |
+          echo "Checking for MinGW compilers..."
+          which i686-w64-mingw32-gcc || echo "WARNING: i686-w64-mingw32-gcc not found"
+          which x86_64-w64-mingw32-gcc || echo "WARNING: x86_64-w64-mingw32-gcc not found"
+          ls -la /usr/bin/*mingw32* || true
       - name: Setup sccache wrappers for all compilers
         run: |
           mkdir -p $HOME/.ccache-bin
