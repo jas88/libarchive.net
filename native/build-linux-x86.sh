@@ -109,7 +109,9 @@ make -sj$NCPU install
 cd ..
 
 echo "Creating final shared library..."
-$CC -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/liblzo2.a local/lib/libzstd.a local/lib/liblz4.a ${TOOLCHAIN_SYSROOT}/lib/libc.a -nostdlib
+# For 32-bit builds, we need libgcc for 64-bit division intrinsics (__udivdi3, etc.)
+LIBGCC_PATH=$($CC -print-libgcc-file-name)
+$CC -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/liblzo2.a local/lib/libzstd.a local/lib/liblz4.a "$LIBGCC_PATH" ${TOOLCHAIN_SYSROOT}/lib/libc.a -nostdlib
 
 echo "Testing library..."
 cat > test.c <<EOT
@@ -124,6 +126,11 @@ gcc -o test test.c
 ./test
 file libarchive.so
 ldd libarchive.so || true
+
+echo "Inspecting symbols..."
+${AR/ar/nm} -D libarchive.so | grep -E "(__udivdi3|__umoddi3|__divdi3|__moddi3)" || echo "No 64-bit division intrinsics found in exports"
+${AR/ar/nm} libarchive.so | grep -c " T " | xargs echo "Defined symbols:"
+${AR/ar/nm} libarchive.so | grep -c " U " | xargs echo "Undefined symbols:"
 
 echo "Skipping native test (cross-compilation - cannot run 32-bit i386 binary on x86_64 host)"
 

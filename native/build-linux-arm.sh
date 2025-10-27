@@ -125,6 +125,11 @@ gcc -o test test.c
 file libarchive.so
 ldd libarchive.so || true
 
+echo "Inspecting symbols..."
+${AR/ar/nm} -D libarchive.so | head -20 || true
+${AR/ar/nm} libarchive.so | grep -c " T " | xargs echo "Defined symbols:"
+${AR/ar/nm} libarchive.so | grep -c " U " | xargs echo "Undefined symbols:"
+
 echo "Skipping native test (cross-compilation - cannot run ARMv7 binary on x86_64 host)"
 
 echo "Copying output to ${OUTPUT_DIR}..."

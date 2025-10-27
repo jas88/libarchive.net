@@ -125,6 +125,11 @@ gcc -o test test.c
 file libarchive.so
 ldd libarchive.so || true
 
+echo "Inspecting symbols..."
+${AR/ar/nm} -D libarchive.so | head -20 || true
+${AR/ar/nm} libarchive.so | grep -c " T " | xargs echo "Defined symbols:"
+${AR/ar/nm} libarchive.so | grep -c " U " | xargs echo "Undefined symbols:"
+
 echo "Building native test..."
 gcc -o nativetest "${SCRIPT_DIR}/nativetest.c" local/lib/libarchive.a -Llocal/lib -Ilocal/include -llz4 -lzstd -lbz2
 ./nativetest
