@@ -15,8 +15,13 @@ export CPPFLAGS="-I$PREFIX/include"
 export LDFLAGS="-L$PREFIX/lib -liconv"
 export CFLAGS="-fPIC -O2 -D_FILE_OFFSET_BITS=64 -arch arm64 -arch x86_64"
 
-# Download all libraries
-download_all_libraries
+# Download all libraries if not already present
+if [ ! -d "libarchive-${LIBARCHIVE_VERSION}" ]; then
+    echo "Downloading library sources..."
+    download_all_libraries
+else
+    echo "Using pre-downloaded library sources"
+fi
 
 # Build compression libraries
 echo "Building lz4 ${LZ4_VERSION}..."

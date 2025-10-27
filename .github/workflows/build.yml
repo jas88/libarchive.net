@@ -122,6 +122,12 @@ jobs:
         with:
           path: configcache
           key: all-native-configcache-v2
+      - name: Download library sources once
+        run: |
+          # Load the download function and download all libraries once
+          . native/build-config.sh
+          download_all_libraries
+
       - name: Build Windows DLLs (x86, x64, arm64)
         run: |
           export CCACHE_COMPILERCHECK=content
@@ -138,6 +144,11 @@ jobs:
             # Use architecture-specific config cache
             export CONFIGCACHE="$(pwd)/configcache-$arch"
             export PREFIX="$(pwd)/local-$arch"
+
+            # Copy library sources from parent directory (already downloaded)
+            for src in ../bzip2-* ../libarchive-* ../libxml2-* ../lz4-* ../lzo-* ../xz-* ../zlib-* ../zstd-*; do
+              [ -e "$src" ] && cp -r "$src" .
+            done
 
             ARCH=$arch ../native/build-windows.sh
             mv archive-*.dll ../

@@ -60,8 +60,13 @@ export CFLAGS="-O2 -fPIC ${ARCH_FLAGS}"
 export CXXFLAGS="-O2 -fPIC ${ARCH_FLAGS}"
 export LDFLAGS="-L$PREFIX/lib"
 
-# Download all libraries
-download_all_libraries
+# Download all libraries if not already present
+if [ ! -d "libarchive-${LIBARCHIVE_VERSION}" ]; then
+    echo "Downloading library sources..."
+    download_all_libraries
+else
+    echo "Using pre-downloaded library sources"
+fi
 
 # Build compression libraries
 echo "Building lz4 ${LZ4_VERSION}..."
