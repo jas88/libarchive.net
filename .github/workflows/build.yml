@@ -219,7 +219,8 @@ jobs:
           echo "=== Restored LibArchive.Net version ==="
           ls -la ~/.nuget/packages/libarchive.net/
 
-          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --no-restore /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
+          # Build only net9.0 (net462 will be built when testing with Mono)
+          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net9.0 --configuration Release --no-restore /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
           # Debug: Show test output directory
           echo "=== Test output directory ==="
@@ -232,11 +233,12 @@ jobs:
           echo "=== Mono version (for net462 tests) ==="
           mono --version | head -n1
 
+          # Build and test net462 with Mono (will build net462 if needed)
+          echo "=== Running tests for net462 with Mono ==="
+          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net462 --configuration Release --verbosity normal /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
+
           echo "=== Checking net462 output directory for native libraries ==="
           ls -laR Test.LibArchive.Net/bin/Release/net462/runtimes/ 2>/dev/null || echo "No runtimes folder in net462 output!"
-
-          echo "=== Running tests for net462 with Mono ==="
-          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net462 --configuration Release --no-build --verbosity normal /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
       - name: Cleanup build artifacts
         run: |
