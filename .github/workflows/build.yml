@@ -19,12 +19,12 @@ jobs:
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: macos-build
+          key: macos-build-v2
       - name: Cache autoconf
         uses: actions/cache@v4
         with:
           path: configcache
-          key: macos-configcache-ccache-v1
+          key: macos-configcache-ccache-v2
       - name: Build
         run: |
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
@@ -86,7 +86,7 @@ jobs:
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: all-native-builds
+          key: all-native-builds-v2
       - name: Setup ccache for MinGW
         run: |
           mkdir -p $HOME/.ccache-bin
@@ -100,7 +100,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: configcache
-          key: all-native-configcache-v1
+          key: all-native-configcache-v2
       - name: Build Windows DLLs (x86, x64, arm64)
         run: |
           export CCACHE_COMPILERCHECK=content
