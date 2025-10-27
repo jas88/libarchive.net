@@ -50,6 +50,22 @@ public class SevenZipTests
     }
 
     [Test]
+    public void TestNativeLibraryLoading()
+    {
+        // This test verifies that native library loading works when LibArchive.Net is consumed
+        // as a NuGet package (where the assembly is in NuGet cache but natives are in output dir)
+        // The constructor will throw DllNotFoundException if native library can't be found
+        using var lar = new LibArchiveReader("7ztest.7z");
+
+        // If we get here without exception, native library was loaded successfully
+        Assert.That(lar, Is.Not.Null);
+
+        // Verify we can actually use the library
+        var entries = lar.Entries().ToList();
+        Assert.That(entries, Has.Count.EqualTo(5), "Should be able to enumerate archive entries");
+    }
+
+    [Test]
     public void TestMultiRar()
     {
         var files = Enumerable.Range(1, 4).Select(n => $"rartest.part0000{n}.rar").ToArray();

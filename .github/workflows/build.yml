@@ -235,6 +235,11 @@ jobs:
 
           # Build and test net462 with Mono (will build net462 if needed)
           echo "=== Running tests for net462 with Mono ==="
+          # Enable diagnostics for native library loading
+          export LIBARCHIVE_NET_DEBUG=1
+          # Enable Mono DLL loading diagnostics (suggested by @YoshiRulz)
+          export MONO_LOG_LEVEL=debug
+          export MONO_LOG_MASK=dll
           dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net462 --configuration Release --verbosity normal /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
           echo "=== Checking net462 output directory for native libraries ==="

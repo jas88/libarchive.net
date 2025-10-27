@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Reflection;
 using Microsoft.Win32.SafeHandles;
@@ -398,10 +399,74 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     private static string GetNativeLibraryPath()
     {
-        var assemblyLocation = Assembly.GetExecutingAssembly().Location;
-        var assemblyDir = Path.GetDirectoryName(assemblyLocation)
-                         ?? throw new InvalidOperationException("Could not determine assembly directory");
+        // Enable diagnostics via environment variable: LIBARCHIVE_NET_DEBUG=1
+        var enableDiagnostics = Environment.GetEnvironmentVariable("LIBARCHIVE_NET_DEBUG") == "1";
 
+        // Search locations in priority order:
+        // 1. AppDomain.CurrentDomain.BaseDirectory - where .targets copies files for consuming apps/tests
+        // 2. Assembly.GetExecutingAssembly().Location - NuGet package cache location
+        // 3. Assembly.GetEntryAssembly()?.Location - entry point location (fallback)
+        var searchLocations = new[]
+        {
+            ("AppDomain.BaseDirectory", AppDomain.CurrentDomain.BaseDirectory),
+            ("LibArchive.Net Assembly", Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)),
+            ("Entry Assembly", Path.GetDirectoryName(Assembly.GetEntryAssembly()?.Location))
+        }.Where(loc => !string.IsNullOrEmpty(loc.Item2)).ToArray();
+
+        // Determine RID and filename based on platform
+        var (rid, filename) = GetRuntimeIdentifierAndFilename();
+
+        if (enableDiagnostics)
+        {
+            Console.Error.WriteLine($"[LibArchive.Net] Native library search:");
+            Console.Error.WriteLine($"[LibArchive.Net]   Platform: {RuntimeInformation.OSDescription}");
+            Console.Error.WriteLine($"[LibArchive.Net]   Architecture: {RuntimeInformation.ProcessArchitecture}");
+            Console.Error.WriteLine($"[LibArchive.Net]   RID: {rid}");
+            Console.Error.WriteLine($"[LibArchive.Net]   Filename: {filename}");
+            Console.Error.WriteLine($"[LibArchive.Net]   Search locations:");
+        }
+
+        // Search each location for the native library
+        foreach (var (locName, baseDir) in searchLocations)
+        {
+            if (string.IsNullOrEmpty(baseDir))
+                continue;
+
+            var libraryPath = Path.Combine(baseDir, "runtimes", rid, "native", filename);
+
+            if (enableDiagnostics)
+            {
+                Console.Error.WriteLine($"[LibArchive.Net]     [{locName}] {libraryPath}");
+                Console.Error.WriteLine($"[LibArchive.Net]       Exists: {File.Exists(libraryPath)}");
+            }
+
+            if (File.Exists(libraryPath))
+            {
+                if (enableDiagnostics)
+                {
+                    Console.Error.WriteLine($"[LibArchive.Net]   ✓ Found at: {libraryPath}");
+                }
+                return libraryPath;
+            }
+        }
+
+        // Not found - build detailed error message
+        var searchedPaths = searchLocations
+            .Where(loc => !string.IsNullOrEmpty(loc.Item2))
+            .Select(loc => $"  - [{loc.Item1}] {Path.Combine(loc.Item2, "runtimes", rid, "native", filename)}")
+            .ToArray();
+
+        var errorMessage = $"Native library '{filename}' not found. Searched locations:\n{string.Join("\n", searchedPaths)}\n\n" +
+                          $"Platform: {RuntimeInformation.OSDescription}\n" +
+                          $"Architecture: {RuntimeInformation.ProcessArchitecture}\n" +
+                          $"RID: {rid}\n\n" +
+                          $"Tip: Set LIBARCHIVE_NET_DEBUG=1 environment variable for detailed diagnostics.";
+
+        throw new DllNotFoundException(errorMessage);
+    }
+
+    private static (string rid, string filename) GetRuntimeIdentifierAndFilename()
+    {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             var arch = RuntimeInformation.ProcessArchitecture switch
@@ -411,16 +476,16 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
                 Architecture.Arm64 => "win-arm64",
                 _ => throw new PlatformNotSupportedException($"Unsupported Windows architecture: {RuntimeInformation.ProcessArchitecture}")
             };
-            return Path.Combine(assemblyDir, "runtimes", arch, "native", "archive.dll");
+            return (arch, "archive.dll");
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
-            return Path.Combine(assemblyDir, "runtimes", "linux-x64", "native", "libarchive.so");
+            return ("linux-x64", "libarchive.so");
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
             var arch = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "osx-arm64" : "osx-x64";
-            return Path.Combine(assemblyDir, "runtimes", arch, "native", "libarchive.dylib");
+            return (arch, "libarchive.dylib");
         }
         else
         {
