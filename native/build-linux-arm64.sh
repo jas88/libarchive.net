@@ -1,10 +1,10 @@
 #!/bin/sh
-# Build libarchive for Linux x86-64 using musl-libc for static linking
+# Build libarchive for Linux ARM64 (aarch64) using musl-libc for static linking
 
 set -e
 
 # Set up isolated build directory
-BUILD_DIR="${HOME}/libarchive-linux-x64"
+BUILD_DIR="${HOME}/libarchive-linux-arm64"
 OUTPUT_DIR="${HOME}/libarchive-native"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -19,20 +19,20 @@ cd "$BUILD_DIR"
 . "${SCRIPT_DIR}/build-config.sh"
 
 echo "Downloading prebuilt musl cross-compiler toolchain from Bootlin..."
-# Use Bootlin's stable x86-64 musl toolchain (GCC 14.3.0, tested and verified)
-TOOLCHAIN_URL="https://toolchains.bootlin.com/downloads/releases/toolchains/x86-64/tarballs/x86-64--musl--stable-2025.08-1.tar.xz"
-TOOLCHAIN_DIR="x86-64--musl--stable-2025.08-1"
+# Use Bootlin's stable aarch64 musl toolchain
+TOOLCHAIN_URL="https://toolchains.bootlin.com/downloads/releases/toolchains/aarch64/tarballs/aarch64--musl--stable-2025.08-1.tar.xz"
+TOOLCHAIN_DIR="aarch64--musl--stable-2025.08-1"
 
 curl -sL "$TOOLCHAIN_URL" | tar xJf -
 
 # Set up toolchain paths
 export TOOLCHAIN_PREFIX="$(pwd)/${TOOLCHAIN_DIR}"
-export TOOLCHAIN_SYSROOT="$TOOLCHAIN_PREFIX/x86_64-buildroot-linux-musl/sysroot"
+export TOOLCHAIN_SYSROOT="$TOOLCHAIN_PREFIX/aarch64-buildroot-linux-musl/sysroot"
 export PATH="$TOOLCHAIN_PREFIX/bin:$PATH"
-export CC=x86_64-linux-gcc
-export CXX=x86_64-linux-g++
-export AR=x86_64-linux-ar
-export RANLIB=x86_64-linux-ranlib
+export CC=aarch64-linux-gcc
+export CXX=aarch64-linux-g++
+export AR=aarch64-linux-ar
+export RANLIB=aarch64-linux-ranlib
 
 # Keep PREFIX for our built libraries (same as before)
 export PREFIX="${PREFIX:-$(pwd)/local}"
@@ -78,25 +78,25 @@ cd ..
 
 echo "Building lzo ${LZO_VERSION}..."
 cd lzo-${LZO_VERSION}
-./configure --prefix=$PREFIX --disable-shared --enable-static
+./configure --build=x86_64-pc-linux-gnu --host=aarch64-linux --prefix=$PREFIX --disable-shared --enable-static
 make -sj$NCPU install
 cd ..
 
 echo "Building zlib ${ZLIB_VERSION}..."
 cd zlib-${ZLIB_VERSION}
-./configure --static --prefix=$PREFIX
+CHOST=aarch64-linux ./configure --static --prefix=$PREFIX
 make -sj$NCPU install
 cd ..
 
 echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
-./configure --with-pic --disable-shared --prefix=$PREFIX
+./configure --build=x86_64-pc-linux-gnu --host=aarch64-linux --with-pic --disable-shared --prefix=$PREFIX
 make -sj$NCPU install
 cd ..
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
 cd libxml2-${LIBXML2_VERSION}
-./autogen.sh --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX/../zlib-${ZLIB_VERSION} --with-lzma=$PREFIX/../xz-${XZ_VERSION}
+./autogen.sh --build=x86_64-pc-linux-gnu --host=aarch64-linux --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX/../zlib-${ZLIB_VERSION} --with-lzma=$PREFIX/../xz-${XZ_VERSION}
 make -sj$NCPU install
 cd ..
 
@@ -104,7 +104,7 @@ echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
 export LIBXML2_PC_LIBS=-L$PREFIX
-./configure --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2 --disable-shared --enable-static
+./configure --build=x86_64-pc-linux-gnu --host=aarch64-linux --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2 --disable-shared --enable-static
 make -sj$NCPU install
 cd ..
 
@@ -132,15 +132,13 @@ ${AR/ar/nm} -D libarchive.so | head -20 || true
 ${AR/ar/nm} libarchive.so | grep -c " T " | xargs echo "Defined symbols:"
 ${AR/ar/nm} libarchive.so | grep -c " U " | xargs echo "Undefined symbols:"
 
-echo "Building native test..."
-gcc -o nativetest "${SCRIPT_DIR}/nativetest.c" local/lib/libarchive.a -Llocal/lib -Ilocal/include -llz4 -lzstd -lbz2
-./nativetest
+echo "Skipping native test (cross-compilation - cannot run ARM64 binary on x86_64 host)"
 
 echo "Copying output to ${OUTPUT_DIR}..."
-cp libarchive.so "${OUTPUT_DIR}/libarchive-linux-x64.so"
+cp libarchive.so "${OUTPUT_DIR}/libarchive-linux-arm64.so"
 
 echo "Cleaning up build directory..."
 cd /
 rm -rf "${BUILD_DIR}"
 
-echo "Linux x64 build complete: ${OUTPUT_DIR}/libarchive-linux-x64.so"
+echo "Linux ARM64 build complete: ${OUTPUT_DIR}/libarchive-linux-arm64.so"

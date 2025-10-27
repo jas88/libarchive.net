@@ -1,0 +1,78 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "description": "Compression libraries are user-facing - create separate PRs and update CHANGELOG",
+      "matchManagers": ["regex"],
+      "matchPackageNames": [
+        "libarchive",
+        "lz4",
+        "zstd",
+        "lzo",
+        "libxml2",
+        "bzip2",
+        "zlib",
+        "xz"
+      ],
+      "groupName": null,
+      "labels": ["dependencies", "compression-libraries"],
+      "commitBody": "Updates bundled compression library version.\n\nThis change affects the native libraries shipped to users.",
+      "prBodyNotes": [
+        "⚠️ **User Impact**: This updates a bundled compression library that is shipped to users.",
+        "Please review release notes for security fixes or important bug fixes."
+      ]
+    },
+    {
+      "description": "Group all Bootlin musl toolchain updates together",
+      "matchManagers": ["regex"],
+      "matchPackageNames": ["bootlin-musl-toolchain"],
+      "groupName": "Bootlin musl toolchains",
+      "labels": ["dependencies", "toolchains"]
+    }
+  ],
+  "regexManagers": [
+    {
+      "description": "Update compression library versions in build-config.sh",
+      "fileMatch": [
+        "^native/build-config\\.sh$"
+      ],
+      "matchStrings": [
+        "(?<depName>LIBARCHIVE|LZ4|ZSTD|LZO|LIBXML2|ZLIB|XZ|BZIP2)_VERSION=\"(?<currentValue>[^\"]+)\""
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "{{{depName}}}",
+      "packageNameTemplate": "{{{replace 'LIBARCHIVE' 'libarchive/libarchive' (replace 'LZ4' 'lz4/lz4' (replace 'ZSTD' 'facebook/zstd' (replace 'XZ' 'tukaani-project/xz' depName)))}}}",
+      "extractVersionTemplate": "^v?(?<version>.+)$"
+    },
+    {
+      "description": "Update Bootlin musl toolchain versions in build scripts",
+      "fileMatch": [
+        "^native/build-linux.*\\.sh$"
+      ],
+      "matchStrings": [
+        "# Use Bootlin's stable (?<architecture>[^ ]+) musl toolchain.*\\n.*TOOLCHAIN_URL=\"https://toolchains\\.bootlin\\.com/downloads/releases/toolchains/[^/]+/tarballs/[^-]+-[^-]+--musl--(?<currentValue>stable-[0-9.]+-[0-9]+)\\.tar\\.xz\""
+      ],
+      "datasourceTemplate": "custom.bootlin-toolchains",
+      "depNameTemplate": "bootlin-musl-toolchain",
+      "packageNameTemplate": "bootlin-musl-toolchain-{{{architecture}}}",
+      "versioningTemplate": "regex:^stable-(?<major>\\d{4})\\.(?<minor>\\d{2})-(?<patch>\\d+)$"
+    }
+  ],
+  "customDatasources": {
+    "bootlin-toolchains": {
+      "description": "Bootlin stable musl toolchains from toolchains.bootlin.com",
+      "defaultRegistryUrlTemplate": "https://toolchains.bootlin.com/downloads/releases/toolchains/",
+      "format": "html",
+      "transformTemplates": [
+        "{\"releases\": $map($distinct($match(/href=\"[^\"]*--musl--stable-([0-9.]+-[0-9]+)\\.tar\\.xz\"/).match), function($v) { {\"version\": $v} })}"
+      ]
+    }
+  },
+  "schedule": [
+    "before 3am on Monday"
+  ]
+}

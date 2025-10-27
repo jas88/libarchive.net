@@ -7,7 +7,6 @@ on: pull_request
 env:
   DOTNET_NOLOGO: 1
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
-  CCACHE_COMPILERCHECK: none
 
 jobs:
   macos:
@@ -19,30 +18,34 @@ jobs:
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: ${{ github.job }}-${{ matrix.os }}
-      - name: Cache autoconf
-        uses: actions/cache@v4
-        with:
-          path: configcache
-          key: ${{ runner.os }}-configcache
+          key: macos-build-v2
+        env:
+          CCACHE_COMPILERCHECK: mtime
       - name: Build
         run: |
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          export CC="ccache clang"
+          export CXX="ccache clang++"
+
+          echo "=== ccache stats before build ==="
+          ccache -s
+
           ./native/build-macos.sh
+
+          echo "=== ccache stats after build ==="
+          ccache -s
       - name: Archive MacOS library
         uses: actions/upload-artifact@v4
         with:
           name: maclib
-          path: libarchive.dylib
+          path: ~/libarchive-native/libarchive.dylib
           if-no-files-found: error
           retention-days: 1
   linux:
     needs: [macos]
-    name: Build Linux x86-64 code and wrapper
+    name: Build Windows DLLs, Linux library, and test
     runs-on: ubuntu-22.04
     steps:
-      - name: Ubuntu packages
-        run: sudo apt-get install -y libeatmydata1
       - name: Checkout code
         uses: actions/checkout@v5
         with:
@@ -60,25 +63,175 @@ jobs:
             echo "IS_RELEASE=false" >> $GITHUB_OUTPUT
           fi
           echo "Extracted version: $VERSION"
+      - name: Cache apt packages
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.0
+        with:
+          packages: libeatmydata1 mingw-w64 mono-complete mono-devel
+          version: 1.0
+          execute_install_scripts: true
       - name: Retrieve MacOS library
         uses: actions/download-artifact@v5
         with:
           name: maclib
+      - name: Install LLVM-MinGW for ARM64
+        run: |
+          curl -sL https://github.com/mstorsjo/llvm-mingw/releases/download/20240619/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64.tar.xz | tar xJ
+          echo "$(pwd)/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64/bin" >> $GITHUB_PATH
       - name: Setup .NET Core
         uses: actions/setup-dotnet@v5.0.0
+        with:
+          cache: true
+          cache-dependency-path: '**/*.csproj'
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: ${{ github.job }}-${{ matrix.os }}
-      - name: Cache autoconf
-        uses: actions/cache@v4
-        with:
-          path: configcache
-          key: ${{ runner.os }}-configcache
-      - name: Build native library
+          key: all-native-builds-v2
+          variant: sccache
+        env:
+          CCACHE_COMPILERCHECK: mtime
+      - name: Verify MinGW compilers are installed
         run: |
-          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          echo "Checking for MinGW compilers..."
+          which i686-w64-mingw32-gcc || echo "WARNING: i686-w64-mingw32-gcc not found"
+          which x86_64-w64-mingw32-gcc || echo "WARNING: x86_64-w64-mingw32-gcc not found"
+          ls -la /usr/bin/*mingw32* || true
+      - name: Setup sccache wrappers for all compilers
+        run: |
+          mkdir -p $HOME/.ccache-bin
+
+          # Use LLVM-MinGW for all Windows architectures (x86, x64, arm64)
+          # This provides a consistent, modern toolchain across all targets
+          LLVM_MINGW_BIN="$(pwd)/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64/bin"
+
+          for arch in i686 x86_64 aarch64; do
+            for tool in gcc g++; do
+              echo '#!/bin/sh' > $HOME/.ccache-bin/${arch}-w64-mingw32-$tool
+              echo "exec sccache $LLVM_MINGW_BIN/${arch}-w64-mingw32-${tool} \"\$@\"" >> $HOME/.ccache-bin/${arch}-w64-mingw32-$tool
+              chmod +x $HOME/.ccache-bin/${arch}-w64-mingw32-$tool
+            done
+          done
+
+          echo "$HOME/.ccache-bin" >> $GITHUB_PATH
+      - name: Download library sources once
+        run: |
+          # Load the download function and download all libraries once
+          . native/build-config.sh
+          download_all_libraries
+
+      - name: Build Windows DLLs (x86, x64, arm64)
+        run: |
+          echo "=== sccache stats before build ==="
+          sccache --show-stats
+
+          # Build each architecture in separate directory to avoid conflicts
+          for arch in x86 x64 arm64; do
+            echo "=== Building Windows $arch ==="
+            mkdir -p build-win-$arch
+            cd build-win-$arch
+
+            # Use architecture-specific prefix
+            export PREFIX="$(pwd)/local-$arch"
+
+            # Copy library sources from parent directory (already downloaded)
+            for src in ../bzip2-* ../libarchive-* ../libxml2-* ../lz4-* ../lzo-* ../xz-* ../zlib-* ../zstd-*; do
+              [ -e "$src" ] && cp -r "$src" .
+            done
+
+            ARCH=$arch ../native/build-windows.sh
+            mv archive-*.dll ../
+            cd ..
+
+            # Clean up to avoid conflicts with next architecture
+            rm -rf build-win-$arch
+            echo "✓ Windows $arch build complete"
+          done
+
+          echo "=== sccache stats after Windows build ==="
+          sccache --show-stats
+
+          ls -lh archive-*.dll
+      - name: Setup sccache wrappers for Linux cross-compilers
+        run: |
+          # Create sccache wrappers for Linux cross-compilers
+          # These wrap the Bootlin toolchain compilers after they're downloaded
+
+          # ARM64 wrapper script
+          echo '#!/bin/sh' > $HOME/.ccache-bin/wrap-arm64-compiler.sh
+          echo 'TOOLCHAIN_DIR=$(ls -d aarch64--musl--stable-* 2>/dev/null | head -1)' >> $HOME/.ccache-bin/wrap-arm64-compiler.sh
+          echo 'if [ -n "$TOOLCHAIN_DIR" ]; then' >> $HOME/.ccache-bin/wrap-arm64-compiler.sh
+          echo '  TOOLCHAIN_BIN="$(pwd)/$TOOLCHAIN_DIR/bin"' >> $HOME/.ccache-bin/wrap-arm64-compiler.sh
+          echo '  for tool in gcc g++ ar ranlib; do' >> $HOME/.ccache-bin/wrap-arm64-compiler.sh
+          echo '    echo "#!/bin/sh" > "$HOME/.ccache-bin/aarch64-linux-$tool"' >> $HOME/.ccache-bin/wrap-arm64-compiler.sh
+          echo '    echo "exec sccache $TOOLCHAIN_BIN/aarch64-linux-$tool \"\$@\"" >> "$HOME/.ccache-bin/aarch64-linux-$tool"' >> $HOME/.ccache-bin/wrap-arm64-compiler.sh
+          echo '    chmod +x "$HOME/.ccache-bin/aarch64-linux-$tool"' >> $HOME/.ccache-bin/wrap-arm64-compiler.sh
+          echo '  done' >> $HOME/.ccache-bin/wrap-arm64-compiler.sh
+          echo 'fi' >> $HOME/.ccache-bin/wrap-arm64-compiler.sh
+          chmod +x $HOME/.ccache-bin/wrap-arm64-compiler.sh
+
+          # ARM v7 wrapper script
+          echo '#!/bin/sh' > $HOME/.ccache-bin/wrap-arm-compiler.sh
+          echo 'TOOLCHAIN_DIR=$(ls -d armv7-eabihf--musl--stable-* 2>/dev/null | head -1)' >> $HOME/.ccache-bin/wrap-arm-compiler.sh
+          echo 'if [ -n "$TOOLCHAIN_DIR" ]; then' >> $HOME/.ccache-bin/wrap-arm-compiler.sh
+          echo '  TOOLCHAIN_BIN="$(pwd)/$TOOLCHAIN_DIR/bin"' >> $HOME/.ccache-bin/wrap-arm-compiler.sh
+          echo '  for tool in gcc g++ ar ranlib; do' >> $HOME/.ccache-bin/wrap-arm-compiler.sh
+          echo '    echo "#!/bin/sh" > "$HOME/.ccache-bin/arm-linux-$tool"' >> $HOME/.ccache-bin/wrap-arm-compiler.sh
+          echo '    echo "exec sccache $TOOLCHAIN_BIN/arm-linux-$tool \"\$@\"" >> "$HOME/.ccache-bin/arm-linux-$tool"' >> $HOME/.ccache-bin/wrap-arm-compiler.sh
+          echo '    chmod +x "$HOME/.ccache-bin/arm-linux-$tool"' >> $HOME/.ccache-bin/wrap-arm-compiler.sh
+          echo '  done' >> $HOME/.ccache-bin/wrap-arm-compiler.sh
+          echo 'fi' >> $HOME/.ccache-bin/wrap-arm-compiler.sh
+          chmod +x $HOME/.ccache-bin/wrap-arm-compiler.sh
+
+          # x86 (i686) wrapper script
+          echo '#!/bin/sh' > $HOME/.ccache-bin/wrap-x86-compiler.sh
+          echo 'TOOLCHAIN_DIR=$(ls -d x86-i686--musl--stable-* 2>/dev/null | head -1)' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
+          echo 'if [ -n "$TOOLCHAIN_DIR" ]; then' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
+          echo '  TOOLCHAIN_BIN="$(pwd)/$TOOLCHAIN_DIR/bin"' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
+          echo '  for tool in gcc g++ ar ranlib; do' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
+          echo '    echo "#!/bin/sh" > "$HOME/.ccache-bin/i686-linux-$tool"' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
+          echo '    echo "exec sccache $TOOLCHAIN_BIN/i686-linux-$tool \"\$@\"" >> "$HOME/.ccache-bin/i686-linux-$tool"' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
+          echo '    chmod +x "$HOME/.ccache-bin/i686-linux-$tool"' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
+          echo '  done' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
+          echo 'fi' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
+          chmod +x $HOME/.ccache-bin/wrap-x86-compiler.sh
+
+          # x86_64 wrapper script
+          echo '#!/bin/sh' > $HOME/.ccache-bin/wrap-x64-compiler.sh
+          echo 'TOOLCHAIN_DIR=$(ls -d x86-64--musl--stable-* 2>/dev/null | head -1)' >> $HOME/.ccache-bin/wrap-x64-compiler.sh
+          echo 'if [ -n "$TOOLCHAIN_DIR" ]; then' >> $HOME/.ccache-bin/wrap-x64-compiler.sh
+          echo '  TOOLCHAIN_BIN="$(pwd)/$TOOLCHAIN_DIR/bin"' >> $HOME/.ccache-bin/wrap-x64-compiler.sh
+          echo '  for tool in gcc g++ ar ranlib; do' >> $HOME/.ccache-bin/wrap-x64-compiler.sh
+          echo '    echo "#!/bin/sh" > "$HOME/.ccache-bin/x86_64-linux-$tool"' >> $HOME/.ccache-bin/wrap-x64-compiler.sh
+          echo '    echo "exec sccache $TOOLCHAIN_BIN/x86_64-linux-$tool \"\$@\"" >> "$HOME/.ccache-bin/x86_64-linux-$tool"' >> $HOME/.ccache-bin/wrap-x64-compiler.sh
+          echo '    chmod +x "$HOME/.ccache-bin/x86_64-linux-$tool"' >> $HOME/.ccache-bin/wrap-x64-compiler.sh
+          echo '  done' >> $HOME/.ccache-bin/wrap-x64-compiler.sh
+          echo 'fi' >> $HOME/.ccache-bin/wrap-x64-compiler.sh
+          chmod +x $HOME/.ccache-bin/wrap-x64-compiler.sh
+      - name: Build Linux libraries (x64, arm64, arm)
+        run: |
+          # Build x86 (32-bit)
+          echo "=== Building Linux x86 ==="
+          ./native/build-linux-x86.sh
+          $HOME/.ccache-bin/wrap-x86-compiler.sh  # Wrap compilers with sccache
+
+          # Build x64
+          echo "=== Building Linux x64 ==="
           ./native/build-linux.sh
+          $HOME/.ccache-bin/wrap-x64-compiler.sh  # Wrap compilers with sccache
+
+          # Build arm64
+          echo "=== Building Linux ARM64 ==="
+          ./native/build-linux-arm64.sh
+          $HOME/.ccache-bin/wrap-arm64-compiler.sh  # Wrap compilers with sccache
+
+          # Build armv7
+          echo "=== Building Linux ARM v7 ==="
+          ./native/build-linux-arm.sh
+          $HOME/.ccache-bin/wrap-arm-compiler.sh  # Wrap compilers with sccache
+
+          echo "=== sccache stats after Linux builds ==="
+          sccache --show-stats
+
+          ls -lh $HOME/libarchive-native/
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
@@ -86,16 +239,87 @@ jobs:
           build-mode: manual
       - name: Built .Net package and test
         run: |
-          mkdir -p LibArchive.Net/runtimes/osx-any64 LibArchive.Net/runtimes/linux-x64
-          mv libarchive.so LibArchive.Net/runtimes/linux-x64/
-          mv libarchive.dylib LibArchive.Net/runtimes/osx-any64/
+          mkdir -p LibArchive.Net/runtimes/{osx-x64,osx-arm64,linux-x86,linux-musl-x86,linux-x64,linux-musl-x64,linux-arm,linux-musl-arm,linux-arm64,linux-musl-arm64,win-x86,win-x64,win-arm64}/native
+
+          # Linux x86 (32-bit)
+          cp $HOME/libarchive-native/libarchive-linux-x86.so LibArchive.Net/runtimes/linux-x86/native/libarchive.so
+          cp LibArchive.Net/runtimes/linux-x86/native/libarchive.so LibArchive.Net/runtimes/linux-musl-x86/native/
+
+          # Linux x64
+          cp $HOME/libarchive-native/libarchive-linux-x64.so LibArchive.Net/runtimes/linux-x64/native/libarchive.so
+          cp LibArchive.Net/runtimes/linux-x64/native/libarchive.so LibArchive.Net/runtimes/linux-musl-x64/native/
+
+          # Linux ARM64
+          cp $HOME/libarchive-native/libarchive-linux-arm64.so LibArchive.Net/runtimes/linux-arm64/native/libarchive.so
+          cp LibArchive.Net/runtimes/linux-arm64/native/libarchive.so LibArchive.Net/runtimes/linux-musl-arm64/native/
+
+          # Linux ARM v7
+          cp $HOME/libarchive-native/libarchive-linux-arm.so LibArchive.Net/runtimes/linux-arm/native/libarchive.so
+          cp LibArchive.Net/runtimes/linux-arm/native/libarchive.so LibArchive.Net/runtimes/linux-musl-arm/native/
+
+          # macOS (downloaded as artifact to current directory)
+          cp libarchive.dylib LibArchive.Net/runtimes/osx-x64/native/
+          cp LibArchive.Net/runtimes/osx-x64/native/libarchive.dylib LibArchive.Net/runtimes/osx-arm64/native/
+
+          # Windows
+          mv archive-x86.dll LibArchive.Net/runtimes/win-x86/native/archive.dll
+          mv archive-x64.dll LibArchive.Net/runtimes/win-x64/native/archive.dll
+          mv archive-arm64.dll LibArchive.Net/runtimes/win-arm64/native/archive.dll
+
           touch libarchive.dylib
-          dotnet build --configuration Release
-          dotnet test --nologo
-          dotnet pack LibArchive.Net/LibArchive.Net.csproj -o . -p:PackageVersion=${{ steps.version.outputs.VERSION }} --nologo
+
+          # Build and pack the library first
+          dotnet pack LibArchive.Net/LibArchive.Net.csproj -o . -p:PackageVersion=${{ steps.version.outputs.VERSION }} --configuration Release --nologo
+
+          # Extract package info
+          PACKAGE_FILE=$(ls LibArchive.Net.*.nupkg)
+          PACKAGE_VERSION=$(echo "$PACKAGE_FILE" | sed 's/LibArchive.Net.\(.*\).nupkg/\1/')
+          echo "=== Package: $PACKAGE_FILE (version: $PACKAGE_VERSION) ==="
+          unzip -l "$PACKAGE_FILE" | grep -E "runtimes/|\.targets|lib/"
+
+          # Clear old cached versions to force using local package
+          rm -rf ~/.nuget/packages/libarchive.net/
+
+          # Restore and test using the local NuGet package
+          echo "=== Testing with local NuGet package version $PACKAGE_VERSION ==="
+          # Use local source first, then nuget.org for other dependencies
+          dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --source . --source https://api.nuget.org/v3/index.json /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
+
+          # Verify the correct version was restored
+          echo "=== Restored LibArchive.Net version ==="
+          ls -la ~/.nuget/packages/libarchive.net/
+
+          # Build only net9.0 (net462 will be built when testing with Mono)
+          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net9.0 --configuration Release --no-restore /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
+
+          # Debug: Show test output directory
+          echo "=== Test output directory ==="
+          ls -laR Test.LibArchive.Net/bin/Release/net9.0/runtimes/ 2>/dev/null || echo "No runtimes folder in test output!"
+
+          # Run tests for net9.0
+          echo "=== Running tests for net9.0 ==="
+          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net9.0 --configuration Release --no-build --nologo /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
+
+          echo "=== Mono version (for net462 tests) ==="
+          mono --version | head -n1
+
+          # Build and test net462 with Mono (will build net462 if needed)
+          echo "=== Running tests for net462 with Mono ==="
+          # Enable diagnostics for native library loading
+          export LIBARCHIVE_NET_DEBUG=1
+          # Enable Mono DLL loading diagnostics (suggested by @YoshiRulz)
+          export MONO_LOG_LEVEL=debug
+          export MONO_LOG_MASK=dll
+          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net462 --configuration Release --verbosity normal /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
+
+          echo "=== Checking net462 output directory for native libraries ==="
+          ls -laR Test.LibArchive.Net/bin/Release/net462/runtimes/ 2>/dev/null || echo "No runtimes folder in net462 output!"
+
+      - name: Cleanup build artifacts
+        run: |
           ls -lh *.nupkg
           du -sh *
-          rm -rf local {bzip2,libarchive,libxml2,lz4,lzo,musl-cross-make,xz,zlib,zstd}-* musl-cross-make-master
+          rm -rf local {bzip2,libarchive,libxml2,lz4,lzo,xz,zlib,zstd}-* x86-64--musl--stable-*
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
       - name: Upload built packages

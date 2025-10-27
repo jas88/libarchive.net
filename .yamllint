@@ -1,0 +1,9 @@
+extends: default
+
+rules:
+  line-length:
+    max: 200  # Relax for long shell commands in workflows
+    level: warning
+  document-start: disable  # Don't require --- at start
+  truthy:
+    allowed-values: ['true', 'false', 'on', 'off']  # Allow on/off for GitHub Actions

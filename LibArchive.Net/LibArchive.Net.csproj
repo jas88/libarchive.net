@@ -1,28 +1,61 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net6.0;net8.0</TargetFrameworks>
+    <TargetFrameworks>netstandard2.0;net6.0;net8.0;net9.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
-    <RuntimeIdentifiers>win-x64;linux-x64;osx-x64;osx-arm64</RuntimeIdentifiers>
+    <!-- Allow unsafe code for UTF-8 string handling and LibraryImportAttribute -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RuntimeIdentifiers>win-x86;win-x64;win-arm64;linux-x86;linux-musl-x86;linux-x64;linux-musl-x64;linux-arm;linux-musl-arm;linux-arm64;linux-musl-arm64;osx-x64;osx-arm64</RuntimeIdentifiers>
+
+    <!-- AOT and Trimming Support (for .NET 6+) -->
+    <IsAotCompatible Condition="$([MSBuild]::GetTargetFrameworkIdentifier('$(TargetFramework)')) != '.NETStandard'">true</IsAotCompatible>
+    <IsTrimmable Condition="$([MSBuild]::GetTargetFrameworkIdentifier('$(TargetFramework)')) != '.NETStandard'">true</IsTrimmable>
+    <EnableTrimAnalyzer Condition="$([MSBuild]::GetTargetFrameworkIdentifier('$(TargetFramework)')) != '.NETStandard'">true</EnableTrimAnalyzer>
+    <EnableAotAnalyzer Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net8.0'))">true</EnableAotAnalyzer>
+
+    <!-- Package Metadata -->
     <PackageLicenseExpression>BSD-2-Clause</PackageLicenseExpression>
     <PackageId>LibArchive.Net</PackageId>
-    <PackageTags>Compression;Libarchive;Tar;Zip;7Zip;Rar</PackageTags>
-    <Description>This package provides access to the native libarchive compression library (included) on 64 bit Linux, Windows and MacOS platforms (x86-64 for all three, plus arm64/M1 for Mac)</Description>
+    <PackageTags>Compression;Libarchive;Tar;Zip;7Zip;Rar;AOT;NativeAOT;Trimming</PackageTags>
+    <Description>This package provides access to the native libarchive compression library (included) on Linux (x64, musl-x64), Windows (x86, x64, arm64), and macOS (x64, arm64) platforms. Supports Native AOT and trimming for .NET 6+.</Description>
     <Authors>James A Sutherland</Authors>
     <Copyright>Copyright 2022-2024</Copyright>
     <Title>LibArchive.Net</Title>
     <DebugType>embedded</DebugType>
     <PackageProjectUrl>https://github.com/jas88/libarchive.net/</PackageProjectUrl>
     <RepositoryUrl>https://github.com/jas88/libarchive.net.git</RepositoryUrl>
+
+    <!-- MinVer Configuration -->
+    <MinVerMinimumMajorMinor>0.2</MinVerMinimumMajorMinor>
+    <MinVerTagPrefix>v</MinVerTagPrefix>
   </PropertyGroup>
   <ItemGroup>
-    <NativeLibs Include="$(MSBuildThisFileDirectory)runtimes\**"/>
-    <Content Include="@(NativeLibs)" CopyToOutputDirectory="PreserveNewest">
-      <Pack>true</Pack>
-      <PackageCopyToOutput>true</PackageCopyToOutput>
-    </Content>
+    <PackageReference Include="MinVer" Version="6.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All"/>
+    <!-- Include native libraries in NuGet package -->
+    <Content Include="runtimes\**\*.*">
+      <Pack>true</Pack>
+      <PackagePath>runtimes\%(RecursiveDir)%(Filename)%(Extension)</PackagePath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Visible>false</Visible>
+    </Content>
+
+    <!-- Include the .targets file in the NuGet package so it's automatically imported -->
+    <None Include="LibArchive.Net.targets">
+      <Pack>true</Pack>
+      <PackagePath>build\$(PackageId).targets;buildTransitive\$(PackageId).targets;build\net462\$(PackageId).targets;buildTransitive\net462\$(PackageId).targets</PackagePath>
+    </None>
+  </ItemGroup>
+
+  <!-- Expose native libraries as content that flows to consuming projects -->
+  <ItemGroup>
+    <ContentWithTargetPath Include="runtimes\**\*.*" Condition="Exists('runtimes')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
+    </ContentWithTargetPath>
   </ItemGroup>
 </Project>
