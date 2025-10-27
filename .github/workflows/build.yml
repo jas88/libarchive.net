@@ -101,25 +101,19 @@ jobs:
           # MinGW cross-compilers (i686, x86_64)
           for arch in i686 x86_64; do
             for tool in gcc g++; do
-              cat > $HOME/.ccache-bin/${arch}-w64-mingw32-$tool <<EOF
-#!/bin/sh
-exec sccache /usr/bin/${arch}-w64-mingw32-${tool} "\$@"
-EOF
+              echo '#!/bin/sh' > $HOME/.ccache-bin/${arch}-w64-mingw32-$tool
+              echo "exec sccache /usr/bin/${arch}-w64-mingw32-${tool} \"\$@\"" >> $HOME/.ccache-bin/${arch}-w64-mingw32-$tool
               chmod +x $HOME/.ccache-bin/${arch}-w64-mingw32-$tool
             done
           done
 
           # LLVM-MinGW ARM64 compiler (separate, in different location)
-          cat > $HOME/.ccache-bin/aarch64-w64-mingw32-gcc <<EOF
-#!/bin/sh
-exec sccache $(pwd)/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64/bin/aarch64-w64-mingw32-gcc "\$@"
-EOF
+          echo '#!/bin/sh' > $HOME/.ccache-bin/aarch64-w64-mingw32-gcc
+          echo "exec sccache $(pwd)/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64/bin/aarch64-w64-mingw32-gcc \"\$@\"" >> $HOME/.ccache-bin/aarch64-w64-mingw32-gcc
           chmod +x $HOME/.ccache-bin/aarch64-w64-mingw32-gcc
 
-          cat > $HOME/.ccache-bin/aarch64-w64-mingw32-g++ <<EOF
-#!/bin/sh
-exec sccache $(pwd)/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64/bin/aarch64-w64-mingw32-g++ "\$@"
-EOF
+          echo '#!/bin/sh' > $HOME/.ccache-bin/aarch64-w64-mingw32-g++
+          echo "exec sccache $(pwd)/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64/bin/aarch64-w64-mingw32-g++ \"\$@\"" >> $HOME/.ccache-bin/aarch64-w64-mingw32-g++
           chmod +x $HOME/.ccache-bin/aarch64-w64-mingw32-g++
 
           echo "$HOME/.ccache-bin" >> $GITHUB_PATH
