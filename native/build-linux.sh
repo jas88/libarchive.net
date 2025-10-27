@@ -7,9 +7,9 @@ set -e
 . "$(dirname "$0")/build-config.sh"
 
 echo "Downloading prebuilt musl cross-compiler toolchain from Bootlin..."
-# Use Bootlin's stable x86_64 musl toolchain (GCC 14.3.0, tested and verified)
-TOOLCHAIN_URL="https://toolchains.bootlin.com/downloads/releases/toolchains/x86_64/tarballs/x86_64--musl--stable-2025.08-1.tar.xz"
-TOOLCHAIN_DIR="x86_64--musl--stable-2025.08-1"
+# Use Bootlin's stable x86-64 musl toolchain (GCC 14.3.0, tested and verified)
+TOOLCHAIN_URL="https://toolchains.bootlin.com/downloads/releases/toolchains/x86-64/tarballs/x86-64--musl--stable-2025.08-1.tar.xz"
+TOOLCHAIN_DIR="x86-64--musl--stable-2025.08-1"
 
 curl -sL "$TOOLCHAIN_URL" | tar xJf -
 
