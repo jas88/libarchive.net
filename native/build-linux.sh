@@ -38,10 +38,10 @@ download_all_libraries
 
 # Build compression libraries (static only to avoid conflicts with -static LDFLAGS)
 echo "Building lz4 ${LZ4_VERSION}..."
-make -j$NCPU -sC lz4-${LZ4_VERSION} install PREFIX=$PREFIX BUILD_SHARED=no
+make -j$NCPU -sC lz4-${LZ4_VERSION}/lib install-static PREFIX=$PREFIX
 
 echo "Building zstd ${ZSTD_VERSION}..."
-make -j$NCPU -sC zstd-${ZSTD_VERSION} install PREFIX=$PREFIX BUILD_SHARED=no
+make -j$NCPU -sC zstd-${ZSTD_VERSION}/lib install-static PREFIX=$PREFIX
 
 echo "Building bzip2 ${BZIP2_VERSION}..."
 make -j$NCPU -sC bzip2-${BZIP2_VERSION} install PREFIX=$PREFIX CFLAGS="-fPIC -O2 -D_FILE_OFFSET_BITS=64" CC=$CC

@@ -51,8 +51,6 @@ jobs:
     name: Build Windows DLLs, Linux library, and test
     runs-on: ubuntu-22.04
     steps:
-      - name: Ubuntu packages
-        run: sudo apt-get install -y libeatmydata1
       - name: Checkout code
         uses: actions/checkout@v5
         with:
@@ -70,15 +68,23 @@ jobs:
             echo "IS_RELEASE=false" >> $GITHUB_OUTPUT
           fi
           echo "Extracted version: $VERSION"
+      - name: Setup apt cache
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-cache-${{ runner.os }}-${{ hashFiles('.github/workflows/build.yml') }}
+          restore-keys: |
+            apt-cache-${{ runner.os }}-
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libeatmydata1 mingw-w64 mono-complete mono-devel
       - name: Retrieve MacOS library
         uses: actions/download-artifact@v5
         with:
           name: maclib
-      - name: Install MinGW for Windows cross-compilation
+      - name: Install LLVM-MinGW for ARM64
         run: |
-          sudo apt-get update
-          sudo apt-get install -y mingw-w64
-          # Install LLVM-MinGW for ARM64
           curl -sL https://github.com/mstorsjo/llvm-mingw/releases/download/20240619/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64.tar.xz | tar xJ
           echo "$(pwd)/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64/bin" >> $GITHUB_PATH
       - name: Setup .NET Core
@@ -87,14 +93,19 @@ jobs:
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: all-native-builds-v2
-      - name: Setup ccache for MinGW
+          variant: sccache
+      - name: Setup ccache for all compilers
         run: |
           mkdir -p $HOME/.ccache-bin
+          # MinGW cross-compilers
           for arch in i686 x86_64 aarch64; do
             for tool in gcc g++; do
-              ln -sf $(which ccache) $HOME/.ccache-bin/${arch}-w64-mingw32-$tool
+              ln -sf $(which sccache) $HOME/.ccache-bin/${arch}-w64-mingw32-$tool
             done
           done
+          # Native Linux compiler (for musl builds)
+          ln -sf $(which sccache) $HOME/.ccache-bin/x86-64-linux-gcc
+          ln -sf $(which sccache) $HOME/.ccache-bin/x86-64-linux-g++
           echo "$HOME/.ccache-bin" >> $GITHUB_PATH
       - name: Cache autoconf
         uses: actions/cache@v4
@@ -105,8 +116,8 @@ jobs:
         run: |
           export CCACHE_COMPILERCHECK=content
 
-          echo "=== ccache stats before build ==="
-          ccache -s
+          echo "=== sccache stats before build ==="
+          sccache --show-stats
 
           # Build each architecture in separate directory to avoid conflicts
           for arch in x86 x64 arm64; do
@@ -127,8 +138,8 @@ jobs:
             echo "✓ Windows $arch build complete"
           done
 
-          echo "=== ccache stats after Windows build ==="
-          ccache -s
+          echo "=== sccache stats after Windows build ==="
+          sccache --show-stats
 
           ls -lh archive-*.dll
       - name: Build Linux library
@@ -137,8 +148,8 @@ jobs:
           export CCACHE_COMPILERCHECK=content
           ./native/build-linux.sh
 
-          echo "=== ccache stats after Linux build ==="
-          ccache -s
+          echo "=== sccache stats after Linux build ==="
+          sccache --show-stats
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
@@ -194,15 +205,8 @@ jobs:
           echo "=== Running tests for net9.0 ==="
           dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net9.0 --configuration Release --no-build --nologo /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
-      - name: Install Mono for .NET Framework tests
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y mono-complete mono-devel
-          mono --version
-
-      - name: Run .NET Framework tests with Mono
-        run: |
-          PACKAGE_VERSION=$(ls LibArchive.Net.*.nupkg | sed 's/LibArchive.Net.\(.*\).nupkg/\1/')
+          echo "=== Mono version (for net462 tests) ==="
+          mono --version | head -n1
 
           echo "=== Running tests for net462 with Mono ==="
           dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net462 --configuration Release --no-build --verbosity normal /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
