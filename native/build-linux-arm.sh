@@ -3,8 +3,20 @@
 
 set -e
 
+# Set up isolated build directory
+BUILD_DIR="${HOME}/libarchive-linux-arm"
+OUTPUT_DIR="${HOME}/libarchive-native"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Create build and output directories
+mkdir -p "$BUILD_DIR"
+mkdir -p "$OUTPUT_DIR"
+
+# Change to build directory
+cd "$BUILD_DIR"
+
 # Load shared configuration
-. "$(dirname "$0")/build-config.sh"
+. "${SCRIPT_DIR}/build-config.sh"
 
 echo "Downloading prebuilt musl cross-compiler toolchain from Bootlin..."
 # Use Bootlin's stable armv7-eabihf musl toolchain
@@ -35,18 +47,13 @@ echo "Toolchain installed:"
 $CC --version | head -n1
 echo ""
 
-# Download all libraries if not already present
-if [ ! -d "libarchive-${LIBARCHIVE_VERSION}" ]; then
-    echo "Downloading library sources..."
-    download_all_libraries
-else
-    echo "Using pre-downloaded library sources"
-fi
+# Download and unpack fresh copies of all libraries
+echo "Setting up library sources..."
+download_all_libraries
 
 # Build compression libraries (static only to avoid conflicts with -static LDFLAGS)
 echo "Building lz4 ${LZ4_VERSION}..."
 cd lz4-${LZ4_VERSION}/lib
-make clean || true
 make -j$NCPU liblz4.a CC=$CC AR=$AR
 mkdir -p $PREFIX/lib $PREFIX/include
 cp liblz4.a $PREFIX/lib/
@@ -55,7 +62,6 @@ cd ../..
 
 echo "Building zstd ${ZSTD_VERSION}..."
 cd zstd-${ZSTD_VERSION}/lib
-make clean || true
 make -j$NCPU libzstd.a CC=$CC AR=$AR
 mkdir -p $PREFIX/lib $PREFIX/include
 cp libzstd.a $PREFIX/lib/
@@ -64,7 +70,6 @@ cd ../..
 
 echo "Building bzip2 ${BZIP2_VERSION}..."
 cd bzip2-${BZIP2_VERSION}
-make clean || true
 make -j$NCPU libbz2.a CC=$CC AR=$AR RANLIB=$RANLIB CFLAGS="-fPIC -O2 -D_FILE_OFFSET_BITS=64"
 mkdir -p $PREFIX/lib $PREFIX/include
 cp libbz2.a $PREFIX/lib/
@@ -73,35 +78,30 @@ cd ..
 
 echo "Building lzo ${LZO_VERSION}..."
 cd lzo-${LZO_VERSION}
-make distclean || make clean || true
 ./configure --build=x86_64-pc-linux-gnu --host=arm-linux --prefix=$PREFIX --disable-shared --enable-static
 make -sj$NCPU install
 cd ..
 
 echo "Building zlib ${ZLIB_VERSION}..."
 cd zlib-${ZLIB_VERSION}
-make distclean || make clean || true
 CHOST=arm-linux ./configure --static --prefix=$PREFIX
 make -sj$NCPU install
 cd ..
 
 echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
-make distclean || make clean || true
 ./configure --build=x86_64-pc-linux-gnu --host=arm-linux --with-pic --disable-shared --prefix=$PREFIX
 make -sj$NCPU install
 cd ..
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
 cd libxml2-${LIBXML2_VERSION}
-make distclean || make clean || true
 ./autogen.sh --build=x86_64-pc-linux-gnu --host=arm-linux --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX/../zlib-${ZLIB_VERSION} --with-lzma=$PREFIX/../xz-${XZ_VERSION}
 make -sj$NCPU install
 cd ..
 
 echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
-make distclean || make clean || true
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
 export LIBXML2_PC_LIBS=-L$PREFIX
 ./configure --build=x86_64-pc-linux-gnu --host=arm-linux --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2 --disable-shared --enable-static
@@ -126,7 +126,14 @@ file libarchive.so
 ldd libarchive.so || true
 
 echo "Building native test..."
-gcc -o nativetest native/nativetest.c local/lib/libarchive.a -Llocal/lib -Ilocal/include -llz4 -lzstd -lbz2
+gcc -o nativetest "${SCRIPT_DIR}/nativetest.c" local/lib/libarchive.a -Llocal/lib -Ilocal/include -llz4 -lzstd -lbz2
 ./nativetest
 
-echo "Linux build complete: libarchive.so"
+echo "Copying output to ${OUTPUT_DIR}..."
+cp libarchive.so "${OUTPUT_DIR}/libarchive-linux-arm.so"
+
+echo "Cleaning up build directory..."
+cd /
+rm -rf "${BUILD_DIR}"
+
+echo "Linux ARM build complete: ${OUTPUT_DIR}/libarchive-linux-arm.so"

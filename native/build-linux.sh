@@ -3,8 +3,20 @@
 
 set -e
 
+# Set up isolated build directory
+BUILD_DIR="${HOME}/libarchive-linux-x64"
+OUTPUT_DIR="${HOME}/libarchive-native"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Create build and output directories
+mkdir -p "$BUILD_DIR"
+mkdir -p "$OUTPUT_DIR"
+
+# Change to build directory
+cd "$BUILD_DIR"
+
 # Load shared configuration
-. "$(dirname "$0")/build-config.sh"
+. "${SCRIPT_DIR}/build-config.sh"
 
 echo "Downloading prebuilt musl cross-compiler toolchain from Bootlin..."
 # Use Bootlin's stable x86-64 musl toolchain (GCC 14.3.0, tested and verified)
@@ -35,13 +47,9 @@ echo "Toolchain installed:"
 $CC --version | head -n1
 echo ""
 
-# Download all libraries if not already present
-if [ ! -d "libarchive-${LIBARCHIVE_VERSION}" ]; then
-    echo "Downloading library sources..."
-    download_all_libraries
-else
-    echo "Using pre-downloaded library sources"
-fi
+# Download and unpack fresh copies of all libraries
+echo "Setting up library sources..."
+download_all_libraries
 
 # Build compression libraries (static only to avoid conflicts with -static LDFLAGS)
 echo "Building lz4 ${LZ4_VERSION}..."
@@ -96,12 +104,12 @@ echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
 export LIBXML2_PC_LIBS=-L$PREFIX
-./configure --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2 --disable-shared --enable-static
+./configure --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2 --disable-shared --enable-static
 make -sj$NCPU install
 cd ..
 
 echo "Creating final shared library..."
-gcc -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/liblzo2.a local/lib/libzstd.a local/lib/liblz4.a ${TOOLCHAIN_SYSROOT}/lib/libc.a -nostdlib
+$CC -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/liblzo2.a local/lib/libzstd.a local/lib/liblz4.a ${TOOLCHAIN_SYSROOT}/lib/libc.a -nostdlib
 
 echo "Testing library..."
 cat > test.c <<EOT
@@ -118,7 +126,14 @@ file libarchive.so
 ldd libarchive.so || true
 
 echo "Building native test..."
-gcc -o nativetest native/nativetest.c local/lib/libarchive.a -Llocal/lib -Ilocal/include -llz4 -lzstd -lbz2
+gcc -o nativetest "${SCRIPT_DIR}/nativetest.c" local/lib/libarchive.a -Llocal/lib -Ilocal/include -llz4 -lzstd -lbz2
 ./nativetest
 
-echo "Linux build complete: libarchive.so"
+echo "Copying output to ${OUTPUT_DIR}..."
+cp libarchive.so "${OUTPUT_DIR}/libarchive-linux-x64.so"
+
+echo "Cleaning up build directory..."
+cd /
+rm -rf "${BUILD_DIR}"
+
+echo "Linux x64 build complete: ${OUTPUT_DIR}/libarchive-linux-x64.so"

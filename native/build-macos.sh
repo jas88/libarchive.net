@@ -3,8 +3,20 @@
 
 set -e
 
+# Set up isolated build directory
+BUILD_DIR="${HOME}/libarchive-macos"
+OUTPUT_DIR="${HOME}/libarchive-native"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Create build and output directories
+mkdir -p "$BUILD_DIR"
+mkdir -p "$OUTPUT_DIR"
+
+# Change to build directory
+cd "$BUILD_DIR"
+
 # Load shared configuration
-. "$(dirname "$0")/build-config.sh"
+. "${SCRIPT_DIR}/build-config.sh"
 
 # Ensure build tools are available
 echo "Installing required build tools..."
@@ -15,13 +27,9 @@ export CPPFLAGS="-I$PREFIX/include"
 export LDFLAGS="-L$PREFIX/lib -liconv"
 export CFLAGS="-fPIC -O2 -D_FILE_OFFSET_BITS=64 -arch arm64 -arch x86_64"
 
-# Download all libraries if not already present
-if [ ! -d "libarchive-${LIBARCHIVE_VERSION}" ]; then
-    echo "Downloading library sources..."
-    download_all_libraries
-else
-    echo "Using pre-downloaded library sources"
-fi
+# Download and unpack fresh copies of all libraries
+echo "Setting up library sources..."
+download_all_libraries
 
 # Build compression libraries
 echo "Building lz4 ${LZ4_VERSION}..."
@@ -73,7 +81,14 @@ file libarchive.dylib
 otool -L libarchive.dylib
 
 echo "Building native test..."
-gcc -o nativetest native/nativetest.c local/lib/libarchive.a -Llocal/lib -Ilocal/include -llz4 -lzstd -liconv -lbz2
+gcc -o nativetest "${SCRIPT_DIR}/nativetest.c" local/lib/libarchive.a -Llocal/lib -Ilocal/include -llz4 -lzstd -liconv -lbz2
 ./nativetest
 
-echo "macOS build complete: libarchive.dylib"
+echo "Copying output to ${OUTPUT_DIR}..."
+cp libarchive.dylib "${OUTPUT_DIR}/libarchive.dylib"
+
+echo "Cleaning up build directory..."
+cd /
+rm -rf "${BUILD_DIR}"
+
+echo "macOS build complete: ${OUTPUT_DIR}/libarchive.dylib"

@@ -31,29 +31,54 @@ XZ_URL="https://github.com/tukaani-project/xz/releases/download/v${XZ_VERSION}/x
 # Common build settings
 export PREFIX="${PREFIX:-$(pwd)/local}"
 
+# Download cache directory (persistent across builds)
+export DOWNLOAD_CACHE="${HOME}/downloads"
+
 # Function to download and extract a library
+# Downloads to cache if not present, then unpacks fresh copy
 download_library() {
     local url="$1"
     local name="$2"
+    local dir_name="$3"
 
-    echo "Downloading ${name}..."
-    if [ "${url##*.}" = "xz" ]; then
-        curl -sL "$url" | tar xJf -
+    # Extract archive filename from URL
+    local archive_name="${url##*/}"
+    local cache_file="${DOWNLOAD_CACHE}/${archive_name}"
+
+    # Create cache directory if it doesn't exist
+    mkdir -p "$DOWNLOAD_CACHE"
+
+    # Download to cache if not already present
+    if [ ! -f "$cache_file" ]; then
+        echo "Downloading ${name} to cache..."
+        curl -sL "$url" -o "$cache_file"
     else
-        curl -sL "$url" | tar xzf -
+        echo "Using cached ${name}..."
+    fi
+
+    # Delete any existing unpacked directory to ensure clean start
+    rm -rf "$dir_name"
+
+    # Unpack from cache
+    echo "Unpacking ${name}..."
+    if [ "${url##*.}" = "xz" ]; then
+        tar xJf "$cache_file"
+    else
+        tar xzf "$cache_file"
     fi
 }
 
 # Function to download all libraries
+# Always unpacks fresh copies from cache
 download_all_libraries() {
-    download_library "$LIBARCHIVE_URL" "libarchive"
-    download_library "$LZ4_URL" "lz4"
-    download_library "$ZSTD_URL" "zstd"
-    download_library "$LZO_URL" "lzo"
-    download_library "$LIBXML2_URL" "libxml2"
-    download_library "$BZIP2_URL" "bzip2"
-    download_library "$ZLIB_URL" "zlib"
-    download_library "$XZ_URL" "xz"
+    download_library "$LIBARCHIVE_URL" "libarchive" "libarchive-${LIBARCHIVE_VERSION}"
+    download_library "$LZ4_URL" "lz4" "lz4-${LZ4_VERSION}"
+    download_library "$ZSTD_URL" "zstd" "zstd-${ZSTD_VERSION}"
+    download_library "$LZO_URL" "lzo" "lzo-${LZO_VERSION}"
+    download_library "$LIBXML2_URL" "libxml2" "libxml2-${LIBXML2_VERSION}"
+    download_library "$BZIP2_URL" "bzip2" "bzip2-${BZIP2_VERSION}"
+    download_library "$ZLIB_URL" "zlib" "zlib-${ZLIB_VERSION}"
+    download_library "$XZ_URL" "xz" "xz-${XZ_VERSION}"
 }
 
 # Detect number of CPU cores
