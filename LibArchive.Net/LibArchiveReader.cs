@@ -497,10 +497,36 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     private static void LoadUnixLibrary(string libraryPath)
     {
-        // On .NET Framework (Mono), we need to explicitly load the library using dlopen
+        // CRITICAL for Mono: Mono's P/Invoke searches for "archive" → "libarchive.so"/"libarchive.dylib"
+        // in AppDomain.BaseDirectory, but our library is in runtimes/{rid}/native/
+        // We must copy it to the base directory so Mono can find it
+        var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+        var destPath = Path.Combine(baseDir, Path.GetFileName(libraryPath));
+
+        // Copy library to base directory if not already there
+        if (!File.Exists(destPath))
+        {
+            try
+            {
+                File.Copy(libraryPath, destPath, overwrite: false);
+
+                if (Environment.GetEnvironmentVariable("LIBARCHIVE_NET_DEBUG") == "1")
+                {
+                    Console.Error.WriteLine($"[LibArchive.Net] Copied {libraryPath} to {destPath}");
+                }
+            }
+            catch (Exception ex)
+            {
+                if (Environment.GetEnvironmentVariable("LIBARCHIVE_NET_DEBUG") == "1")
+                {
+                    Console.Error.WriteLine($"[LibArchive.Net] Warning: Failed to copy library to base directory: {ex.Message}");
+                }
+            }
+        }
+
+        // Load the library with RTLD_GLOBAL so symbols are available
         // RTLD_NOW (0x2): Resolve all symbols immediately
-        // RTLD_GLOBAL (0x100): Make symbols available for subsequently loaded libraries
-        //                      AND for Mono's P/Invoke to find them
+        // RTLD_GLOBAL (0x100): Make symbols available in global namespace for P/Invoke
         const int RTLD_NOW = 0x2;
         const int RTLD_GLOBAL = 0x100;
         const int flags = RTLD_NOW | RTLD_GLOBAL;
