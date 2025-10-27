@@ -159,7 +159,8 @@ ${CC} -shared -o ${OUTPUT_NAME} \
 
 echo "Testing DLL..."
 file ${OUTPUT_NAME}
-${STRIP} ${OUTPUT_NAME}
+echo "Stripping debug symbols..."
+${STRIP} ${OUTPUT_NAME} || echo "WARNING: strip failed, continuing with unstripped DLL"
 ls -lh ${OUTPUT_NAME}
 
 echo "Windows ${ARCH} build complete: ${OUTPUT_NAME}"
