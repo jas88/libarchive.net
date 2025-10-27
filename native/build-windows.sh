@@ -163,7 +163,10 @@ ${CC} -shared -o ${OUTPUT_NAME} \
 echo "Testing DLL..."
 file ${OUTPUT_NAME}
 
-echo "Inspecting symbols (before stripping)..."
+echo "=== Checking DLL dependencies ==="
+${MINGW_PREFIX}-objdump -p ${OUTPUT_NAME} | grep "DLL Name:" || echo "No external DLL dependencies"
+
+echo "=== Inspecting symbols (before stripping) ==="
 ${MINGW_PREFIX}-nm ${OUTPUT_NAME} | grep -c " T " | xargs echo "Defined symbols:"
 ${MINGW_PREFIX}-nm ${OUTPUT_NAME} | grep -c " U " | xargs echo "Undefined symbols:"
 ${MINGW_PREFIX}-nm ${OUTPUT_NAME} | grep -E "(__udivdi3|__umoddi3|__divdi3|__moddi3)" || echo "No 64-bit division intrinsics found"

@@ -123,9 +123,11 @@ EOT
 gcc -o test test.c
 ./test
 file libarchive.so
-ldd libarchive.so || true
 
-echo "Inspecting symbols..."
+echo "=== Checking dynamic library dependencies ==="
+ldd libarchive.so || echo "Statically linked (no dynamic dependencies)"
+
+echo "=== Inspecting symbols ==="
 ${AR/ar/nm} -D libarchive.so | head -20 || true
 ${AR/ar/nm} libarchive.so | grep -c " T " | xargs echo "Defined symbols:"
 ${AR/ar/nm} libarchive.so | grep -c " U " | xargs echo "Undefined symbols:"
