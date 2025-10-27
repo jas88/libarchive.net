@@ -1,8 +1,31 @@
-v0.2.0 - TBD
+v0.2.0 - October 27, 2025
 
-- Add .NET Standard 2.0 support for broader compatibility
-- Add Windows DLL build for X86 and ARM64 support, feature parity with Mac and Linux
-- Add streamlined native library deployment with automatic MSBuild targets integration
+**Platform Support Expansion:**
+- Add .NET Standard 2.0 support for .NET Framework 4.6.1+ compatibility on Windows, Linux (Mono), and macOS (Mono)
+- Add Linux ARM64 support (AWS Graviton, Raspberry Pi 4+, Azure ARM VMs)
+- Add Linux ARM v7 support (Raspberry Pi 2/3, older ARM devices)
+- Add Linux musl variants for Alpine Linux (x64, ARM64, ARM v7)
+- Add Windows x86 (32-bit) and ARM64 support
+- Add macOS ARM64 (Apple Silicon) support
+- **Total: 11 platform RIDs** (was 3): win-x86, win-x64, win-arm64, linux-x64, linux-musl-x64, linux-arm, linux-musl-arm, linux-arm64, linux-musl-arm64, osx-x64, osx-arm64
+
+**Native AOT and Trimming:**
+- Add Native AOT compatibility for .NET 6+ (`IsAotCompatible=true`)
+- Add trimming support (`IsTrimmable=true`)
+- Enable build-time AOT and trimming analyzers
+- Use `LibraryImport` attribute for .NET 7+ (source-generated, AOT-friendly P/Invoke)
+
+**Build System Improvements:**
+- Streamlined native library deployment with automatic MSBuild .targets integration
+- Cross-platform build scripts using Bootlin musl toolchains for Linux ARM/ARM64
+- Enhanced CI/CD with parallel builds for all architectures
+- Static dependency-free libraries (same binary works for glibc and musl)
+
+**Developer Experience:**
+- Comprehensive diagnostics via `LIBARCHIVE_NET_DEBUG=1` environment variable
+- Enhanced error messages showing all searched library locations
+- Automatic native library resolution for .NET 6+ (no custom code needed)
+- Manual library loading with platform detection for .NET Standard 2.0/Framework
 
 v0.1.6 - Apr 25 2024
 
