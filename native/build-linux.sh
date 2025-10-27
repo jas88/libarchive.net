@@ -19,6 +19,8 @@ export TOOLCHAIN_SYSROOT="$TOOLCHAIN_PREFIX/x86_64-buildroot-linux-musl/sysroot"
 export PATH="$TOOLCHAIN_PREFIX/bin:$PATH"
 export CC=x86_64-linux-gcc
 export CXX=x86_64-linux-g++
+export AR=x86_64-linux-ar
+export RANLIB=x86_64-linux-ranlib
 
 # Keep PREFIX for our built libraries (same as before)
 export PREFIX="${PREFIX:-$(pwd)/local}"
@@ -43,13 +45,28 @@ fi
 
 # Build compression libraries (static only to avoid conflicts with -static LDFLAGS)
 echo "Building lz4 ${LZ4_VERSION}..."
-make -j$NCPU -sC lz4-${LZ4_VERSION}/lib install-static PREFIX=$PREFIX
+cd lz4-${LZ4_VERSION}/lib
+make -j$NCPU liblz4.a CC=$CC AR=$AR
+mkdir -p $PREFIX/lib $PREFIX/include
+cp liblz4.a $PREFIX/lib/
+cp lz4.h lz4hc.h lz4frame.h $PREFIX/include/
+cd ../..
 
 echo "Building zstd ${ZSTD_VERSION}..."
-make -j$NCPU -sC zstd-${ZSTD_VERSION}/lib install-static PREFIX=$PREFIX
+cd zstd-${ZSTD_VERSION}/lib
+make -j$NCPU libzstd.a CC=$CC AR=$AR
+mkdir -p $PREFIX/lib $PREFIX/include
+cp libzstd.a $PREFIX/lib/
+cp zstd.h zstd_errors.h zdict.h $PREFIX/include/
+cd ../..
 
 echo "Building bzip2 ${BZIP2_VERSION}..."
-make -j$NCPU -sC bzip2-${BZIP2_VERSION} install PREFIX=$PREFIX CFLAGS="-fPIC -O2 -D_FILE_OFFSET_BITS=64" CC=$CC
+cd bzip2-${BZIP2_VERSION}
+make -j$NCPU libbz2.a CC=$CC AR=$AR RANLIB=$RANLIB CFLAGS="-fPIC -O2 -D_FILE_OFFSET_BITS=64"
+mkdir -p $PREFIX/lib $PREFIX/include
+cp libbz2.a $PREFIX/lib/
+cp bzlib.h $PREFIX/include/
+cd ..
 
 echo "Building lzo ${LZO_VERSION}..."
 cd lzo-${LZO_VERSION}
