@@ -6,42 +6,35 @@ set -e
 # Load shared configuration
 . "$(dirname "$0")/build-config.sh"
 
-# Linux-specific build settings
-GCC_MAJOR=$(echo $GCC_VERSION | cut -d. -f1)
-GCC_MINOR=$(echo $GCC_VERSION | cut -d. -f2)
-export CPPFLAGS="-I$PREFIX/include -I$PREFIX/x86_64-linux-musl/include -I$PREFIX/lib/gcc/x86_64-linux-musl/${GCC_MAJOR}.${GCC_MINOR}.0/include"
-export CFLAGS="-fPIC -O2 $CPPFLAGS -static-libgcc"
-export CXXFLAGS="-fPIC -O2 -I$PREFIX/x86_64-linux-musl/include/c++/${GCC_MAJOR}.${GCC_MINOR}.0 -I$PREFIX/x86_64-linux-musl/include/c++/${GCC_MAJOR}.${GCC_MINOR}.0/x86_64-linux-musl $CPPFLAGS -static-libstdc++ -static-libgcc -include sys/time.h"
-export LDFLAGS="-L$PREFIX/lib -static"
-export PATH="$PREFIX/bin:$PREFIX/x86_64-linux-musl/bin:$PATH"
+echo "Downloading prebuilt musl cross-compiler toolchain from Bootlin..."
+# Use Bootlin's stable x86_64 musl toolchain (GCC 14.3.0, tested and verified)
+TOOLCHAIN_URL="https://toolchains.bootlin.com/downloads/releases/toolchains/x86_64/tarballs/x86_64--musl--stable-2025.08-1.tar.xz"
+TOOLCHAIN_DIR="x86_64--musl--stable-2025.08-1"
 
-echo "Building musl cross-compiler toolchain..."
-curl -sL https://github.com/richfelker/musl-cross-make/archive/refs/heads/master.zip > musl-git.zip
-unzip -q musl-git.zip
-rm musl-git.zip
+curl -sL "$TOOLCHAIN_URL" | tar xJf -
+
+# Set up toolchain paths
+export TOOLCHAIN_PREFIX="$(pwd)/${TOOLCHAIN_DIR}"
+export TOOLCHAIN_SYSROOT="$TOOLCHAIN_PREFIX/x86_64-buildroot-linux-musl/sysroot"
+export PATH="$TOOLCHAIN_PREFIX/bin:$PATH"
+export CC=x86_64-linux-gcc
+export CXX=x86_64-linux-g++
+
+# Keep PREFIX for our built libraries (same as before)
+export PREFIX="${PREFIX:-$(pwd)/local}"
+
+# Set compiler flags for static linking
+export CPPFLAGS="-I$PREFIX/include"
+export CFLAGS="-fPIC -O2 $CPPFLAGS -static-libgcc"
+export CXXFLAGS="-fPIC -O2 $CPPFLAGS -static-libstdc++ -static-libgcc"
+export LDFLAGS="-L$PREFIX/lib -static"
+
+echo "Toolchain installed:"
+$CC --version | head -n1
+echo ""
 
 # Download all libraries
 download_all_libraries
-
-# Build musl cross-compiler
-cd musl-cross-make-master
-cat > config.mak <<EOC
-GNU_SITE = https://mirrors.ocf.berkeley.edu/gnu/
-TARGET=x86_64-linux-musl
-MUSL_VER = ${MUSL_VERSION}
-GCC_VER = ${GCC_VERSION}
-BINUTILS_VER = ${BINUTILS_VERSION}
-COMMON_CONFIG += --disable-nls
-GCC_CONFIG += --disable-libitm
-GCC_CONFIG += --enable-default-pie
-DL_CMD = wget -c --no-check-certificate -O
-EOC
-echo "Building musl cross-compiler (this may take a while)..."
-make -sj$NCPU install OUTPUT=$PREFIX 2>&1 >musl.log || cat musl.log
-
-export CC=x86_64-linux-musl-gcc
-export CXX=x86_64-linux-musl-g++
-cd ..
 
 # Build compression libraries
 echo "Building lz4 ${LZ4_VERSION}..."
@@ -86,7 +79,7 @@ make -sj$NCPU install
 cd ..
 
 echo "Creating final shared library..."
-gcc -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/liblzo2.a local/lib/libzstd.a local/lib/liblz4.a local/x86_64-linux-musl/lib/libc.a -nostdlib
+gcc -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/liblzo2.a local/lib/libzstd.a local/lib/liblz4.a ${TOOLCHAIN_SYSROOT}/usr/lib/libc.a -nostdlib
 
 echo "Testing library..."
 cat > test.c <<EOT

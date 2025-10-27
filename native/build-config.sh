@@ -12,7 +12,8 @@ ZLIB_VERSION="1.3.1"
 XZ_VERSION="5.4.6"
 BZIP2_VERSION="1.0.8"
 
-# musl toolchain versions (Linux only)
+# musl toolchain versions (Linux only - for reference, actual versions from Bootlin prebuilt toolchain)
+# Bootlin stable 2025.08-1: GCC 14.3.0, musl latest, binutils 2.43.1
 MUSL_VERSION="1.2.5"
 GCC_VERSION="9.4.0"
 BINUTILS_VERSION="2.44"
