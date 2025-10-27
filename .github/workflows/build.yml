@@ -100,8 +100,9 @@ jobs:
           # MinGW cross-compilers (i686, x86_64)
           for arch in i686 x86_64; do
             for tool in gcc g++; do
+              COMPILER_PATH=$(which ${arch}-w64-mingw32-${tool} || echo "/usr/bin/${arch}-w64-mingw32-${tool}")
               echo '#!/bin/sh' > $HOME/.ccache-bin/${arch}-w64-mingw32-$tool
-              echo "exec sccache /usr/bin/${arch}-w64-mingw32-${tool} \"\$@\"" >> $HOME/.ccache-bin/${arch}-w64-mingw32-$tool
+              echo "exec sccache $COMPILER_PATH \"\$@\"" >> $HOME/.ccache-bin/${arch}-w64-mingw32-$tool
               chmod +x $HOME/.ccache-bin/${arch}-w64-mingw32-$tool
             done
           done
