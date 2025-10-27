@@ -172,7 +172,12 @@ jobs:
           echo "=== Test output directory ==="
           ls -laR Test.LibArchive.Net/bin/Release/net9.0/runtimes/ 2>/dev/null || echo "No runtimes folder in test output!"
 
-          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --no-build --nologo /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
+          # Run tests for each framework separately to avoid NuGet package conflicts
+          echo "=== Running tests for net9.0 ==="
+          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net9.0 --configuration Release --no-build --nologo /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
+
+          echo "=== Running tests for net462 ==="
+          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net462 --configuration Release --no-build --nologo /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
           ls -lh *.nupkg
           du -sh *
           rm -rf local {bzip2,libarchive,libxml2,lz4,lzo,musl-cross-make,xz,zlib,zstd}-* musl-cross-make-master
