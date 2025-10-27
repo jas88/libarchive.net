@@ -89,6 +89,9 @@ jobs:
           echo "$(pwd)/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64/bin" >> $GITHUB_PATH
       - name: Setup .NET Core
         uses: actions/setup-dotnet@v5.0.0
+        with:
+          cache: true
+          cache-dependency-path: '**/*.csproj'
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
@@ -228,6 +231,9 @@ jobs:
 
           echo "=== Mono version (for net462 tests) ==="
           mono --version | head -n1
+
+          echo "=== Checking net462 output directory for native libraries ==="
+          ls -laR Test.LibArchive.Net/bin/Release/net462/runtimes/ 2>/dev/null || echo "No runtimes folder in net462 output!"
 
           echo "=== Running tests for net462 with Mono ==="
           dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net462 --configuration Release --no-build --verbosity normal /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
