@@ -38,7 +38,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: maclib
-          path: libarchive.dylib
+          path: ~/libarchive-native/libarchive.dylib
           if-no-files-found: error
           retention-days: 1
   linux:
