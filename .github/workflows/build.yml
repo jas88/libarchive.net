@@ -94,18 +94,34 @@ jobs:
         with:
           key: all-native-builds-v2
           variant: sccache
-      - name: Setup ccache for all compilers
+      - name: Setup sccache wrappers for all compilers
         run: |
           mkdir -p $HOME/.ccache-bin
-          # MinGW cross-compilers
-          for arch in i686 x86_64 aarch64; do
+
+          # MinGW cross-compilers (i686, x86_64)
+          for arch in i686 x86_64; do
             for tool in gcc g++; do
-              ln -sf $(which sccache) $HOME/.ccache-bin/${arch}-w64-mingw32-$tool
+              cat > $HOME/.ccache-bin/${arch}-w64-mingw32-$tool <<EOF
+#!/bin/sh
+exec sccache /usr/bin/${arch}-w64-mingw32-${tool} "\$@"
+EOF
+              chmod +x $HOME/.ccache-bin/${arch}-w64-mingw32-$tool
             done
           done
-          # Native Linux compiler (for musl builds)
-          ln -sf $(which sccache) $HOME/.ccache-bin/x86-64-linux-gcc
-          ln -sf $(which sccache) $HOME/.ccache-bin/x86-64-linux-g++
+
+          # LLVM-MinGW ARM64 compiler (separate, in different location)
+          cat > $HOME/.ccache-bin/aarch64-w64-mingw32-gcc <<EOF
+#!/bin/sh
+exec sccache $(pwd)/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64/bin/aarch64-w64-mingw32-gcc "\$@"
+EOF
+          chmod +x $HOME/.ccache-bin/aarch64-w64-mingw32-gcc
+
+          cat > $HOME/.ccache-bin/aarch64-w64-mingw32-g++ <<EOF
+#!/bin/sh
+exec sccache $(pwd)/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64/bin/aarch64-w64-mingw32-g++ "\$@"
+EOF
+          chmod +x $HOME/.ccache-bin/aarch64-w64-mingw32-g++
+
           echo "$HOME/.ccache-bin" >> $GITHUB_PATH
       - name: Cache autoconf
         uses: actions/cache@v4
