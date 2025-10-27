@@ -68,6 +68,7 @@ jobs:
         with:
           packages: libeatmydata1 mingw-w64 mono-complete mono-devel
           version: 1.0
+          execute_install_scripts: true
       - name: Retrieve MacOS library
         uses: actions/download-artifact@v5
         with:
