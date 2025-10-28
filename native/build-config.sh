@@ -54,21 +54,27 @@ download_library() {
         # Retry up to 3 times with exponential backoff for transient network issues
         local max_retries=3
         local retry=0
-        while [ $retry -lt $max_retries ]; do
+        local downloaded=false
+
+        while [ $retry -lt $max_retries ] && [ "$downloaded" = "false" ]; do
             if curl -fsSL "$url" -o "$cache_file"; then
                 echo "Download successful"
-                break
+                downloaded=true
             else
                 retry=$((retry + 1))
                 if [ $retry -lt $max_retries ]; then
                     echo "Download failed, retrying ($retry/$max_retries)..."
                     sleep $((retry * 2))
-                else
-                    echo "ERROR: Failed to download ${name} after $max_retries attempts"
-                    return 1
                 fi
             fi
         done
+
+        if [ "$downloaded" = "false" ]; then
+            echo "ERROR: Failed to download ${name} after $max_retries attempts from primary source"
+            echo "Please check network connectivity or try again later"
+            echo "URL: $url"
+            return 1
+        fi
     else
         echo "Using cached ${name}..."
     fi
