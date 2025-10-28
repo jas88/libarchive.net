@@ -30,19 +30,8 @@ export CXX=arm-linux-g++
 export AR=arm-linux-ar
 export RANLIB=arm-linux-ranlib
 
-# Generate sccache wrappers for this toolchain in build directory
-echo "Setting up sccache wrappers..."
-mkdir -p .ccache-bin
-for tool in gcc g++ ar ranlib; do
-    cat > .ccache-bin/arm-linux-$tool <<EOF
-#!/bin/sh
-exec sccache "$TOOLCHAIN_PREFIX/bin/arm-linux-$tool" "\$@"
-EOF
-    chmod +x .ccache-bin/arm-linux-$tool
-done
-
-# Add wrappers to PATH (before toolchain bin)
-export PATH="$(pwd)/.ccache-bin:$TOOLCHAIN_PREFIX/bin:$PATH"
+# Add toolchain to PATH
+export PATH="$TOOLCHAIN_PREFIX/bin:$PATH"
 
 # Keep PREFIX for our built libraries (same as before)
 export PREFIX="${PREFIX:-$(pwd)/local}"

@@ -30,19 +30,8 @@ export CXX=i686-linux-g++
 export AR=i686-linux-ar
 export RANLIB=i686-linux-ranlib
 
-# Generate sccache wrappers for this toolchain in build directory
-echo "Setting up sccache wrappers..."
-mkdir -p .ccache-bin
-for tool in gcc g++ ar ranlib; do
-    cat > .ccache-bin/i686-linux-$tool <<EOF
-#!/bin/sh
-exec sccache "$TOOLCHAIN_PREFIX/bin/i686-linux-$tool" "\$@"
-EOF
-    chmod +x .ccache-bin/i686-linux-$tool
-done
-
-# Add wrappers to PATH (before toolchain bin)
-export PATH="$(pwd)/.ccache-bin:$TOOLCHAIN_PREFIX/bin:$PATH"
+# Add toolchain to PATH
+export PATH="$TOOLCHAIN_PREFIX/bin:$PATH"
 
 # Keep PREFIX for our built libraries (same as before)
 export PREFIX="${PREFIX:-$(pwd)/local}"
