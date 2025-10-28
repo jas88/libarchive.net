@@ -174,18 +174,12 @@ check_dependency "bzip2" "1.0.8" "web" \
     "https://www.sourceware.org/pub/bzip2/" \
     'bzip2-([0-9]+\.[0-9]+\.[0-9]+)\.tar\.gz'
 
-# musl toolchain (Linux only)
-check_dependency "musl" "1.2.5" "web" \
-    "https://musl.libc.org/releases/" \
-    'musl-([0-9]+\.[0-9]+\.[0-9]+)\.tar\.gz'
-
-check_dependency "gcc" "9.4.0" "web" \
-    "https://ftp.gnu.org/gnu/gcc/" \
-    'gcc-([0-9]+\.[0-9]+\.[0-9]+)/'
-
-check_dependency "binutils" "2.44" "web" \
-    "https://ftp.gnu.org/gnu/binutils/" \
-    'binutils-([0-9]+\.[0-9]+)\.tar'
+# musl toolchain versions are reference only (we use Bootlin prebuilt toolchains)
+# These checks are informational - actual toolchain versions come from Bootlin
+echo ""
+echo "ℹ️  Note: musl/gcc/binutils versions in build-config.sh are reference only"
+echo "   Actual toolchains come from Bootlin prebuilt stable releases"
+echo "   To update toolchains, see Bootlin releases: https://toolchains.bootlin.com/"
 
 echo ""
 
