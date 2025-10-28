@@ -283,14 +283,31 @@ fi
 # Git operations
 echo ""
 echo "Creating branch: $branch_name"
-git checkout -b "$branch_name"
+if ! git checkout -b "$branch_name"; then
+    echo -e "${RED}✗ Failed to create branch${NC}"
+    exit 1
+fi
 
 echo "Committing changes..."
-git add "$LINUX_SCRIPT" "$MACOS_SCRIPT" "$REPO_ROOT/native/build-config.sh"
-git commit -m "$pr_title" -m "$update_list"
+if ! git add "$LINUX_SCRIPT" "$MACOS_SCRIPT" "$REPO_ROOT/native/build-config.sh"; then
+    echo -e "${RED}✗ Failed to stage changes${NC}"
+    exit 1
+fi
+
+if ! git commit -m "$pr_title" -m "$update_list"; then
+    echo -e "${RED}✗ Failed to commit changes${NC}"
+    exit 1
+fi
 
 echo "Pushing to origin..."
-git push -u origin "$branch_name"
+if ! git push -u origin "$branch_name"; then
+    echo -e "${RED}✗ Failed to push branch to origin${NC}"
+    echo "This could be due to:"
+    echo "  - Network issues"
+    echo "  - Insufficient permissions"
+    echo "  - Branch already exists"
+    exit 1
+fi
 
 # Create PR body
 pr_body=$(cat <<EOF
@@ -319,13 +336,22 @@ EOF
 )
 
 echo "Creating pull request..."
-echo "$pr_body" | gh pr create -R jas88/libarchive.net \
+if echo "$pr_body" | gh pr create -R jas88/libarchive.net \
     --title "$pr_title" \
     --body-file - \
     --label "dependencies" \
-    --label "native"
-
-echo -e "${GREEN}✓ Pull request created successfully${NC}"
+    --label "native"; then
+    echo -e "${GREEN}✓ Pull request created successfully${NC}"
+else
+    pr_exit_code=$?
+    echo -e "${RED}✗ Failed to create pull request (exit code: $pr_exit_code)${NC}"
+    echo "This could be due to:"
+    echo "  - Missing GitHub authentication (check GITHUB_TOKEN)"
+    echo "  - Network issues"
+    echo "  - Missing labels (ensure 'dependencies' and 'native' labels exist)"
+    echo "  - Insufficient permissions"
+    exit 1
+fi
 
 # Exit with error if any checks failed (even though we created PRs for successful checks)
 if [ -s "$FAILED_CHECKS" ]; then
