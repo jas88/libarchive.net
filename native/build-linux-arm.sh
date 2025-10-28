@@ -18,26 +18,31 @@ cd "$BUILD_DIR"
 # Load shared configuration
 . "${SCRIPT_DIR}/build-config.sh"
 
-echo "Using armv7-eabihf musl cross-compiler toolchain..."
-# Toolchain already downloaded/unpacked in workflow directory by CI
-TOOLCHAIN_DIR="armv7-eabihf--musl--stable-2025.08-1"
-TOOLCHAIN_PATH="${SCRIPT_DIR}/../${TOOLCHAIN_DIR}"
+echo "Setting up armv7-eabihf musl cross-compiler toolchain from Bootlin..."
+# Download and extract toolchain in build directory (uses cache)
+TOOLCHAIN_DIR=$(download_toolchain "$TOOLCHAIN_ARM_URL" "armv7-musl")
 
-if [ ! -d "$TOOLCHAIN_PATH" ]; then
-    echo "Toolchain not found in workflow directory, downloading..."
-    cd "${SCRIPT_DIR}/.."
-    download_toolchain "$TOOLCHAIN_ARM_URL" "armv7-musl"
-    cd "$BUILD_DIR"
-fi
-
-# Set up toolchain paths (absolute paths to workflow directory)
-export TOOLCHAIN_PREFIX="${TOOLCHAIN_PATH}"
+# Set up toolchain paths
+export TOOLCHAIN_PREFIX="$(pwd)/${TOOLCHAIN_DIR}"
 export TOOLCHAIN_SYSROOT="$TOOLCHAIN_PREFIX/arm-buildroot-linux-musleabihf/sysroot"
-export PATH="$TOOLCHAIN_PREFIX/bin:$PATH"
 export CC=arm-linux-gcc
 export CXX=arm-linux-g++
 export AR=arm-linux-ar
 export RANLIB=arm-linux-ranlib
+
+# Generate sccache wrappers for this toolchain in build directory
+echo "Setting up sccache wrappers..."
+mkdir -p .ccache-bin
+for tool in gcc g++ ar ranlib; do
+    cat > .ccache-bin/arm-linux-$tool <<EOF
+#!/bin/sh
+exec sccache "$TOOLCHAIN_PREFIX/bin/arm-linux-$tool" "\$@"
+EOF
+    chmod +x .ccache-bin/arm-linux-$tool
+done
+
+# Add wrappers to PATH (before toolchain bin)
+export PATH="$(pwd)/.ccache-bin:$TOOLCHAIN_PREFIX/bin:$PATH"
 
 # Keep PREFIX for our built libraries (same as before)
 export PREFIX="${PREFIX:-$(pwd)/local}"

@@ -19,17 +19,30 @@ cd "$BUILD_DIR"
 . "${SCRIPT_DIR}/build-config.sh"
 
 echo "Setting up i686 musl cross-compiler toolchain from Bootlin..."
-# Download and extract toolchain (uses cache if available)
+# Download and extract toolchain in build directory (uses cache)
 TOOLCHAIN_DIR=$(download_toolchain "$TOOLCHAIN_X86_URL" "i686-musl")
 
-# Set up toolchain paths (absolute paths to workflow directory)
-export TOOLCHAIN_PREFIX="${TOOLCHAIN_PATH}"
+# Set up toolchain paths
+export TOOLCHAIN_PREFIX="$(pwd)/${TOOLCHAIN_DIR}"
 export TOOLCHAIN_SYSROOT="$TOOLCHAIN_PREFIX/i686-buildroot-linux-musl/sysroot"
-export PATH="$TOOLCHAIN_PREFIX/bin:$PATH"
 export CC=i686-linux-gcc
 export CXX=i686-linux-g++
 export AR=i686-linux-ar
 export RANLIB=i686-linux-ranlib
+
+# Generate sccache wrappers for this toolchain in build directory
+echo "Setting up sccache wrappers..."
+mkdir -p .ccache-bin
+for tool in gcc g++ ar ranlib; do
+    cat > .ccache-bin/i686-linux-$tool <<EOF
+#!/bin/sh
+exec sccache "$TOOLCHAIN_PREFIX/bin/i686-linux-$tool" "\$@"
+EOF
+    chmod +x .ccache-bin/i686-linux-$tool
+done
+
+# Add wrappers to PATH (before toolchain bin)
+export PATH="$(pwd)/.ccache-bin:$TOOLCHAIN_PREFIX/bin:$PATH"
 
 # Keep PREFIX for our built libraries (same as before)
 export PREFIX="${PREFIX:-$(pwd)/local}"
@@ -136,7 +149,7 @@ echo "Skipping native test (cross-compilation - cannot run 32-bit i386 binary on
 echo "Copying output to ${OUTPUT_DIR}..."
 cp libarchive.so "${OUTPUT_DIR}/libarchive-linux-x86.so"
 
-echo "Cleaning up build directory..."
+echo "Cleaning up build directory (including toolchain and wrappers)..."
 cd /
 rm -rf "${BUILD_DIR}"
 
