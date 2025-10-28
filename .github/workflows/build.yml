@@ -35,7 +35,7 @@ jobs:
           echo "=== ccache stats after build ==="
           ccache -s
       - name: Archive MacOS library
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: maclib
           path: ~/libarchive-native/libarchive.dylib
@@ -70,7 +70,7 @@ jobs:
           version: 1.0
           execute_install_scripts: true
       - name: Retrieve MacOS library
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           name: maclib
       - name: Install LLVM-MinGW for ARM64
@@ -332,7 +332,7 @@ jobs:
           overwrite: true
           file_glob: true
       - name: Archive production artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: dist
           path: |
