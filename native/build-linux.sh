@@ -51,13 +51,10 @@ export RANLIB=x86_64-linux-ranlib
 echo "Setting up sccache wrappers..."
 mkdir -p .ccache-bin
 for tool in gcc g++ ar ranlib; do
-    cat > .ccache-bin/x86_64-linux-$tool <<'EOF'
+    cat > .ccache-bin/x86_64-linux-$tool <<EOF
 #!/bin/sh
-exec sccache "$TOOLCHAIN_PREFIX/bin/x86_64-linux-$tool" "$@"
+exec sccache "$TOOLCHAIN_PREFIX/bin/x86_64-linux-\$tool" "\$@"
 EOF
-    # Replace $TOOLCHAIN_PREFIX with actual value
-    sed -i.bak "s|\$TOOLCHAIN_PREFIX|$TOOLCHAIN_PREFIX|g" .ccache-bin/x86_64-linux-$tool
-    rm -f .ccache-bin/x86_64-linux-$tool.bak
     chmod +x .ccache-bin/x86_64-linux-$tool
 done
 
