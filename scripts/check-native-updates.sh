@@ -199,8 +199,8 @@ fi
 # Check if any updates were found
 if [ ! -s "$UPDATES_FILE" ]; then
     if [ -s "$FAILED_CHECKS" ]; then
-        echo -e "${YELLOW}No updates found (but some checks failed)${NC}"
-        exit 0
+        echo -e "${RED}No updates found, but some checks failed${NC}"
+        exit 1
     else
         echo -e "${GREEN}All dependencies are up to date ✓${NC}"
         exit 0
@@ -326,3 +326,12 @@ echo "$pr_body" | gh pr create -R jas88/libarchive.net \
     --label "native"
 
 echo -e "${GREEN}✓ Pull request created successfully${NC}"
+
+# Exit with error if any checks failed (even though we created PRs for successful checks)
+if [ -s "$FAILED_CHECKS" ]; then
+    failed_count=$(wc -l < "$FAILED_CHECKS")
+    echo ""
+    echo -e "${RED}⚠️  Exiting with error: $failed_count dependency check(s) failed${NC}"
+    echo "PR(s) were created for successful checks, but please investigate failures."
+    exit 1
+fi
