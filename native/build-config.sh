@@ -12,13 +12,21 @@ ZLIB_VERSION="1.3.1"
 XZ_VERSION="5.4.6"
 BZIP2_VERSION="1.0.8"
 
-# musl toolchain versions (Linux only - for reference, actual versions from Bootlin prebuilt toolchain)
+# Bootlin toolchain versions (Linux only)
 # Bootlin stable 2025.08-1: GCC 14.3.0, musl latest, binutils 2.43.1
+BOOTLIN_RELEASE="stable-2025.08-1"
 MUSL_VERSION="1.2.5"
 GCC_VERSION="9.4.0"
 BINUTILS_VERSION="2.44"
 
-# Download URLs
+# Bootlin toolchain URLs
+TOOLCHAIN_BASE_URL="https://toolchains.bootlin.com/downloads/releases/toolchains"
+TOOLCHAIN_X86_URL="${TOOLCHAIN_BASE_URL}/x86-i686/tarballs/x86-i686--musl--${BOOTLIN_RELEASE}.tar.xz"
+TOOLCHAIN_X64_URL="${TOOLCHAIN_BASE_URL}/x86-64/tarballs/x86-64--musl--${BOOTLIN_RELEASE}.tar.xz"
+TOOLCHAIN_ARM_URL="${TOOLCHAIN_BASE_URL}/armv7-eabihf/tarballs/armv7-eabihf--musl--${BOOTLIN_RELEASE}.tar.xz"
+TOOLCHAIN_ARM64_URL="${TOOLCHAIN_BASE_URL}/aarch64/tarballs/aarch64--musl--${BOOTLIN_RELEASE}.tar.xz"
+
+# Library download URLs
 LIBARCHIVE_URL="https://github.com/libarchive/libarchive/releases/download/v${LIBARCHIVE_VERSION}/libarchive-${LIBARCHIVE_VERSION}.tar.xz"
 LZ4_URL="https://github.com/lz4/lz4/archive/refs/tags/v${LZ4_VERSION}.tar.gz"
 ZSTD_URL="https://github.com/facebook/zstd/releases/download/v${ZSTD_VERSION}/zstd-${ZSTD_VERSION}.tar.gz"
@@ -89,6 +97,58 @@ download_library() {
     else
         tar xzf "$cache_file"
     fi
+}
+
+# Function to download and extract toolchain
+download_toolchain() {
+    local url="$1"
+    local name="$2"
+
+    # Extract archive filename from URL
+    local archive_name="${url##*/}"
+    local cache_file="${DOWNLOAD_CACHE}/${archive_name}"
+    local dir_name="${archive_name%.tar.xz}"
+
+    # Create cache directory if it doesn't exist
+    mkdir -p "$DOWNLOAD_CACHE"
+
+    # Download to cache if not already present
+    if [ ! -f "$cache_file" ]; then
+        echo "Downloading ${name} toolchain to cache..."
+        local max_retries=3
+        local retry=0
+        local downloaded=false
+
+        while [ $retry -lt $max_retries ] && [ "$downloaded" = "false" ]; do
+            if curl -fsSL "$url" -o "$cache_file"; then
+                echo "Toolchain download successful"
+                downloaded=true
+            else
+                retry=$((retry + 1))
+                if [ $retry -lt $max_retries ]; then
+                    echo "Toolchain download failed, retrying ($retry/$max_retries)..."
+                    sleep $((retry * 2))
+                fi
+            fi
+        done
+
+        if [ "$downloaded" = "false" ]; then
+            echo "ERROR: Failed to download ${name} toolchain after $max_retries attempts"
+            echo "URL: $url"
+            return 1
+        fi
+    else
+        echo "Using cached ${name} toolchain..."
+    fi
+
+    # Delete any existing unpacked directory
+    rm -rf "$dir_name"
+
+    # Unpack from cache
+    echo "Unpacking ${name} toolchain..."
+    tar xJf "$cache_file"
+
+    echo "$dir_name"
 }
 
 # Function to download all libraries

@@ -18,12 +18,9 @@ cd "$BUILD_DIR"
 # Load shared configuration
 . "${SCRIPT_DIR}/build-config.sh"
 
-echo "Downloading prebuilt musl cross-compiler toolchain from Bootlin..."
-# Use Bootlin's stable aarch64 musl toolchain
-TOOLCHAIN_URL="https://toolchains.bootlin.com/downloads/releases/toolchains/aarch64/tarballs/aarch64--musl--stable-2025.08-1.tar.xz"
-TOOLCHAIN_DIR="aarch64--musl--stable-2025.08-1"
-
-curl -sL "$TOOLCHAIN_URL" | tar xJf -
+echo "Setting up aarch64 musl cross-compiler toolchain from Bootlin..."
+# Download and extract toolchain (uses cache if available)
+TOOLCHAIN_DIR=$(download_toolchain "$TOOLCHAIN_ARM64_URL" "aarch64-musl")
 
 # Set up toolchain paths
 export TOOLCHAIN_PREFIX="$(pwd)/${TOOLCHAIN_DIR}"

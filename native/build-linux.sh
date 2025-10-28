@@ -18,12 +18,9 @@ cd "$BUILD_DIR"
 # Load shared configuration
 . "${SCRIPT_DIR}/build-config.sh"
 
-echo "Downloading prebuilt musl cross-compiler toolchain from Bootlin..."
-# Use Bootlin's stable x86-64 musl toolchain (GCC 14.3.0, tested and verified)
-TOOLCHAIN_URL="https://toolchains.bootlin.com/downloads/releases/toolchains/x86-64/tarballs/x86-64--musl--stable-2025.08-1.tar.xz"
-TOOLCHAIN_DIR="x86-64--musl--stable-2025.08-1"
-
-curl -sL "$TOOLCHAIN_URL" | tar xJf -
+echo "Setting up x86-64 musl cross-compiler toolchain from Bootlin..."
+# Download and extract toolchain (uses cache if available)
+TOOLCHAIN_DIR=$(download_toolchain "$TOOLCHAIN_X64_URL" "x86-64-musl")
 
 # Set up toolchain paths
 export TOOLCHAIN_PREFIX="$(pwd)/${TOOLCHAIN_DIR}"
