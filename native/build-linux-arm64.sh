@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Build libarchive for Linux ARM64 (aarch64) using musl-libc for static linking
 
 set -e
@@ -18,21 +18,45 @@ cd "$BUILD_DIR"
 # Load shared configuration
 . "${SCRIPT_DIR}/build-config.sh"
 
-echo "Downloading prebuilt musl cross-compiler toolchain from Bootlin..."
-# Use Bootlin's stable aarch64 musl toolchain
-TOOLCHAIN_URL="https://toolchains.bootlin.com/downloads/releases/toolchains/aarch64/tarballs/aarch64--musl--stable-2025.08-1.tar.xz"
-TOOLCHAIN_DIR="aarch64--musl--stable-2025.08-1"
+echo "Setting up aarch64 musl cross-compiler toolchain from Bootlin..."
+# Download toolchain to cache (does not unpack)
+TOOLCHAIN_ARCHIVE=$(download_toolchain "$TOOLCHAIN_ARM64_URL" "aarch64-musl")
 
-curl -sL "$TOOLCHAIN_URL" | tar xJf -
+# Extract directory name from archive
+TOOLCHAIN_DIR="${TOOLCHAIN_ARCHIVE##*/}"
+TOOLCHAIN_DIR="${TOOLCHAIN_DIR%.tar.xz}"
+
+# Unpack toolchain in build directory
+echo "Unpacking toolchain in build directory..."
+tar xJf "$TOOLCHAIN_ARCHIVE"
 
 # Set up toolchain paths
 export TOOLCHAIN_PREFIX="$(pwd)/${TOOLCHAIN_DIR}"
 export TOOLCHAIN_SYSROOT="$TOOLCHAIN_PREFIX/aarch64-buildroot-linux-musl/sysroot"
-export PATH="$TOOLCHAIN_PREFIX/bin:$PATH"
+
+# Verify toolchain was unpacked correctly
+if [ ! -f "$TOOLCHAIN_PREFIX/bin/aarch64-linux-gcc" ]; then
+    echo "ERROR: Toolchain compiler not found at $TOOLCHAIN_PREFIX/bin/aarch64-linux-gcc"
+    echo "Directory contents:"
+    ls -la "$TOOLCHAIN_PREFIX" 2>/dev/null || echo "  Directory does not exist"
+    exit 1
+fi
+
 export CC=aarch64-linux-gcc
 export CXX=aarch64-linux-g++
 export AR=aarch64-linux-ar
 export RANLIB=aarch64-linux-ranlib
+
+# Generate sccache wrappers for compilers only (not ar/ranlib)
+echo "Setting up sccache wrappers..."
+mkdir -p .ccache-bin
+for tool in gcc g++; do
+    printf '#!/bin/sh\nexec sccache "%s/bin/aarch64-linux-%s" "$@"\n' "$TOOLCHAIN_PREFIX" "$tool" > .ccache-bin/aarch64-linux-$tool
+    chmod +x .ccache-bin/aarch64-linux-$tool
+done
+
+# Add wrappers to PATH (before toolchain bin)
+export PATH="$(pwd)/.ccache-bin:$TOOLCHAIN_PREFIX/bin:$PATH"
 
 # Keep PREFIX for our built libraries (same as before)
 export PREFIX="${PREFIX:-$(pwd)/local}"

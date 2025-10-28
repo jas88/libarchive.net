@@ -15,6 +15,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+      - name: Cache library downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/downloads
+          key: library-downloads-${{ hashFiles('native/build-config.sh') }}
+          restore-keys: |
+            library-downloads-
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
@@ -50,6 +57,13 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+      - name: Cache library downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/downloads
+          key: library-downloads-${{ hashFiles('native/build-config.sh') }}
+          restore-keys: |
+            library-downloads-
       - name: Extract version from tag
         id: version
         run: |
@@ -150,83 +164,25 @@ jobs:
           sccache --show-stats
 
           ls -lh archive-*.dll
-      - name: Setup sccache wrappers for Linux cross-compilers
+      - name: Build Linux libraries (x86, x64, arm64, arm)
         run: |
-          # Create sccache wrappers for Linux cross-compilers
-          # These wrap the Bootlin toolchain compilers after they're downloaded
+          # Each build script handles its own toolchain and sccache setup
 
-          # ARM64 wrapper script
-          echo '#!/bin/sh' > $HOME/.ccache-bin/wrap-arm64-compiler.sh
-          echo 'TOOLCHAIN_DIR=$(ls -d aarch64--musl--stable-* 2>/dev/null | head -1)' >> $HOME/.ccache-bin/wrap-arm64-compiler.sh
-          echo 'if [ -n "$TOOLCHAIN_DIR" ]; then' >> $HOME/.ccache-bin/wrap-arm64-compiler.sh
-          echo '  TOOLCHAIN_BIN="$(pwd)/$TOOLCHAIN_DIR/bin"' >> $HOME/.ccache-bin/wrap-arm64-compiler.sh
-          echo '  for tool in gcc g++ ar ranlib; do' >> $HOME/.ccache-bin/wrap-arm64-compiler.sh
-          echo '    echo "#!/bin/sh" > "$HOME/.ccache-bin/aarch64-linux-$tool"' >> $HOME/.ccache-bin/wrap-arm64-compiler.sh
-          echo '    echo "exec sccache $TOOLCHAIN_BIN/aarch64-linux-$tool \"\$@\"" >> "$HOME/.ccache-bin/aarch64-linux-$tool"' >> $HOME/.ccache-bin/wrap-arm64-compiler.sh
-          echo '    chmod +x "$HOME/.ccache-bin/aarch64-linux-$tool"' >> $HOME/.ccache-bin/wrap-arm64-compiler.sh
-          echo '  done' >> $HOME/.ccache-bin/wrap-arm64-compiler.sh
-          echo 'fi' >> $HOME/.ccache-bin/wrap-arm64-compiler.sh
-          chmod +x $HOME/.ccache-bin/wrap-arm64-compiler.sh
-
-          # ARM v7 wrapper script
-          echo '#!/bin/sh' > $HOME/.ccache-bin/wrap-arm-compiler.sh
-          echo 'TOOLCHAIN_DIR=$(ls -d armv7-eabihf--musl--stable-* 2>/dev/null | head -1)' >> $HOME/.ccache-bin/wrap-arm-compiler.sh
-          echo 'if [ -n "$TOOLCHAIN_DIR" ]; then' >> $HOME/.ccache-bin/wrap-arm-compiler.sh
-          echo '  TOOLCHAIN_BIN="$(pwd)/$TOOLCHAIN_DIR/bin"' >> $HOME/.ccache-bin/wrap-arm-compiler.sh
-          echo '  for tool in gcc g++ ar ranlib; do' >> $HOME/.ccache-bin/wrap-arm-compiler.sh
-          echo '    echo "#!/bin/sh" > "$HOME/.ccache-bin/arm-linux-$tool"' >> $HOME/.ccache-bin/wrap-arm-compiler.sh
-          echo '    echo "exec sccache $TOOLCHAIN_BIN/arm-linux-$tool \"\$@\"" >> "$HOME/.ccache-bin/arm-linux-$tool"' >> $HOME/.ccache-bin/wrap-arm-compiler.sh
-          echo '    chmod +x "$HOME/.ccache-bin/arm-linux-$tool"' >> $HOME/.ccache-bin/wrap-arm-compiler.sh
-          echo '  done' >> $HOME/.ccache-bin/wrap-arm-compiler.sh
-          echo 'fi' >> $HOME/.ccache-bin/wrap-arm-compiler.sh
-          chmod +x $HOME/.ccache-bin/wrap-arm-compiler.sh
-
-          # x86 (i686) wrapper script
-          echo '#!/bin/sh' > $HOME/.ccache-bin/wrap-x86-compiler.sh
-          echo 'TOOLCHAIN_DIR=$(ls -d x86-i686--musl--stable-* 2>/dev/null | head -1)' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
-          echo 'if [ -n "$TOOLCHAIN_DIR" ]; then' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
-          echo '  TOOLCHAIN_BIN="$(pwd)/$TOOLCHAIN_DIR/bin"' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
-          echo '  for tool in gcc g++ ar ranlib; do' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
-          echo '    echo "#!/bin/sh" > "$HOME/.ccache-bin/i686-linux-$tool"' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
-          echo '    echo "exec sccache $TOOLCHAIN_BIN/i686-linux-$tool \"\$@\"" >> "$HOME/.ccache-bin/i686-linux-$tool"' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
-          echo '    chmod +x "$HOME/.ccache-bin/i686-linux-$tool"' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
-          echo '  done' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
-          echo 'fi' >> $HOME/.ccache-bin/wrap-x86-compiler.sh
-          chmod +x $HOME/.ccache-bin/wrap-x86-compiler.sh
-
-          # x86_64 wrapper script
-          echo '#!/bin/sh' > $HOME/.ccache-bin/wrap-x64-compiler.sh
-          echo 'TOOLCHAIN_DIR=$(ls -d x86-64--musl--stable-* 2>/dev/null | head -1)' >> $HOME/.ccache-bin/wrap-x64-compiler.sh
-          echo 'if [ -n "$TOOLCHAIN_DIR" ]; then' >> $HOME/.ccache-bin/wrap-x64-compiler.sh
-          echo '  TOOLCHAIN_BIN="$(pwd)/$TOOLCHAIN_DIR/bin"' >> $HOME/.ccache-bin/wrap-x64-compiler.sh
-          echo '  for tool in gcc g++ ar ranlib; do' >> $HOME/.ccache-bin/wrap-x64-compiler.sh
-          echo '    echo "#!/bin/sh" > "$HOME/.ccache-bin/x86_64-linux-$tool"' >> $HOME/.ccache-bin/wrap-x64-compiler.sh
-          echo '    echo "exec sccache $TOOLCHAIN_BIN/x86_64-linux-$tool \"\$@\"" >> "$HOME/.ccache-bin/x86_64-linux-$tool"' >> $HOME/.ccache-bin/wrap-x64-compiler.sh
-          echo '    chmod +x "$HOME/.ccache-bin/x86_64-linux-$tool"' >> $HOME/.ccache-bin/wrap-x64-compiler.sh
-          echo '  done' >> $HOME/.ccache-bin/wrap-x64-compiler.sh
-          echo 'fi' >> $HOME/.ccache-bin/wrap-x64-compiler.sh
-          chmod +x $HOME/.ccache-bin/wrap-x64-compiler.sh
-      - name: Build Linux libraries (x64, arm64, arm)
-        run: |
           # Build x86 (32-bit)
           echo "=== Building Linux x86 ==="
           ./native/build-linux-x86.sh
-          $HOME/.ccache-bin/wrap-x86-compiler.sh  # Wrap compilers with sccache
 
           # Build x64
           echo "=== Building Linux x64 ==="
           ./native/build-linux.sh
-          $HOME/.ccache-bin/wrap-x64-compiler.sh  # Wrap compilers with sccache
 
           # Build arm64
           echo "=== Building Linux ARM64 ==="
           ./native/build-linux-arm64.sh
-          $HOME/.ccache-bin/wrap-arm64-compiler.sh  # Wrap compilers with sccache
 
           # Build armv7
           echo "=== Building Linux ARM v7 ==="
           ./native/build-linux-arm.sh
-          $HOME/.ccache-bin/wrap-arm-compiler.sh  # Wrap compilers with sccache
 
           echo "=== sccache stats after Linux builds ==="
           sccache --show-stats

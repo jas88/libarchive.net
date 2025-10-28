@@ -72,13 +72,24 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     /// </summary>
     /// <param name="filename">The path to the archive file.</param>
     /// <param name="blockSize">Block size in bytes for reading, default is 1 MiB (1048576 bytes).</param>
+    /// <param name="password">Optional password for encrypted archives. Supports ZIP archives with traditional PKWARE or AES encryption. RAR and 7z encrypted archives are not supported by libarchive.</param>
     /// <exception cref="ApplicationException">Thrown when the archive cannot be opened.</exception>
-    public LibArchiveReader(string filename,uint blockSize = 1<<20) : base(true)
+    /// <exception cref="NotSupportedException">Thrown when attempting to read an encrypted RAR or 7z archive (not supported by libarchive).</exception>
+    public LibArchiveReader(string filename, uint blockSize = 1<<20, string? password = null) : base(true)
     {
         using var uName = new SafeStringBuffer(filename);
         handle = archive_read_new();
         archive_read_support_filter_all(handle);
         archive_read_support_format_all(handle);
+
+        // Add password if provided
+        if (password != null)
+        {
+            using var uPassword = new SafeStringBuffer(password);
+            if (archive_read_add_passphrase(handle, uPassword.Ptr) != 0)
+                Throw();
+        }
+
         if (archive_read_open_filename(handle, uName.Ptr, (int)blockSize) != 0)
             Throw();
     }
@@ -89,13 +100,24 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     /// </summary>
     /// <param name="filenames">The paths to all volume files of the archive.</param>
     /// <param name="blockSize">Block size in bytes for reading, default is 1 MiB (1048576 bytes).</param>
+    /// <param name="password">Optional password for encrypted archives. Supports ZIP archives with traditional PKWARE or AES encryption. RAR and 7z encrypted archives are not supported by libarchive.</param>
     /// <exception cref="ApplicationException">Thrown when the archive cannot be opened.</exception>
-    public LibArchiveReader(string[] filenames,uint blockSize=1<<20) : base(true)
+    /// <exception cref="NotSupportedException">Thrown when attempting to read an encrypted RAR or 7z archive (not supported by libarchive).</exception>
+    public LibArchiveReader(string[] filenames, uint blockSize=1<<20, string? password = null) : base(true)
     {
         using var names = new DisposableStringArray(filenames);
         handle = archive_read_new();
         archive_read_support_filter_all(handle);
         archive_read_support_format_all(handle);
+
+        // Add password if provided
+        if (password != null)
+        {
+            using var uPassword = new SafeStringBuffer(password);
+            if (archive_read_add_passphrase(handle, uPassword.Ptr) != 0)
+                Throw();
+        }
+
         if (archive_read_open_filenames(handle, names.Ptr, (int)blockSize) != 0)
             Throw();
     }
@@ -103,6 +125,19 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     private void Throw()
     {
         throw new ApplicationException(PtrToStringUTF8(archive_error_string(handle)) ?? "Unknown error");
+    }
+
+    /// <summary>
+    /// Checks if the archive contains encrypted entries.
+    /// </summary>
+    /// <returns>
+    /// 1 if at least one entry is encrypted,
+    /// 0 if no entries are encrypted,
+    /// negative value on error.
+    /// </returns>
+    public int HasEncryptedEntries()
+    {
+        return archive_read_has_encrypted_entries(handle);
     }
 
     /// <summary>
@@ -239,7 +274,15 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         /// <returns>The total number of bytes read into the buffer.</returns>
         public override int Read(byte[] buffer, int offset, int count)
         {
-            return archive_read_data(archiveHandle, ref buffer[offset], count);
+            int result = archive_read_data(archiveHandle, ref buffer[offset], count);
+            if (result < 0)
+            {
+                // Negative return indicates error (e.g., wrong password, encryption not supported)
+                throw new ApplicationException(
+                    PtrToStringUTF8(archive_error_string(archiveHandle))
+                    ?? $"Error reading archive data (code: {result})");
+            }
+            return result;
         }
 
         /// <summary>
@@ -340,6 +383,12 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     [LibraryImport("archive")]
     private static partial IntPtr archive_error_string(IntPtr a);
+
+    [LibraryImport("archive")]
+    private static partial int archive_read_add_passphrase(IntPtr a, IntPtr passphrase);
+
+    [LibraryImport("archive")]
+    private static partial int archive_read_has_encrypted_entries(IntPtr a);
 #else
     [DllImport("archive")]
     private static extern IntPtr archive_read_new();
@@ -373,6 +422,12 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     [DllImport("archive")]
     private static extern IntPtr archive_error_string(IntPtr a);
+
+    [DllImport("archive")]
+    private static extern int archive_read_add_passphrase(IntPtr a, IntPtr passphrase);
+
+    [DllImport("archive")]
+    private static extern int archive_read_has_encrypted_entries(IntPtr a);
 #endif
 
 #if NETSTANDARD2_0
