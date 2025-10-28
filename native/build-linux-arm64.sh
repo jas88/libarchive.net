@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Build libarchive for Linux ARM64 (aarch64) using musl-libc for static linking
 
 set -e

@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Build libarchive for Linux ARM v7 (armv7-eabihf) using musl-libc for static linking
 
 set -e

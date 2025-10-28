@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Build libarchive for macOS as universal binary (x86_64 + arm64)
 
 set -e
