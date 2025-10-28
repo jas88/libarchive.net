@@ -1,5 +1,6 @@
 #!/bin/bash
-set -euo pipefail
+set -uo pipefail
+# Note: Not using -e so individual check failures don't stop the entire script
 
 # Configuration
 REPO_ROOT="${GITHUB_WORKSPACE:-$(pwd)}"
@@ -15,7 +16,8 @@ NC='\033[0m' # No Color
 
 # Temporary files
 UPDATES_FILE=$(mktemp)
-trap "rm -f $UPDATES_FILE" EXIT
+FAILED_CHECKS=$(mktemp)
+trap "rm -f $UPDATES_FILE $FAILED_CHECKS" EXIT
 
 # Check for required tools
 for cmd in curl jq gh git; do
@@ -124,6 +126,7 @@ check_dependency() {
 
     if [ -z "$latest" ]; then
         echo -e "${RED}ERROR${NC}"
+        echo "$name" >> "$FAILED_CHECKS"
         return 1
     fi
 
@@ -144,35 +147,35 @@ echo "Checking native dependency versions..."
 echo ""
 
 # libarchive
-check_dependency "libarchive" "3.7.3" "github" "libarchive/libarchive"
+check_dependency "libarchive" "3.7.3" "github" "libarchive/libarchive" || true
 
 # lz4
-check_dependency "lz4" "1.9.4" "github" "lz4/lz4"
+check_dependency "lz4" "1.9.4" "github" "lz4/lz4" || true
 
 # zstd
-check_dependency "zstd" "1.5.6" "github" "facebook/zstd"
+check_dependency "zstd" "1.5.6" "github" "facebook/zstd" || true
 
 # xz
-check_dependency "xz" "5.4.6" "github" "tukaani-project/xz"
+check_dependency "xz" "5.4.6" "github" "tukaani-project/xz" || true
 
 # zlib
 check_dependency "zlib" "1.3.1" "web" \
     "https://zlib.net/" \
-    'zlib-([0-9]+\.[0-9]+\.[0-9]+)\.tar\.xz'
+    'zlib-([0-9]+\.[0-9]+\.[0-9]+)\.tar\.xz' || true
 
 # libxml2
 check_dependency "libxml2" "2.12.6" "gnome" \
-    'libxml2-([0-9]+\.[0-9]+\.[0-9]+)\.tar\.xz'
+    'libxml2-([0-9]+\.[0-9]+\.[0-9]+)\.tar\.xz' || true
 
 # lzo
 check_dependency "lzo" "2.10" "web" \
     "https://www.oberhumer.com/opensource/lzo/download/" \
-    'lzo-([0-9]+\.[0-9]+)\.tar\.gz'
+    'lzo-([0-9]+\.[0-9]+)\.tar\.gz' || true
 
 # bzip2
 check_dependency "bzip2" "1.0.8" "web" \
     "https://www.sourceware.org/pub/bzip2/" \
-    'bzip2-([0-9]+\.[0-9]+\.[0-9]+)\.tar\.gz'
+    'bzip2-([0-9]+\.[0-9]+\.[0-9]+)\.tar\.gz' || true
 
 # musl toolchain versions are reference only (we use Bootlin prebuilt toolchains)
 # These checks are informational - actual toolchain versions come from Bootlin
@@ -183,10 +186,25 @@ echo "   To update toolchains, see Bootlin releases: https://toolchains.bootlin.
 
 echo ""
 
+# Report any failed checks
+if [ -s "$FAILED_CHECKS" ]; then
+    failed_count=$(wc -l < "$FAILED_CHECKS")
+    echo -e "${YELLOW}⚠️  Warning: $failed_count dependency check(s) failed:${NC}"
+    while read -r name; do
+        echo "  - $name (network error or version pattern mismatch)"
+    done < "$FAILED_CHECKS"
+    echo ""
+fi
+
 # Check if any updates were found
 if [ ! -s "$UPDATES_FILE" ]; then
-    echo -e "${GREEN}All dependencies are up to date ✓${NC}"
-    exit 0
+    if [ -s "$FAILED_CHECKS" ]; then
+        echo -e "${YELLOW}No updates found (but some checks failed)${NC}"
+        exit 0
+    else
+        echo -e "${GREEN}All dependencies are up to date ✓${NC}"
+        exit 0
+    fi
 fi
 
 # Process updates
