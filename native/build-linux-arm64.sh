@@ -25,13 +25,36 @@ TOOLCHAIN_DIR=$(download_toolchain "$TOOLCHAIN_ARM64_URL" "aarch64-musl")
 # Set up toolchain paths
 export TOOLCHAIN_PREFIX="$(pwd)/${TOOLCHAIN_DIR}"
 export TOOLCHAIN_SYSROOT="$TOOLCHAIN_PREFIX/aarch64-buildroot-linux-musl/sysroot"
+
+# Verify toolchain was unpacked correctly
+if [ ! -f "$TOOLCHAIN_PREFIX/bin/aarch64-linux-gcc" ]; then
+    echo "ERROR: Toolchain compiler not found at $TOOLCHAIN_PREFIX/bin/aarch64-linux-gcc"
+    echo "Directory contents:"
+    ls -la "$TOOLCHAIN_PREFIX" 2>/dev/null || echo "  Directory does not exist"
+    exit 1
+fi
+
 export CC=aarch64-linux-gcc
 export CXX=aarch64-linux-g++
 export AR=aarch64-linux-ar
 export RANLIB=aarch64-linux-ranlib
 
-# Add toolchain to PATH
-export PATH="$TOOLCHAIN_PREFIX/bin:$PATH"
+# Generate sccache wrappers for this toolchain in build directory
+echo "Setting up sccache wrappers..."
+mkdir -p .ccache-bin
+for tool in gcc g++ ar ranlib; do
+    cat > .ccache-bin/aarch64-linux-$tool <<'EOF'
+#!/bin/sh
+exec sccache "$TOOLCHAIN_PREFIX/bin/aarch64-linux-$tool" "$@"
+EOF
+    # Replace $TOOLCHAIN_PREFIX with actual value
+    sed -i.bak "s|\$TOOLCHAIN_PREFIX|$TOOLCHAIN_PREFIX|g" .ccache-bin/aarch64-linux-$tool
+    rm -f .ccache-bin/aarch64-linux-$tool.bak
+    chmod +x .ccache-bin/aarch64-linux-$tool
+done
+
+# Add wrappers to PATH (before toolchain bin)
+export PATH="$(pwd)/.ccache-bin:$TOOLCHAIN_PREFIX/bin:$PATH"
 
 # Keep PREFIX for our built libraries (same as before)
 export PREFIX="${PREFIX:-$(pwd)/local}"

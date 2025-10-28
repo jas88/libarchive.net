@@ -25,13 +25,36 @@ TOOLCHAIN_DIR=$(download_toolchain "$TOOLCHAIN_X86_URL" "i686-musl")
 # Set up toolchain paths
 export TOOLCHAIN_PREFIX="$(pwd)/${TOOLCHAIN_DIR}"
 export TOOLCHAIN_SYSROOT="$TOOLCHAIN_PREFIX/i686-buildroot-linux-musl/sysroot"
+
+# Verify toolchain was unpacked correctly
+if [ ! -f "$TOOLCHAIN_PREFIX/bin/i686-linux-gcc" ]; then
+    echo "ERROR: Toolchain compiler not found at $TOOLCHAIN_PREFIX/bin/i686-linux-gcc"
+    echo "Directory contents:"
+    ls -la "$TOOLCHAIN_PREFIX" 2>/dev/null || echo "  Directory does not exist"
+    exit 1
+fi
+
 export CC=i686-linux-gcc
 export CXX=i686-linux-g++
 export AR=i686-linux-ar
 export RANLIB=i686-linux-ranlib
 
-# Add toolchain to PATH
-export PATH="$TOOLCHAIN_PREFIX/bin:$PATH"
+# Generate sccache wrappers for this toolchain in build directory
+echo "Setting up sccache wrappers..."
+mkdir -p .ccache-bin
+for tool in gcc g++ ar ranlib; do
+    cat > .ccache-bin/i686-linux-$tool <<'EOF'
+#!/bin/sh
+exec sccache "$TOOLCHAIN_PREFIX/bin/i686-linux-$tool" "$@"
+EOF
+    # Replace $TOOLCHAIN_PREFIX with actual value
+    sed -i.bak "s|\$TOOLCHAIN_PREFIX|$TOOLCHAIN_PREFIX|g" .ccache-bin/i686-linux-$tool
+    rm -f .ccache-bin/i686-linux-$tool.bak
+    chmod +x .ccache-bin/i686-linux-$tool
+done
+
+# Add wrappers to PATH (before toolchain bin)
+export PATH="$(pwd)/.ccache-bin:$TOOLCHAIN_PREFIX/bin:$PATH"
 
 # Keep PREFIX for our built libraries (same as before)
 export PREFIX="${PREFIX:-$(pwd)/local}"
@@ -138,7 +161,7 @@ echo "Skipping native test (cross-compilation - cannot run 32-bit i386 binary on
 echo "Copying output to ${OUTPUT_DIR}..."
 cp libarchive.so "${OUTPUT_DIR}/libarchive-linux-x86.so"
 
-echo "Cleaning up build directory (including toolchain and wrappers)..."
+echo "Cleaning up build directory (including toolchain, wrappers, and build artifacts)..."
 cd /
 rm -rf "${BUILD_DIR}"
 

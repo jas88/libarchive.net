@@ -25,13 +25,36 @@ TOOLCHAIN_DIR=$(download_toolchain "$TOOLCHAIN_ARM_URL" "armv7-musl")
 # Set up toolchain paths
 export TOOLCHAIN_PREFIX="$(pwd)/${TOOLCHAIN_DIR}"
 export TOOLCHAIN_SYSROOT="$TOOLCHAIN_PREFIX/arm-buildroot-linux-musleabihf/sysroot"
+
+# Verify toolchain was unpacked correctly
+if [ ! -f "$TOOLCHAIN_PREFIX/bin/arm-linux-gcc" ]; then
+    echo "ERROR: Toolchain compiler not found at $TOOLCHAIN_PREFIX/bin/arm-linux-gcc"
+    echo "Directory contents:"
+    ls -la "$TOOLCHAIN_PREFIX" 2>/dev/null || echo "  Directory does not exist"
+    exit 1
+fi
+
 export CC=arm-linux-gcc
 export CXX=arm-linux-g++
 export AR=arm-linux-ar
 export RANLIB=arm-linux-ranlib
 
-# Add toolchain to PATH
-export PATH="$TOOLCHAIN_PREFIX/bin:$PATH"
+# Generate sccache wrappers for this toolchain in build directory
+echo "Setting up sccache wrappers..."
+mkdir -p .ccache-bin
+for tool in gcc g++ ar ranlib; do
+    cat > .ccache-bin/arm-linux-$tool <<'EOF'
+#!/bin/sh
+exec sccache "$TOOLCHAIN_PREFIX/bin/arm-linux-$tool" "$@"
+EOF
+    # Replace $TOOLCHAIN_PREFIX with actual value
+    sed -i.bak "s|\$TOOLCHAIN_PREFIX|$TOOLCHAIN_PREFIX|g" .ccache-bin/arm-linux-$tool
+    rm -f .ccache-bin/arm-linux-$tool.bak
+    chmod +x .ccache-bin/arm-linux-$tool
+done
+
+# Add wrappers to PATH (before toolchain bin)
+export PATH="$(pwd)/.ccache-bin:$TOOLCHAIN_PREFIX/bin:$PATH"
 
 # Keep PREFIX for our built libraries (same as before)
 export PREFIX="${PREFIX:-$(pwd)/local}"
