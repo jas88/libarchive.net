@@ -18,12 +18,20 @@ cd "$BUILD_DIR"
 # Load shared configuration
 . "${SCRIPT_DIR}/build-config.sh"
 
-echo "Setting up x86-64 musl cross-compiler toolchain from Bootlin..."
-# Download and extract toolchain (uses cache if available)
-TOOLCHAIN_DIR=$(download_toolchain "$TOOLCHAIN_X64_URL" "x86-64-musl")
+echo "Using x86-64 musl cross-compiler toolchain..."
+# Toolchain already downloaded/unpacked in workflow directory by CI
+TOOLCHAIN_DIR="x86-64--musl--stable-2025.08-1"
+TOOLCHAIN_PATH="${SCRIPT_DIR}/../${TOOLCHAIN_DIR}"
 
-# Set up toolchain paths
-export TOOLCHAIN_PREFIX="$(pwd)/${TOOLCHAIN_DIR}"
+if [ ! -d "$TOOLCHAIN_PATH" ]; then
+    echo "Toolchain not found in workflow directory, downloading..."
+    cd "${SCRIPT_DIR}/.."
+    download_toolchain "$TOOLCHAIN_X64_URL" "x86-64-musl"
+    cd "$BUILD_DIR"
+fi
+
+# Set up toolchain paths (absolute paths to workflow directory)
+export TOOLCHAIN_PREFIX="${TOOLCHAIN_PATH}"
 export TOOLCHAIN_SYSROOT="$TOOLCHAIN_PREFIX/x86_64-buildroot-linux-musl/sysroot"
 export PATH="$TOOLCHAIN_PREFIX/bin:$PATH"
 export CC=x86_64-linux-gcc

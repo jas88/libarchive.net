@@ -22,8 +22,8 @@ echo "Setting up i686 musl cross-compiler toolchain from Bootlin..."
 # Download and extract toolchain (uses cache if available)
 TOOLCHAIN_DIR=$(download_toolchain "$TOOLCHAIN_X86_URL" "i686-musl")
 
-# Set up toolchain paths
-export TOOLCHAIN_PREFIX="$(pwd)/${TOOLCHAIN_DIR}"
+# Set up toolchain paths (absolute paths to workflow directory)
+export TOOLCHAIN_PREFIX="${TOOLCHAIN_PATH}"
 export TOOLCHAIN_SYSROOT="$TOOLCHAIN_PREFIX/i686-buildroot-linux-musl/sysroot"
 export PATH="$TOOLCHAIN_PREFIX/bin:$PATH"
 export CC=i686-linux-gcc

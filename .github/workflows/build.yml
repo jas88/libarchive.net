@@ -126,11 +126,18 @@ jobs:
           done
 
           echo "$HOME/.ccache-bin" >> $GITHUB_PATH
-      - name: Download library sources once
+      - name: Download and unpack library sources and toolchains
         run: |
           # Load the download function and download all libraries once
           . native/build-config.sh
           download_all_libraries
+
+          # Download and unpack Linux toolchains in workflow directory
+          echo "Unpacking Linux toolchains..."
+          download_toolchain "$TOOLCHAIN_X86_URL" "i686-musl"
+          download_toolchain "$TOOLCHAIN_X64_URL" "x86-64-musl"
+          download_toolchain "$TOOLCHAIN_ARM_URL" "armv7-musl"
+          download_toolchain "$TOOLCHAIN_ARM64_URL" "aarch64-musl"
 
       - name: Build Windows DLLs (x86, x64, arm64)
         run: |
