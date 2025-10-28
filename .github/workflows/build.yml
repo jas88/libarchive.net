@@ -15,6 +15,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+      - name: Cache library downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/downloads
+          key: library-downloads-${{ hashFiles('native/build-config.sh') }}
+          restore-keys: |
+            library-downloads-
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
@@ -50,6 +57,13 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+      - name: Cache library downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/downloads
+          key: library-downloads-${{ hashFiles('native/build-config.sh') }}
+          restore-keys: |
+            library-downloads-
       - name: Extract version from tag
         id: version
         run: |
