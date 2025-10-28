@@ -47,10 +47,10 @@ export CXX=aarch64-linux-g++
 export AR=aarch64-linux-ar
 export RANLIB=aarch64-linux-ranlib
 
-# Generate sccache wrappers for this toolchain in build directory
+# Generate sccache wrappers for compilers only (not ar/ranlib)
 echo "Setting up sccache wrappers..."
 mkdir -p .ccache-bin
-for tool in gcc g++ ar ranlib; do
+for tool in gcc g++; do
     printf '#!/bin/sh\nexec sccache "%s/bin/aarch64-linux-%s" "$@"\n' "$TOOLCHAIN_PREFIX" "$tool" > .ccache-bin/aarch64-linux-$tool
     chmod +x .ccache-bin/aarch64-linux-$tool
 done

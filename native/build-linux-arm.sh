@@ -47,10 +47,10 @@ export CXX=arm-linux-g++
 export AR=arm-linux-ar
 export RANLIB=arm-linux-ranlib
 
-# Generate sccache wrappers for this toolchain in build directory
+# Generate sccache wrappers for compilers only (not ar/ranlib)
 echo "Setting up sccache wrappers..."
 mkdir -p .ccache-bin
-for tool in gcc g++ ar ranlib; do
+for tool in gcc g++; do
     printf '#!/bin/sh\nexec sccache "%s/bin/arm-linux-%s" "$@"\n' "$TOOLCHAIN_PREFIX" "$tool" > .ccache-bin/arm-linux-$tool
     chmod +x .ccache-bin/arm-linux-$tool
 done
