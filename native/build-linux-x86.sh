@@ -19,8 +19,16 @@ cd "$BUILD_DIR"
 . "${SCRIPT_DIR}/build-config.sh"
 
 echo "Setting up i686 musl cross-compiler toolchain from Bootlin..."
-# Download and extract toolchain in build directory (uses cache)
-TOOLCHAIN_DIR=$(download_toolchain "$TOOLCHAIN_X86_URL" "i686-musl")
+# Download toolchain to cache (does not unpack)
+TOOLCHAIN_ARCHIVE=$(download_toolchain "$TOOLCHAIN_X86_URL" "i686-musl")
+
+# Extract directory name from archive
+TOOLCHAIN_DIR="${TOOLCHAIN_ARCHIVE##*/}"
+TOOLCHAIN_DIR="${TOOLCHAIN_DIR%.tar.xz}"
+
+# Unpack toolchain in build directory
+echo "Unpacking toolchain in build directory..."
+tar xJf "$TOOLCHAIN_ARCHIVE"
 
 # Set up toolchain paths
 export TOOLCHAIN_PREFIX="$(pwd)/${TOOLCHAIN_DIR}"

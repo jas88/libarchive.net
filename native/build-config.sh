@@ -99,7 +99,8 @@ download_library() {
     fi
 }
 
-# Function to download and extract toolchain
+# Function to download toolchain to cache (does not unpack)
+# Returns the cache file path for the build script to unpack
 download_toolchain() {
     local url="$1"
     local name="$2"
@@ -107,7 +108,6 @@ download_toolchain() {
     # Extract archive filename from URL
     local archive_name="${url##*/}"
     local cache_file="${DOWNLOAD_CACHE}/${archive_name}"
-    local dir_name="${archive_name%.tar.xz}"
 
     # Create cache directory if it doesn't exist
     mkdir -p "$DOWNLOAD_CACHE"
@@ -141,14 +141,8 @@ download_toolchain() {
         echo "Using cached ${name} toolchain..."
     fi
 
-    # Delete any existing unpacked directory
-    rm -rf "$dir_name"
-
-    # Unpack from cache
-    echo "Unpacking ${name} toolchain..."
-    tar xJf "$cache_file"
-
-    echo "$dir_name"
+    # Return the cache file path
+    echo "$cache_file"
 }
 
 # Function to download all libraries
