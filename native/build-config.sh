@@ -114,34 +114,34 @@ download_toolchain() {
 
     # Download to cache if not already present
     if [ ! -f "$cache_file" ]; then
-        echo "Downloading ${name} toolchain to cache..."
+        echo "Downloading ${name} toolchain to cache..." >&2
         local max_retries=3
         local retry=0
         local downloaded=false
 
         while [ $retry -lt $max_retries ] && [ "$downloaded" = "false" ]; do
             if curl -fsSL "$url" -o "$cache_file"; then
-                echo "Toolchain download successful"
+                echo "Toolchain download successful" >&2
                 downloaded=true
             else
                 retry=$((retry + 1))
                 if [ $retry -lt $max_retries ]; then
-                    echo "Toolchain download failed, retrying ($retry/$max_retries)..."
+                    echo "Toolchain download failed, retrying ($retry/$max_retries)..." >&2
                     sleep $((retry * 2))
                 fi
             fi
         done
 
         if [ "$downloaded" = "false" ]; then
-            echo "ERROR: Failed to download ${name} toolchain after $max_retries attempts"
-            echo "URL: $url"
+            echo "ERROR: Failed to download ${name} toolchain after $max_retries attempts" >&2
+            echo "URL: $url" >&2
             return 1
         fi
     else
-        echo "Using cached ${name} toolchain..."
+        echo "Using cached ${name} toolchain..." >&2
     fi
 
-    # Return the cache file path
+    # Return the cache file path (only thing written to stdout)
     echo "$cache_file"
 }
 
