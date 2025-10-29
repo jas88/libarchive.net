@@ -181,6 +181,9 @@ cd ../..
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
 cd libxml2-${LIBXML2_VERSION}
+# Set explicit iconv flags to avoid libtool static library warnings
+export ICONV_CFLAGS="-I$PREFIX/include"
+export ICONV_LIBS="-liconv -lcharset"
 ./configure --host=${MINGW_PREFIX} --prefix=$PREFIX \
     --enable-silent-rules --disable-dependency-tracking \
     --enable-static --disable-shared \
