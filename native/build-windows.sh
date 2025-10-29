@@ -133,10 +133,31 @@ if [ -n "$CONFIG_H" ]; then
         INCLUDES="$INCLUDES -I../lib/include"
     fi
 
+    # Compile available source files for libcharset
+    echo "Available libcharset source files:"
+    ls -la *.c 2>/dev/null || echo "No .c files found"
+
     if ${CC} -c ${CFLAGS} $INCLUDES \
-        -DBUILDING_LIBCHARSET -DHAVE_CONFIG_H localcharset.c relocatable.c; then
+        -DBUILDING_LIBCHARSET -DHAVE_CONFIG_H localcharset.c; then
+        echo "✓ localcharset.c compilation succeeded"
+
+        # Try to compile relocatable.c if it exists
+        if [ -f "relocatable.c" ]; then
+            echo "Compiling relocatable.c..."
+            if ${CC} -c ${CFLAGS} $INCLUDES \
+                -DBUILDING_LIBCHARSET -DHAVE_CONFIG_H relocatable.c; then
+                echo "✓ relocatable.c compilation succeeded"
+                ${AR} rcs libcharset.a localcharset.o relocatable.o
+            else
+                echo "⚠ relocatable.c compilation failed, using localcharset.o only"
+                ${AR} rcs libcharset.a localcharset.o
+            fi
+        else
+            echo "⚠ relocatable.c not found, using localcharset.o only"
+            ${AR} rcs libcharset.a localcharset.o
+        fi
+
         echo "✓ Manual libcharset compilation succeeded"
-        ${AR} rcs libcharset.a localcharset.o relocatable.o
         touch Makefile  # Prevent make from running
         cd ../..
     else
