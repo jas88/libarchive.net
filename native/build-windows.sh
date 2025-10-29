@@ -78,112 +78,19 @@ echo "Running configure with mbrtowc conflict fixes..."
     ac_cv_func_mbrtowc=no ac_cv_func_wcrtomb=no \
     CC=$CC CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" CPPFLAGS="$CPPFLAGS"
 
-echo "Building libiconv library..."
-# Build only the static library, skip programs and tests
-make -j$NCPU CC=$CC AR=$AR lib/libiconv.a || {
-    echo "✗ Standard build failed, attempting alternative build method..."
-    cd lib
+echo "Building libiconv and libcharset..."
+# Export CC and AR so make uses them correctly
+export CC AR
+make
 
-    # Alternative: build individual objects with fixed flags
-    echo "Building individual libiconv objects..."
-    OBJECTS=""
-    for src in iconv.c; do
-        echo "Compiling $src..."
-        if ${CC} -c ${CFLAGS} -I../include -I../libcharset/include -I. \
-            -DHAVE_CONFIG_H -DBUILDING_LIBICONV \
-            -UHAVE_MBRTOWC -UHAVE_WCRTOMB \
-            $src -o ${src%.c}.o; then
-            OBJECTS="$OBJECTS ${src%.c}.o"
-        else
-            echo "✗ Failed to compile $src"
-            exit 1
-        fi
-    done
-
-    echo "Creating libiconv.a from objects..."
-    ${AR} rcs libiconv.a $OBJECTS
-    if [ -f libiconv.a ]; then
-        echo "✓ Manual libiconv compilation succeeded"
-        file libiconv.a
-    else
-        echo "✗ Manual libiconv compilation failed"
-        exit 1
-    fi
-    cd ..
-}
-
-echo "Building libcharset directly (included in libiconv build)..."
-cd libcharset/lib
-# Look for config.h in multiple possible locations
-CONFIG_H=""
-for config_path in "../../config.h" "../lib/config.h" "../../lib/config.h"; do
-    if [ -f "$config_path" ]; then
-        CONFIG_H="$config_path"
-        echo "✓ libcharset config found at $config_path"
-        break
-    fi
-done
-
-if [ -n "$CONFIG_H" ]; then
-    # Determine include paths based on config location
-    INCLUDES="-I../include -I."
-    if [ "$CONFIG_H" = "../../lib/config.h" ]; then
-        INCLUDES="$INCLUDES -I../../lib/include"
-    elif [ "$CONFIG_H" = "../lib/config.h" ]; then
-        INCLUDES="$INCLUDES -I../lib/include"
-    elif [ "$CONFIG_H" = "../../config.h" ]; then
-        INCLUDES="$INCLUDES -I../../"
-    fi
-
-    # Compile available source files for libcharset
-    echo "Available libcharset source files:"
-    ls -la *.c 2>/dev/null || echo "No .c files found"
-
-    if ${CC} -c ${CFLAGS} $INCLUDES \
-        -DBUILDING_LIBCHARSET -DHAVE_CONFIG_H localcharset.c; then
-        echo "✓ localcharset.c compilation succeeded"
-
-        # Try to compile relocatable.c if it exists
-        if [ -f "relocatable.c" ]; then
-            echo "Compiling relocatable.c..."
-            if ${CC} -c ${CFLAGS} $INCLUDES \
-                -DBUILDING_LIBCHARSET -DHAVE_CONFIG_H relocatable.c; then
-                echo "✓ relocatable.c compilation succeeded"
-                ${AR} rcs libcharset.a localcharset.o relocatable.o
-            else
-                echo "⚠ relocatable.c compilation failed, using localcharset.o only"
-                ${AR} rcs libcharset.a localcharset.o
-            fi
-        else
-            echo "⚠ relocatable.c not found, using localcharset.o only"
-            ${AR} rcs libcharset.a localcharset.o
-        fi
-
-        echo "✓ Manual libcharset compilation succeeded"
-        touch Makefile  # Prevent make from running
-        cd ../..
-    else
-        echo "✗ Manual libcharset compilation failed - required dependency for libxml2"
-        exit 1
-    fi
-else
-    echo "ERROR: libcharset config.h not found in any location - configure may have failed"
-    exit 1
-fi
-
-
-# Install manually if files exist
-if [ -f lib/libiconv.a ]; then
-    echo "Installing libiconv libraries..."
-    mkdir -p "$PREFIX/lib" "$PREFIX/include"
-    cp lib/libiconv.a "$PREFIX/lib/"
-    cp include/iconv.h "$PREFIX/include/"
-fi
-
-if [ -f libcharset/lib/libcharset.a ]; then
-    cp libcharset/lib/libcharset.a "$PREFIX/lib/"
-    cp libcharset/include/libcharset.h libcharset/include/localcharset.h "$PREFIX/include/"
-fi
+# Install libraries from build directories
+echo "Installing libiconv libraries..."
+mkdir -p "$PREFIX/lib" "$PREFIX/include"
+cp lib/.libs/libiconv.a "$PREFIX/lib/"
+cp include/iconv.h.inst "$PREFIX/include/iconv.h"
+cp libcharset/lib/.libs/libcharset.a "$PREFIX/lib/"
+cp libcharset/include/libcharset.h.inst "$PREFIX/include/libcharset.h"
+cp libcharset/include/localcharset.h "$PREFIX/include/"
 
 # Verify libraries are proper archives
 echo "=== Verifying libiconv installation ==="
@@ -192,13 +99,15 @@ if [ -f "$PREFIX/lib/libiconv.a" ]; then
     ${AR} t "$PREFIX/lib/libiconv.a" | head -5
     echo "✓ libiconv.a built successfully"
 else
-    echo "⚠  libiconv.a not found - will proceed without iconv"
+    echo "ERROR: libiconv.a not found"
+    exit 1
 fi
 
 if [ -f "$PREFIX/include/iconv.h" ]; then
     echo "✓ iconv.h installed successfully"
 else
-    echo "⚠  iconv.h not found - will proceed without iconv"
+    echo "ERROR: iconv.h not found"
+    exit 1
 fi
 
 # libcharset is required - must be built successfully
