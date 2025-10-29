@@ -82,16 +82,47 @@ echo "Running configure with mbrtowc conflict fixes..."
 echo "Building libiconv and libcharset..."
 # Export CC and AR so make uses them correctly
 export CC AR
-make
+make -j$NCPU
+
+# Verify build outputs exist and are valid archives before installing
+echo "Checking libiconv build outputs..."
+if [ ! -f "lib/.libs/libiconv.a" ]; then
+    echo "ERROR: lib/.libs/libiconv.a not found after build"
+    ls -la lib/.libs/ || echo "lib/.libs/ directory does not exist"
+    exit 1
+fi
+
+# Verify it's an actual ar archive, not a libtool text file
+if ! file lib/.libs/libiconv.a | grep -q "current ar archive"; then
+    echo "ERROR: lib/.libs/libiconv.a is not a valid ar archive:"
+    file lib/.libs/libiconv.a
+    exit 1
+fi
+
+if [ ! -f "libcharset/lib/.libs/libcharset.a" ]; then
+    echo "ERROR: libcharset/lib/.libs/libcharset.a not found after build"
+    ls -la libcharset/lib/.libs/ || echo "libcharset/lib/.libs/ directory does not exist"
+    exit 1
+fi
+
+if ! file libcharset/lib/.libs/libcharset.a | grep -q "current ar archive"; then
+    echo "ERROR: libcharset/lib/.libs/libcharset.a is not a valid ar archive:"
+    file libcharset/lib/.libs/libcharset.a
+    exit 1
+fi
 
 # Install libraries from build directories
 echo "Installing libiconv libraries..."
 mkdir -p "$PREFIX/lib" "$PREFIX/include"
+# Install actual archives from .libs, not libtool wrappers
 cp lib/.libs/libiconv.a "$PREFIX/lib/"
 cp include/iconv.h.inst "$PREFIX/include/iconv.h"
 cp libcharset/lib/.libs/libcharset.a "$PREFIX/lib/"
 cp libcharset/include/libcharset.h.inst "$PREFIX/include/libcharset.h"
 cp libcharset/include/localcharset.h "$PREFIX/include/"
+
+# Remove any libtool .la files that might confuse linkers (especially lld)
+rm -f "$PREFIX/lib"/*.la
 
 # Verify libraries are proper archives
 echo "=== Verifying libiconv installation ==="
@@ -161,6 +192,7 @@ touch aclocal.m4 configure Makefile.in */Makefile.in */*/Makefile.in 2>/dev/null
     --disable-lzma-links --disable-scripts --disable-doc \
     --disable-nls --disable-rpath
 make -j$NCPU install
+rm -f "$PREFIX/lib"/*.la
 cd ..
 
 echo "Building lzo ${LZO_VERSION}..."
@@ -169,6 +201,7 @@ cd lzo-${LZO_VERSION}
     --enable-silent-rules --disable-dependency-tracking \
     --enable-static --disable-shared --with-pic
 make -j$NCPU install
+rm -f "$PREFIX/lib"/*.la
 cd ..
 
 echo "Building zstd ${ZSTD_VERSION}..."
@@ -192,6 +225,7 @@ export ICONV_LIBS="-liconv -lcharset"
     --without-http --without-ftp --without-threads \
     --without-icu --without-history
 make -j$NCPU install
+rm -f "$PREFIX/lib"/*.la
 cd ..
 
 echo "Building libarchive ${LIBARCHIVE_VERSION}..."
@@ -209,6 +243,7 @@ export LDFLAGS="$LDFLAGS -L$PREFIX/lib -lz -llzma"
     --with-pic --with-zlib --with-bz2lib --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-xml2 \
     --without-expat
 make -j$NCPU install
+rm -f "$PREFIX/lib"/*.la
 cd ..
 
 echo "Creating Windows DLL..."
