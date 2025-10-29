@@ -74,7 +74,24 @@ cd libiconv-${ICONV_VERSION}
 make -j$NCPU install
 # Verify the library was built correctly
 if [ -f "$PREFIX/lib/libiconv.a" ]; then
+    echo "=== Checking libiconv.a ==="
     file "$PREFIX/lib/libiconv.a"
+
+    # Check if it's a GNU libtool linker script (text file)
+    if file "$PREFIX/lib/libiconv.a" | grep -q "ASCII text"; then
+        echo "WARNING: libiconv.a is a linker script, extracting real library..."
+        # Find the actual .a file in the libtool directory
+        if [ -f "libiconv-${ICONV_VERSION}/lib/.libs/libiconv.a" ]; then
+            cp "libiconv-${ICONV_VERSION}/lib/.libs/libiconv.a" "$PREFIX/lib/libiconv.a"
+            cp "libiconv-${ICONV_VERSION}/libcharset/lib/.libs/libcharset.a" "$PREFIX/lib/libcharset.a" 2>/dev/null || true
+            echo "Copied actual static libraries from .libs directory"
+            file "$PREFIX/lib/libiconv.a"
+        else
+            echo "ERROR: Could not find actual libiconv.a in .libs directory"
+            exit 1
+        fi
+    fi
+
     ${AR} t "$PREFIX/lib/libiconv.a" | head -5
 else
     echo "ERROR: libiconv.a not found at $PREFIX/lib/"
