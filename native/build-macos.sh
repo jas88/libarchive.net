@@ -118,30 +118,33 @@ export LIBXML2_PC_LIBS="-L$PREFIX -lxml2"
 make -sj$NCPU install
 cd ..
 
-echo "Creating merged static library with all dependencies..."
-mkdir -p local/lib/merge_tmp
-cd local/lib/merge_tmp
-ar x ../libarchive.a
-ar x ../libbz2.a
-ar x ../libz.a
-ar x ../libxml2.a
-ar x ../liblzma.a
-ar x ../liblzo2.a
-ar x ../libzstd.a
-ar x ../liblz4.a
-ar rcs ../libarchive.a *.o
-cd ../../..
-rm -rf local/lib/merge_tmp
-
 echo "Creating ${ARCH_NAME} dylib..."
-clang ${ARCH_FLAGS} -dynamiclib -shared -o libarchive-${ARCH_NAME}.dylib -Wl,-force_load local/lib/libarchive.a -liconv
+clang ${ARCH_FLAGS} -dynamiclib -shared -o libarchive-${ARCH_NAME}.dylib \
+    -Wl,-force_load,local/lib/libarchive.a \
+    -Wl,-force_load,local/lib/libbz2.a \
+    -Wl,-force_load,local/lib/libz.a \
+    -Wl,-force_load,local/lib/libxml2.a \
+    -Wl,-force_load,local/lib/liblzma.a \
+    -Wl,-force_load,local/lib/liblzo2.a \
+    -Wl,-force_load,local/lib/libzstd.a \
+    -Wl,-force_load,local/lib/liblz4.a \
+    -liconv
 
 echo "Testing library..."
 file libarchive-${ARCH_NAME}.dylib
 otool -L libarchive-${ARCH_NAME}.dylib
 
 echo "Building native test..."
-gcc ${ARCH_FLAGS} -o nativetest "${SCRIPT_DIR}/nativetest.c" local/lib/libarchive.a -Ilocal/include
+gcc ${ARCH_FLAGS} -o nativetest "${SCRIPT_DIR}/nativetest.c" \
+    local/lib/libarchive.a \
+    local/lib/libbz2.a \
+    local/lib/libz.a \
+    local/lib/libxml2.a \
+    local/lib/liblzma.a \
+    local/lib/liblzo2.a \
+    local/lib/libzstd.a \
+    local/lib/liblz4.a \
+    -Ilocal/include -liconv
 ./nativetest
 
 echo "Copying output to ${OUTPUT_DIR}..."
