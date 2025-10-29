@@ -131,6 +131,8 @@ if [ -n "$CONFIG_H" ]; then
         INCLUDES="$INCLUDES -I../../lib/include"
     elif [ "$CONFIG_H" = "../lib/config.h" ]; then
         INCLUDES="$INCLUDES -I../lib/include"
+    elif [ "$CONFIG_H" = "../../config.h" ]; then
+        INCLUDES="$INCLUDES -I../../"
     fi
 
     # Compile available source files for libcharset
