@@ -69,35 +69,37 @@ fi
 # Build libiconv first (needed by libxml2)
 echo "Building libiconv ${ICONV_VERSION}..."
 cd libiconv-${ICONV_VERSION}
-# Configure with explicit CFLAGS and disable libtool to avoid linker script issues with LLVM
-./configure --host=${MINGW_PREFIX} --prefix=$PREFIX --disable-shared --enable-static CFLAGS="$CFLAGS"
-make -j$NCPU install
-# Verify the library was built correctly
-if [ -f "$PREFIX/lib/libiconv.a" ]; then
-    echo "=== Checking libiconv.a ==="
-    file "$PREFIX/lib/libiconv.a"
 
-    # Check if it's a GNU libtool linker script (text file)
-    if file "$PREFIX/lib/libiconv.a" | grep -q "ASCII text"; then
-        echo "WARNING: libiconv.a is a linker script, extracting real library..."
-        # Find the actual .a file in the libtool directory
-        if [ -f "libiconv-${ICONV_VERSION}/lib/.libs/libiconv.a" ]; then
-            cp "libiconv-${ICONV_VERSION}/lib/.libs/libiconv.a" "$PREFIX/lib/libiconv.a"
-            cp "libiconv-${ICONV_VERSION}/libcharset/lib/.libs/libcharset.a" "$PREFIX/lib/libcharset.a" 2>/dev/null || true
-            echo "Copied actual static libraries from .libs directory"
-            file "$PREFIX/lib/libiconv.a"
-        else
-            echo "ERROR: Could not find actual libiconv.a in .libs directory"
-            exit 1
-        fi
-    fi
+# Build libiconv manually to avoid libtool linker script issues with LLVM
+# Build the library components
+cd lib
+${CC} -c ${CFLAGS} -I../include -I. iconv.c relocatable.c
+${AR} rcs libiconv.a iconv.o relocatable.o
+cd ..
 
-    ${AR} t "$PREFIX/lib/libiconv.a" | head -5
-else
-    echo "ERROR: libiconv.a not found at $PREFIX/lib/"
-    ls -la "$PREFIX/lib/" || true
-    exit 1
-fi
+# Build libcharset
+cd libcharset/lib
+${CC} -c ${CFLAGS} -I../include -I. localcharset.c relocatable.c
+${AR} rcs libcharset.a localcharset.o relocatable.o
+cd ../..
+
+# Install manually
+echo "Installing libiconv libraries..."
+mkdir -p "$PREFIX/lib" "$PREFIX/include"
+cp lib/libiconv.a "$PREFIX/lib/"
+cp libcharset/lib/libcharset.a "$PREFIX/lib/"
+cp include/iconv.h "$PREFIX/include/"
+cp libcharset/include/libcharset.h libcharset/include/localcharset.h "$PREFIX/include/"
+
+# Verify libraries are proper archives
+echo "=== Verifying libiconv.a ==="
+file "$PREFIX/lib/libiconv.a"
+${AR} t "$PREFIX/lib/libiconv.a"
+
+echo "=== Verifying libcharset.a ==="
+file "$PREFIX/lib/libcharset.a"
+${AR} t "$PREFIX/lib/libcharset.a"
+
 cd ..
 
 # Build compression libraries
