@@ -73,6 +73,7 @@ cd libiconv-${ICONV_VERSION}
 # Use specific configure flags to avoid mbrtowc conflicts with LLVM-MinGW
 echo "Running configure with mbrtowc conflict fixes..."
 ./configure --host=${MINGW_PREFIX} --prefix=$PREFIX \
+    --enable-silent-rules --disable-dependency-tracking \
     --disable-shared --enable-static --disable-nls \
     --disable-rpath --with-pic --disable-extra \
     ac_cv_func_mbrtowc=no ac_cv_func_wcrtomb=no \
@@ -153,13 +154,20 @@ echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
 # Touch autotools-generated files to prevent rebuild attempts
 touch aclocal.m4 configure Makefile.in */Makefile.in */*/Makefile.in 2>/dev/null || true
-./configure --host=${MINGW_PREFIX} --with-pic --disable-shared --prefix=$PREFIX --disable-scripts --disable-doc
+./configure --host=${MINGW_PREFIX} --prefix=$PREFIX \
+    --enable-silent-rules --disable-dependency-tracking \
+    --disable-shared --with-pic \
+    --disable-xz --disable-xzdec --disable-lzmadec --disable-lzmainfo \
+    --disable-lzma-links --disable-scripts --disable-doc \
+    --disable-nls --disable-rpath
 make -j$NCPU install
 cd ..
 
 echo "Building lzo ${LZO_VERSION}..."
 cd lzo-${LZO_VERSION}
-./configure --host=${MINGW_PREFIX} --prefix=$PREFIX --disable-shared
+./configure --host=${MINGW_PREFIX} --prefix=$PREFIX \
+    --enable-silent-rules --disable-dependency-tracking \
+    --enable-static --disable-shared --with-pic
 make -j$NCPU install
 cd ..
 
@@ -173,7 +181,13 @@ cd ../..
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
 cd libxml2-${LIBXML2_VERSION}
-./configure --host=${MINGW_PREFIX} --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-iconv=$PREFIX --with-zlib=$PREFIX --with-lzma=$PREFIX
+./configure --host=${MINGW_PREFIX} --prefix=$PREFIX \
+    --enable-silent-rules --disable-dependency-tracking \
+    --enable-static --disable-shared \
+    --with-iconv=$PREFIX --with-zlib=$PREFIX --with-lzma=$PREFIX \
+    --without-python --without-catalog --without-debug \
+    --without-http --without-ftp --without-threads \
+    --without-icu --without-history
 make -j$NCPU install
 cd ..
 
@@ -187,8 +201,10 @@ export LDFLAGS="$LDFLAGS -L$PREFIX/lib -lz -llzma"
     --enable-silent-rules --disable-dependency-tracking \
     --enable-static --disable-shared \
     --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip \
+    --disable-acl --disable-xattr \
     --enable-posix-regex-lib=libc \
-    --with-pic --with-zlib --with-bz2lib --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-xml2
+    --with-pic --with-zlib --with-bz2lib --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-xml2 \
+    --without-expat
 make -j$NCPU install
 cd ..
 
