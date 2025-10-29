@@ -70,35 +70,33 @@ fi
 echo "Building libiconv ${ICONV_VERSION}..."
 cd libiconv-${ICONV_VERSION}
 
-# Build libiconv manually to avoid libtool linker script issues with LLVM
-# Build the library components
-cd lib
-${CC} -c ${CFLAGS} -I../include -I. iconv.c relocatable.c
-${AR} rcs libiconv.a iconv.o relocatable.o
-cd ..
+# Configure libiconv for cross-compilation
+# This generates config.h and other necessary files
+./configure --host=${MINGW_PREFIX} --prefix=$PREFIX --disable-shared --enable-static --disable-nls
 
-# Build libcharset
-cd libcharset/lib
-${CC} -c ${CFLAGS} -I../include -I. localcharset.c relocatable.c
-${AR} rcs libcharset.a localcharset.o relocatable.o
-cd ../..
+# Build libiconv using make (more reliable than manual compilation)
+make -j$NCPU install
 
-# Install manually
-echo "Installing libiconv libraries..."
-mkdir -p "$PREFIX/lib" "$PREFIX/include"
-cp lib/libiconv.a "$PREFIX/lib/"
-cp libcharset/lib/libcharset.a "$PREFIX/lib/"
-cp include/iconv.h "$PREFIX/include/"
-cp libcharset/include/libcharset.h libcharset/include/localcharset.h "$PREFIX/include/"
+# Build libcharset (included in libiconv build)
+# libcharset is built as part of libiconv, no separate build needed
 
 # Verify libraries are proper archives
-echo "=== Verifying libiconv.a ==="
-file "$PREFIX/lib/libiconv.a"
-${AR} t "$PREFIX/lib/libiconv.a"
+echo "=== Verifying libiconv installation ==="
+if [ -f "$PREFIX/lib/libiconv.a" ]; then
+    file "$PREFIX/lib/libiconv.a"
+    ${AR} t "$PREFIX/lib/libiconv.a" | head -5
+    echo "✓ libiconv.a built successfully"
+else
+    echo "ERROR: libiconv.a not found after build"
+    exit 1
+fi
 
-echo "=== Verifying libcharset.a ==="
-file "$PREFIX/lib/libcharset.a"
-${AR} t "$PREFIX/lib/libcharset.a"
+if [ -f "$PREFIX/include/iconv.h" ]; then
+    echo "✓ iconv.h installed successfully"
+else
+    echo "ERROR: iconv.h not found after build"
+    exit 1
+fi
 
 cd ..
 
