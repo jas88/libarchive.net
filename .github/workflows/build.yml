@@ -170,19 +170,19 @@ jobs:
 
           # Build x86 (32-bit)
           echo "=== Building Linux x86 ==="
-          ./native/build-linux-x86.sh
+          ARCH=x86 ./native/build-linux.sh
 
           # Build x64
           echo "=== Building Linux x64 ==="
-          ./native/build-linux.sh
+          ARCH=x86-64 ./native/build-linux.sh
 
           # Build arm64
           echo "=== Building Linux ARM64 ==="
-          ./native/build-linux-arm64.sh
+          ARCH=arm64 ./native/build-linux.sh
 
           # Build armv7
           echo "=== Building Linux ARM v7 ==="
-          ./native/build-linux-arm.sh
+          ARCH=arm ./native/build-linux.sh
 
           echo "=== sccache stats after Linux builds ==="
           sccache --show-stats

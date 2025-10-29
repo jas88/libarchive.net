@@ -1,10 +1,63 @@
 #!/bin/bash
-# Build libarchive for Linux x86-64 using musl-libc for static linking
+# Build libarchive for Linux using musl-libc for static linking
+# Supports multiple architectures via ARCH environment variable
 
 set -e
 
+# Detect architecture or use default
+ARCH="${ARCH:-x86-64}"
+
+# Architecture-specific configuration
+case "$ARCH" in
+    x86-64|x64|x86_64)
+        ARCH_NAME="x64"
+        TOOLCHAIN_URL="$TOOLCHAIN_X64_URL"
+        TOOLCHAIN_NAME="x86-64-musl"
+        COMPILER_PREFIX="x86_64-linux"
+        SYSROOT_PREFIX="x86_64-buildroot-linux-musl"
+        CONFIGURE_HOST=""
+        ZLIB_CHOST=""
+        NEED_LIBGCC=false
+        ;;
+    x86|i686)
+        ARCH_NAME="x86"
+        TOOLCHAIN_URL="$TOOLCHAIN_X86_URL"
+        TOOLCHAIN_NAME="i686-musl"
+        COMPILER_PREFIX="i686-linux"
+        SYSROOT_PREFIX="i686-buildroot-linux-musl"
+        CONFIGURE_HOST="--build=x86_64-pc-linux-gnu --host=i686-linux"
+        ZLIB_CHOST="CHOST=i686-linux"
+        NEED_LIBGCC=true
+        ;;
+    arm|armv7)
+        ARCH_NAME="arm"
+        TOOLCHAIN_URL="$TOOLCHAIN_ARM_URL"
+        TOOLCHAIN_NAME="arm-musl"
+        COMPILER_PREFIX="arm-linux"
+        SYSROOT_PREFIX="arm-buildroot-linux-musleabihf"
+        CONFIGURE_HOST="--build=x86_64-pc-linux-gnu --host=arm-linux"
+        ZLIB_CHOST="CHOST=arm-linux"
+        NEED_LIBGCC=false
+        ;;
+    arm64|aarch64)
+        ARCH_NAME="arm64"
+        TOOLCHAIN_URL="$TOOLCHAIN_ARM64_URL"
+        TOOLCHAIN_NAME="aarch64-musl"
+        COMPILER_PREFIX="aarch64-linux"
+        SYSROOT_PREFIX="aarch64-buildroot-linux-musl"
+        CONFIGURE_HOST="--build=x86_64-pc-linux-gnu --host=aarch64-linux"
+        ZLIB_CHOST="CHOST=aarch64-linux"
+        NEED_LIBGCC=false
+        ;;
+    *)
+        echo "Error: Unsupported architecture: $ARCH"
+        echo "Supported: x86-64, x86/i686, arm/armv7, arm64/aarch64"
+        exit 1
+        ;;
+esac
+
 # Set up isolated build directory
-BUILD_DIR="${HOME}/libarchive-linux-x64"
+BUILD_DIR="${HOME}/libarchive-linux-${ARCH_NAME}"
 OUTPUT_DIR="${HOME}/libarchive-native"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -18,9 +71,11 @@ cd "$BUILD_DIR"
 # Load shared configuration
 . "${SCRIPT_DIR}/build-config.sh"
 
-echo "Setting up x86-64 musl cross-compiler toolchain from Bootlin..."
+echo "Building for Linux ${ARCH_NAME} (${COMPILER_PREFIX})..."
+echo "Setting up ${TOOLCHAIN_NAME} cross-compiler toolchain from Bootlin..."
+
 # Download toolchain to cache (does not unpack)
-TOOLCHAIN_ARCHIVE=$(download_toolchain "$TOOLCHAIN_X64_URL" "x86-64-musl")
+TOOLCHAIN_ARCHIVE=$(download_toolchain "$TOOLCHAIN_URL" "$TOOLCHAIN_NAME")
 
 # Extract directory name from archive
 TOOLCHAIN_DIR="${TOOLCHAIN_ARCHIVE##*/}"
@@ -32,27 +87,27 @@ tar xJf "$TOOLCHAIN_ARCHIVE"
 
 # Set up toolchain paths
 export TOOLCHAIN_PREFIX="$(pwd)/${TOOLCHAIN_DIR}"
-export TOOLCHAIN_SYSROOT="$TOOLCHAIN_PREFIX/x86_64-buildroot-linux-musl/sysroot"
+export TOOLCHAIN_SYSROOT="$TOOLCHAIN_PREFIX/${SYSROOT_PREFIX}/sysroot"
 
 # Verify toolchain was unpacked correctly
-if [ ! -f "$TOOLCHAIN_PREFIX/bin/x86_64-linux-gcc" ]; then
-    echo "ERROR: Toolchain compiler not found at $TOOLCHAIN_PREFIX/bin/x86_64-linux-gcc"
+if [ ! -f "$TOOLCHAIN_PREFIX/bin/${COMPILER_PREFIX}-gcc" ]; then
+    echo "ERROR: Toolchain compiler not found at $TOOLCHAIN_PREFIX/bin/${COMPILER_PREFIX}-gcc"
     echo "Directory contents:"
     ls -la "$TOOLCHAIN_PREFIX" 2>/dev/null || echo "  Directory does not exist"
     exit 1
 fi
 
-export CC=x86_64-linux-gcc
-export CXX=x86_64-linux-g++
-export AR=x86_64-linux-ar
-export RANLIB=x86_64-linux-ranlib
+export CC=${COMPILER_PREFIX}-gcc
+export CXX=${COMPILER_PREFIX}-g++
+export AR=${COMPILER_PREFIX}-ar
+export RANLIB=${COMPILER_PREFIX}-ranlib
 
 # Generate sccache wrappers for compilers only (not ar/ranlib)
 echo "Setting up sccache wrappers..."
 mkdir -p .ccache-bin
 for tool in gcc g++; do
-    printf '#!/bin/sh\nexec sccache "%s/bin/x86_64-linux-%s" "$@"\n' "$TOOLCHAIN_PREFIX" "$tool" > .ccache-bin/x86_64-linux-$tool
-    chmod +x .ccache-bin/x86_64-linux-$tool
+    printf '#!/bin/sh\nexec sccache "%s/bin/%s-%s" "$@"\n' "$TOOLCHAIN_PREFIX" "$COMPILER_PREFIX" "$tool" > .ccache-bin/${COMPILER_PREFIX}-$tool
+    chmod +x .ccache-bin/${COMPILER_PREFIX}-$tool
 done
 
 # Add wrappers to PATH (before toolchain bin)
@@ -102,25 +157,25 @@ cd ..
 
 echo "Building lzo ${LZO_VERSION}..."
 cd lzo-${LZO_VERSION}
-./configure --prefix=$PREFIX --disable-shared --enable-static
+./configure $CONFIGURE_HOST --prefix=$PREFIX --disable-shared --enable-static
 make -sj$NCPU install
 cd ..
 
 echo "Building zlib ${ZLIB_VERSION}..."
 cd zlib-${ZLIB_VERSION}
-./configure --static --prefix=$PREFIX
+$ZLIB_CHOST ./configure --static --prefix=$PREFIX
 make -sj$NCPU install
 cd ..
 
 echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
-./configure --with-pic --disable-shared --prefix=$PREFIX
+./configure $CONFIGURE_HOST --with-pic --disable-shared --prefix=$PREFIX
 make -sj$NCPU install
 cd ..
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
 cd libxml2-${LIBXML2_VERSION}
-./autogen.sh --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX --with-lzma=$PREFIX
+./autogen.sh $CONFIGURE_HOST --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX --with-lzma=$PREFIX
 make -sj$NCPU install
 cd ..
 
@@ -128,7 +183,7 @@ echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
 export LIBXML2_PC_LIBS=-L$PREFIX
-./configure --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2 --disable-shared --enable-static
+./configure $CONFIGURE_HOST --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2 --disable-shared --enable-static
 make -sj$NCPU install
 cd ..
 
@@ -148,7 +203,13 @@ cd ../../..
 rm -rf local/lib/merge_tmp
 
 echo "Creating final shared library..."
-$CC -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive ${TOOLCHAIN_SYSROOT}/lib/libc.a -nostdlib
+if [ "$NEED_LIBGCC" = true ]; then
+    # For 32-bit builds, we need libgcc for 64-bit division intrinsics (__udivdi3, etc.)
+    LIBGCC_PATH=$($CC -print-libgcc-file-name)
+    $CC -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive "$LIBGCC_PATH" ${TOOLCHAIN_SYSROOT}/lib/libc.a -nostdlib
+else
+    $CC -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive ${TOOLCHAIN_SYSROOT}/lib/libc.a -nostdlib
+fi
 
 echo "Testing library..."
 cat > test.c <<EOT
@@ -176,10 +237,10 @@ gcc -o nativetest "${SCRIPT_DIR}/nativetest.c" local/lib/libarchive.a -Ilocal/in
 ./nativetest
 
 echo "Copying output to ${OUTPUT_DIR}..."
-cp libarchive.so "${OUTPUT_DIR}/libarchive-linux-x64.so"
+cp libarchive.so "${OUTPUT_DIR}/libarchive-linux-${ARCH_NAME}.so"
 
 echo "Cleaning up build directory..."
 cd /
 rm -rf "${BUILD_DIR}"
 
-echo "Linux x64 build complete: ${OUTPUT_DIR}/libarchive-linux-x64.so"
+echo "Linux ${ARCH_NAME} build complete: ${OUTPUT_DIR}/libarchive-linux-${ARCH_NAME}.so"
