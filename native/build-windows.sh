@@ -62,7 +62,6 @@ export LDFLAGS="-L$PREFIX/lib"
 if [ ! -d "libarchive-${LIBARCHIVE_VERSION}" ]; then
     echo "Downloading library sources..."
     download_all_libraries
-    download_library "$ICONV_URL" "libiconv" "libiconv-${ICONV_VERSION}"
 else
     echo "Using pre-downloaded library sources"
 fi

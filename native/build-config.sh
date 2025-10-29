@@ -158,6 +158,7 @@ download_all_libraries() {
     download_library "$BZIP2_URL" "bzip2" "bzip2-${BZIP2_VERSION}"
     download_library "$ZLIB_URL" "zlib" "zlib-${ZLIB_VERSION}"
     download_library "$XZ_URL" "xz" "xz-${XZ_VERSION}"
+    download_library "$ICONV_URL" "libiconv" "libiconv-${ICONV_VERSION}"
 }
 
 # Detect number of CPU cores
