@@ -120,7 +120,7 @@ cd ..
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
 cd libxml2-${LIBXML2_VERSION}
-./autogen.sh --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX/../zlib-${ZLIB_VERSION} --with-lzma=$PREFIX/../xz-${XZ_VERSION}
+./autogen.sh --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX --with-lzma=$PREFIX
 make -sj$NCPU install
 cd ..
 
@@ -132,8 +132,23 @@ export LIBXML2_PC_LIBS=-L$PREFIX
 make -sj$NCPU install
 cd ..
 
+echo "Creating merged static library with all dependencies..."
+mkdir -p local/lib/merge_tmp
+cd local/lib/merge_tmp
+$AR x ../libarchive.a
+$AR x ../libbz2.a
+$AR x ../libz.a
+$AR x ../libxml2.a
+$AR x ../liblzma.a
+$AR x ../liblzo2.a
+$AR x ../libzstd.a
+$AR x ../liblz4.a
+$AR rcs ../libarchive.a *.o
+cd ../../..
+rm -rf local/lib/merge_tmp
+
 echo "Creating final shared library..."
-$CC -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/liblzo2.a local/lib/libzstd.a local/lib/liblz4.a ${TOOLCHAIN_SYSROOT}/lib/libc.a -nostdlib
+$CC -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive ${TOOLCHAIN_SYSROOT}/lib/libc.a -nostdlib
 
 echo "Testing library..."
 cat > test.c <<EOT
@@ -157,7 +172,7 @@ ${AR/ar/nm} libarchive.so | grep -c " T " | xargs echo "Defined symbols:"
 ${AR/ar/nm} libarchive.so | grep -c " U " | xargs echo "Undefined symbols:"
 
 echo "Building native test..."
-gcc -o nativetest "${SCRIPT_DIR}/nativetest.c" local/lib/libarchive.a -Llocal/lib -Ilocal/include -llz4 -lzstd -lbz2
+gcc -o nativetest "${SCRIPT_DIR}/nativetest.c" local/lib/libarchive.a -Ilocal/include
 ./nativetest
 
 echo "Copying output to ${OUTPUT_DIR}..."
