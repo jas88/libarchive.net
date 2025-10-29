@@ -97,6 +97,8 @@ cd ..
 
 echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
+# Touch autotools-generated files to prevent rebuild attempts
+touch aclocal.m4 configure Makefile.in */Makefile.in */*/Makefile.in 2>/dev/null || true
 ./configure --with-pic --disable-shared --prefix=$PREFIX
 make -sj$NCPU install
 cd ..
