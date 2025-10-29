@@ -73,8 +73,23 @@ export LIBXML2_PC_LIBS="-L$PREFIX -lxml2"
 make -sj$NCPU install
 cd ..
 
+echo "Creating merged static library with all dependencies..."
+mkdir -p local/lib/merge_tmp
+cd local/lib/merge_tmp
+ar x ../libarchive.a
+ar x ../libbz2.a
+ar x ../libz.a
+ar x ../libxml2.a
+ar x ../liblzma.a
+ar x ../liblzo2.a
+ar x ../libzstd.a
+ar x ../liblz4.a
+ar rcs ../libarchive.a *.o
+cd ../../..
+rm -rf local/lib/merge_tmp
+
 echo "Creating universal binary..."
-clang -arch arm64 -arch x86_64 -dynamiclib -shared -o libarchive.dylib -Wl,-force_load local/lib/libarchive.a local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/liblzo2.a local/lib/libzstd.a local/lib/liblz4.a -liconv
+clang -arch arm64 -arch x86_64 -dynamiclib -shared -o libarchive.dylib -Wl,-force_load local/lib/libarchive.a -liconv
 
 echo "Testing library..."
 file libarchive.dylib
