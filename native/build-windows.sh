@@ -127,7 +127,7 @@ export LDFLAGS="$LDFLAGS -L$PREFIX/lib -lz -llzma"
 ./configure --host=${MINGW_PREFIX} --prefix=$PREFIX \
     --enable-silent-rules --disable-dependency-tracking \
     --enable-static --disable-shared \
-    --disable-bsdtar --disable-bsdcat --disable-bsdcpio \
+    --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip \
     --enable-posix-regex-lib=libc \
     --with-pic --with-zlib --with-bz2lib --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-xml2
 make -j$NCPU install

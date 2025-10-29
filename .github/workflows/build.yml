@@ -45,7 +45,7 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: maclib
-          path: ~/libarchive-native/libarchive.dylib
+          path: ~/libarchive-native/libarchive-*.dylib
           if-no-files-found: error
           retention-days: 1
   linux:
@@ -213,16 +213,14 @@ jobs:
           cp $HOME/libarchive-native/libarchive-linux-arm.so LibArchive.Net/runtimes/linux-arm/native/libarchive.so
           cp LibArchive.Net/runtimes/linux-arm/native/libarchive.so LibArchive.Net/runtimes/linux-musl-arm/native/
 
-          # macOS (downloaded as artifact to current directory)
-          cp libarchive.dylib LibArchive.Net/runtimes/osx-x64/native/
-          cp LibArchive.Net/runtimes/osx-x64/native/libarchive.dylib LibArchive.Net/runtimes/osx-arm64/native/
+          # macOS (downloaded as artifacts to current directory)
+          cp libarchive-x64.dylib LibArchive.Net/runtimes/osx-x64/native/libarchive.dylib
+          cp libarchive-arm64.dylib LibArchive.Net/runtimes/osx-arm64/native/libarchive.dylib
 
           # Windows
           mv archive-x86.dll LibArchive.Net/runtimes/win-x86/native/archive.dll
           mv archive-x64.dll LibArchive.Net/runtimes/win-x64/native/archive.dll
           mv archive-arm64.dll LibArchive.Net/runtimes/win-arm64/native/archive.dll
-
-          touch libarchive.dylib
 
           # Build and pack the library first
           dotnet pack LibArchive.Net/LibArchive.Net.csproj -o . -p:PackageVersion=${{ steps.version.outputs.VERSION }} --configuration Release --nologo
