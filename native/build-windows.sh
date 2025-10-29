@@ -62,9 +62,17 @@ export LDFLAGS="-L$PREFIX/lib"
 if [ ! -d "libarchive-${LIBARCHIVE_VERSION}" ]; then
     echo "Downloading library sources..."
     download_all_libraries
+    download_library "$ICONV_URL" "libiconv" "libiconv-${ICONV_VERSION}"
 else
     echo "Using pre-downloaded library sources"
 fi
+
+# Build libiconv first (needed by libxml2)
+echo "Building libiconv ${ICONV_VERSION}..."
+cd libiconv-${ICONV_VERSION}
+./configure --host=${MINGW_PREFIX} --prefix=$PREFIX --disable-shared --enable-static
+make -j$NCPU install
+cd ..
 
 # Build compression libraries
 echo "Building lz4 ${LZ4_VERSION}..."
@@ -116,7 +124,7 @@ cd ../..
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
 cd libxml2-${LIBXML2_VERSION}
-./configure --host=${MINGW_PREFIX} --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX --with-lzma=$PREFIX
+./configure --host=${MINGW_PREFIX} --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-iconv=$PREFIX --with-zlib=$PREFIX --with-lzma=$PREFIX
 make -j$NCPU install
 cd ..
 
@@ -137,7 +145,7 @@ cd ..
 
 echo "Creating Windows DLL..."
 # Verify all libraries exist before linking
-for lib in libarchive libxml2 libz liblzma liblzo2 libzstd liblz4 libbz2; do
+for lib in libarchive libxml2 libiconv libcharset libz liblzma liblzo2 libzstd liblz4 libbz2; do
     if [ ! -f "$PREFIX/lib/${lib}.a" ]; then
         echo "ERROR: $PREFIX/lib/${lib}.a not found!"
         exit 1
@@ -145,13 +153,15 @@ for lib in libarchive libxml2 libz liblzma liblzo2 libzstd liblz4 libbz2; do
     echo "$PREFIX/lib/${lib}.a: $(ls -lh $PREFIX/lib/${lib}.a | awk '{print $5}')"
 done
 # Use --start-group for all dependency libraries to allow multi-pass symbol resolution
-# This is needed because libxml2 depends on libz and liblzma
+# This is needed because libxml2 depends on libz, liblzma, and libiconv
 ${CC} -shared -o ${OUTPUT_NAME} \
     -Wl,--whole-archive \
     $PREFIX/lib/libarchive.a \
     -Wl,--no-whole-archive \
     -Wl,--start-group \
     $PREFIX/lib/libxml2.a \
+    $PREFIX/lib/libiconv.a \
+    $PREFIX/lib/libcharset.a \
     $PREFIX/lib/libz.a \
     $PREFIX/lib/liblzma.a \
     $PREFIX/lib/liblzo2.a \

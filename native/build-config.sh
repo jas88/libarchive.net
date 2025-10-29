@@ -11,6 +11,7 @@ LIBXML2_VERSION="2.15.1"
 ZLIB_VERSION="1.3.1"
 XZ_VERSION="5.8.1"
 BZIP2_VERSION="1.0.8"
+ICONV_VERSION="1.17"
 
 # Bootlin toolchain versions (Linux only)
 # Bootlin stable 2025.08-1: GCC 14.3.0, musl latest, binutils 2.43.1
@@ -35,6 +36,7 @@ LIBXML2_URL="https://download.gnome.org/sources/libxml2/${LIBXML2_VERSION%.*}/li
 BZIP2_URL="https://www.sourceware.org/pub/bzip2/bzip2-${BZIP2_VERSION}.tar.gz"
 ZLIB_URL="https://zlib.net/zlib-${ZLIB_VERSION}.tar.xz"
 XZ_URL="https://github.com/tukaani-project/xz/releases/download/v${XZ_VERSION}/xz-${XZ_VERSION}.tar.xz"
+ICONV_URL="https://ftp.gnu.org/pub/gnu/libiconv/libiconv-${ICONV_VERSION}.tar.gz"
 
 # Common build settings
 export PREFIX="${PREFIX:-$(pwd)/local}"
@@ -176,6 +178,7 @@ echo "  libxml2: ${LIBXML2_VERSION}"
 echo "  zlib: ${ZLIB_VERSION}"
 echo "  xz: ${XZ_VERSION}"
 echo "  bzip2: ${BZIP2_VERSION}"
+echo "  iconv: ${ICONV_VERSION:-N/A (platform-provided)}"
 echo "  musl: ${MUSL_VERSION:-N/A}"
 echo "  gcc: ${GCC_VERSION:-N/A}"
 echo "  binutils: ${BINUTILS_VERSION:-N/A}"
