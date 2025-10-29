@@ -69,8 +69,18 @@ fi
 # Build libiconv first (needed by libxml2)
 echo "Building libiconv ${ICONV_VERSION}..."
 cd libiconv-${ICONV_VERSION}
-./configure --host=${MINGW_PREFIX} --prefix=$PREFIX --disable-shared --enable-static
+# Configure with explicit CFLAGS and disable libtool to avoid linker script issues with LLVM
+./configure --host=${MINGW_PREFIX} --prefix=$PREFIX --disable-shared --enable-static CFLAGS="$CFLAGS"
 make -j$NCPU install
+# Verify the library was built correctly
+if [ -f "$PREFIX/lib/libiconv.a" ]; then
+    file "$PREFIX/lib/libiconv.a"
+    ${AR} t "$PREFIX/lib/libiconv.a" | head -5
+else
+    echo "ERROR: libiconv.a not found at $PREFIX/lib/"
+    ls -la "$PREFIX/lib/" || true
+    exit 1
+fi
 cd ..
 
 # Build compression libraries
