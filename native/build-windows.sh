@@ -114,9 +114,26 @@ make -j$NCPU CC=$CC AR=$AR lib/libiconv.a || {
 
 echo "Building libcharset directly (included in libiconv build)..."
 cd libcharset/lib
-if [ -f ../lib/config.h ]; then
-    echo "✓ libcharset config available"
-    if ${CC} -c ${CFLAGS} -I../lib/include -I. -I../lib/include \
+# Look for config.h in multiple possible locations
+CONFIG_H=""
+for config_path in "../../config.h" "../lib/config.h" "../../lib/config.h"; do
+    if [ -f "$config_path" ]; then
+        CONFIG_H="$config_path"
+        echo "✓ libcharset config found at $config_path"
+        break
+    fi
+done
+
+if [ -n "$CONFIG_H" ]; then
+    # Determine include paths based on config location
+    INCLUDES="-I../include -I."
+    if [ "$CONFIG_H" = "../../lib/config.h" ]; then
+        INCLUDES="$INCLUDES -I../../lib/include"
+    elif [ "$CONFIG_H" = "../lib/config.h" ]; then
+        INCLUDES="$INCLUDES -I../lib/include"
+    fi
+
+    if ${CC} -c ${CFLAGS} $INCLUDES \
         -DBUILDING_LIBCHARSET -DHAVE_CONFIG_H localcharset.c relocatable.c; then
         echo "✓ Manual libcharset compilation succeeded"
         ${AR} rcs libcharset.a localcharset.o relocatable.o
@@ -127,7 +144,7 @@ if [ -f ../lib/config.h ]; then
         exit 1
     fi
 else
-    echo "ERROR: libcharset config.h not found - configure may have failed"
+    echo "ERROR: libcharset config.h not found in any location - configure may have failed"
     exit 1
 fi
 
