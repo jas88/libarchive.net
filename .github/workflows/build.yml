@@ -126,36 +126,20 @@ jobs:
           done
 
           echo "$HOME/.ccache-bin" >> $GITHUB_PATH
-      - name: Download library sources once
-        run: |
-          # Load the download function and download all libraries once
-          . native/build-config.sh
-          download_all_libraries
-
       - name: Build Windows DLLs (x86, x64, arm64)
         run: |
           echo "=== sccache stats before build ==="
           sccache --show-stats
 
-          # Build each architecture in separate directory to avoid conflicts
+          # Build each architecture in separate directory
+          # Each script unpacks fresh sources from download cache
           for arch in x86 x64 arm64; do
             echo "=== Building Windows $arch ==="
             mkdir -p build-win-$arch
             cd build-win-$arch
-
-            # Use architecture-specific prefix
-            export PREFIX="$(pwd)/local-$arch"
-
-            # Copy library sources from parent directory (already downloaded)
-            for src in ../bzip2-* ../libarchive-* ../libxml2-* ../lz4-* ../lzo-* ../xz-* ../zlib-* ../zstd-*; do
-              [ -e "$src" ] && cp -r "$src" .
-            done
-
             ARCH=$arch ../native/build-windows.sh
             mv archive-*.dll ../
             cd ..
-
-            # Clean up to avoid conflicts with next architecture
             rm -rf build-win-$arch
             echo "✓ Windows $arch build complete"
           done
