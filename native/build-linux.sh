@@ -157,7 +157,9 @@ cd ..
 
 echo "Building lzo ${LZO_VERSION}..."
 cd lzo-${LZO_VERSION}
-./configure $CONFIGURE_HOST --prefix=$PREFIX --disable-shared --enable-static
+./configure $CONFIGURE_HOST --prefix=$PREFIX \
+    --enable-silent-rules --disable-dependency-tracking \
+    --enable-static --disable-shared --with-pic
 make -sj$NCPU install
 cd ..
 
@@ -171,13 +173,24 @@ echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
 # Touch autotools-generated files to prevent rebuild attempts
 touch aclocal.m4 configure Makefile.in */Makefile.in */*/Makefile.in 2>/dev/null || true
-./configure $CONFIGURE_HOST --with-pic --disable-shared --prefix=$PREFIX
+./configure $CONFIGURE_HOST --prefix=$PREFIX \
+    --enable-silent-rules --disable-dependency-tracking \
+    --disable-shared --with-pic \
+    --disable-xz --disable-xzdec --disable-lzmadec --disable-lzmainfo \
+    --disable-lzma-links --disable-scripts --disable-doc \
+    --disable-nls --disable-rpath
 make -sj$NCPU install
 cd ..
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
 cd libxml2-${LIBXML2_VERSION}
-./autogen.sh $CONFIGURE_HOST --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX --with-lzma=$PREFIX
+./autogen.sh $CONFIGURE_HOST --prefix=$PREFIX \
+    --enable-silent-rules --disable-dependency-tracking \
+    --enable-static --disable-shared \
+    --with-zlib=$PREFIX --with-lzma=$PREFIX \
+    --without-python --without-catalog --without-debug \
+    --without-http --without-ftp --without-threads \
+    --without-icu --without-history
 make -sj$NCPU install
 cd ..
 
@@ -185,7 +198,12 @@ echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
 export LIBXML2_PC_LIBS=-L$PREFIX
-./configure $CONFIGURE_HOST --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2 --disable-shared --enable-static
+./configure $CONFIGURE_HOST --prefix=$PREFIX \
+    --enable-silent-rules --disable-dependency-tracking \
+    --enable-static --disable-shared \
+    --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip \
+    --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2 \
+    --without-expat
 make -sj$NCPU install
 cd ..
 
