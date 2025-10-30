@@ -248,15 +248,23 @@ cd ..
 
 echo "Creating Windows DLL..."
 # Verify all libraries exist before linking
+echo "=== Verifying all libraries before final link ==="
 for lib in libarchive libxml2 libiconv libcharset libz liblzma liblzo2 libzstd liblz4 libbz2; do
     if [ ! -f "$PREFIX/lib/${lib}.a" ]; then
         echo "ERROR: $PREFIX/lib/${lib}.a not found!"
         exit 1
     fi
-    echo "$PREFIX/lib/${lib}.a: $(ls -lh $PREFIX/lib/${lib}.a | awk '{print $5}')"
+    echo -n "$PREFIX/lib/${lib}.a: "
+    ls -lh "$PREFIX/lib/${lib}.a" | awk '{print $5}'
+    file "$PREFIX/lib/${lib}.a"
 done
+echo "=== All libraries verified ==="
 # Use --start-group for all dependency libraries to allow multi-pass symbol resolution
 # This is needed because libxml2 depends on libz, liblzma, and libiconv
+echo "=== Running final link command ==="
+echo "CC=$CC"
+echo "Linker: $(${CC} -print-prog-name=ld)"
+set -x
 ${CC} -shared -o ${OUTPUT_NAME} \
     -Wl,--whole-archive \
     $PREFIX/lib/libarchive.a \
@@ -274,6 +282,7 @@ ${CC} -shared -o ${OUTPUT_NAME} \
     -Wl,--end-group \
     -static -static-libgcc -static-libstdc++ \
     -lws2_32 -lbcrypt -lkernel32
+set +x
 
 echo "Testing DLL..."
 file ${OUTPUT_NAME}
