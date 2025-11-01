@@ -1,10 +1,55 @@
 #!/bin/bash
-# Build libarchive for macOS as universal binary (x86_64 + arm64)
+# Build libarchive for macOS
+# Supports multiple architectures via ARCH environment variable
 
 set -e
 
+# Detect architecture or use default (build both if not specified)
+ARCH="${ARCH:-universal}"
+
+# Architecture-specific configuration
+case "$ARCH" in
+    x86_64|x64)
+        ARCH_NAME="x64"
+        ARCH_FLAGS="-arch x86_64"
+        BUILD_BOTH=false
+        ;;
+    arm64|aarch64)
+        ARCH_NAME="arm64"
+        ARCH_FLAGS="-arch arm64"
+        BUILD_BOTH=false
+        ;;
+    universal|both)
+        # Build both architectures
+        BUILD_BOTH=true
+        ;;
+    *)
+        echo "Error: Unsupported architecture: $ARCH"
+        echo "Supported: x86_64/x64, arm64/aarch64, universal/both"
+        exit 1
+        ;;
+esac
+
+if [ "$BUILD_BOTH" = true ]; then
+    echo "Building both x64 and arm64 architectures..."
+
+    # Build x64
+    ARCH=x64 "$0"
+
+    # Build arm64
+    ARCH=arm64 "$0"
+
+    echo "Both architectures built successfully"
+    echo "  x64:   ${HOME}/libarchive-native/libarchive-x64.dylib"
+    echo "  arm64: ${HOME}/libarchive-native/libarchive-arm64.dylib"
+    exit 0
+fi
+
+# Single architecture build
+echo "Building for macOS ${ARCH_NAME}..."
+
 # Set up isolated build directory
-BUILD_DIR="${HOME}/libarchive-macos"
+BUILD_DIR="${HOME}/libarchive-macos-${ARCH_NAME}"
 OUTPUT_DIR="${HOME}/libarchive-native"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -25,7 +70,7 @@ brew install autoconf automake libtool 2>/dev/null || true
 # macOS-specific build settings
 export CPPFLAGS="-I$PREFIX/include"
 export LDFLAGS="-L$PREFIX/lib -liconv"
-export CFLAGS="-fPIC -O2 -D_FILE_OFFSET_BITS=64 -arch arm64 -arch x86_64"
+export CFLAGS="-fPIC -O2 -D_FILE_OFFSET_BITS=64 ${ARCH_FLAGS}"
 
 # Download and unpack fresh copies of all libraries
 echo "Setting up library sources..."
@@ -40,7 +85,9 @@ make -j$NCPU -sC bzip2-${BZIP2_VERSION} install PREFIX=$PREFIX CFLAGS="$CFLAGS"
 
 echo "Building lzo ${LZO_VERSION}..."
 cd lzo-${LZO_VERSION}
-./configure --prefix=$PREFIX
+./configure --prefix=$PREFIX \
+    --enable-silent-rules --disable-dependency-tracking \
+    --enable-static --disable-shared --with-pic
 make -sj$NCPU install
 cd ..
 
@@ -52,13 +99,26 @@ cd ..
 
 echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
-./configure --with-pic --disable-shared --prefix=$PREFIX
+# Touch autotools-generated files to prevent rebuild attempts
+touch aclocal.m4 configure Makefile.in */Makefile.in */*/Makefile.in 2>/dev/null || true
+./configure --prefix=$PREFIX \
+    --enable-silent-rules --disable-dependency-tracking \
+    --disable-shared --with-pic \
+    --disable-xz --disable-xzdec --disable-lzmadec --disable-lzmainfo \
+    --disable-lzma-links --disable-scripts --disable-doc \
+    --disable-nls --disable-rpath
 make -sj$NCPU install
 cd ..
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
 cd libxml2-${LIBXML2_VERSION}
-./autogen.sh --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX/../zlib-${ZLIB_VERSION} --with-lzma=$PREFIX/../xz-${XZ_VERSION}
+./autogen.sh --prefix=$PREFIX \
+    --enable-silent-rules --disable-dependency-tracking \
+    --enable-static --disable-shared \
+    --with-zlib=$PREFIX --with-lzma=$PREFIX \
+    --without-python --without-catalog --without-debug \
+    --without-http --without-ftp --without-threads \
+    --without-icu --without-history
 make -sj$NCPU install
 cd ..
 
@@ -69,26 +129,52 @@ echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
 export LIBXML2_PC_LIBS="-L$PREFIX -lxml2"
-./configure --prefix=$PREFIX --enable-silent-rules --disable-dependency-tracking --enable-static --disable-shared --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-rpath --enable-posix-regex-lib=libc --enable-xattr --enable-acl --enable-largefile --with-pic --with-zlib --with-bz2lib --with-libb2 --with-iconv --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-cng
+./configure --prefix=$PREFIX \
+    --enable-silent-rules --disable-dependency-tracking \
+    --enable-static --disable-shared \
+    --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip \
+    --disable-rpath --enable-posix-regex-lib=libc \
+    --enable-xattr --enable-acl --enable-largefile \
+    --with-pic --with-zlib --with-bz2lib --with-libb2 --with-iconv \
+    --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-cng \
+    --without-expat
 make -sj$NCPU install
 cd ..
 
-echo "Creating universal binary..."
-clang -arch arm64 -arch x86_64 -dynamiclib -shared -o libarchive.dylib -Wl,-force_load local/lib/libarchive.a local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/liblzo2.a local/lib/libzstd.a local/lib/liblz4.a -liconv
+echo "Creating ${ARCH_NAME} dylib..."
+clang ${ARCH_FLAGS} -dynamiclib -shared -o libarchive-${ARCH_NAME}.dylib \
+    -Wl,-force_load,local/lib/libarchive.a \
+    -Wl,-force_load,local/lib/libbz2.a \
+    -Wl,-force_load,local/lib/libz.a \
+    -Wl,-force_load,local/lib/libxml2.a \
+    -Wl,-force_load,local/lib/liblzma.a \
+    -Wl,-force_load,local/lib/liblzo2.a \
+    -Wl,-force_load,local/lib/libzstd.a \
+    -Wl,-force_load,local/lib/liblz4.a \
+    -liconv
 
 echo "Testing library..."
-file libarchive.dylib
-otool -L libarchive.dylib
+file libarchive-${ARCH_NAME}.dylib
+otool -L libarchive-${ARCH_NAME}.dylib
 
 echo "Building native test..."
-gcc -o nativetest "${SCRIPT_DIR}/nativetest.c" local/lib/libarchive.a -Llocal/lib -Ilocal/include -llz4 -lzstd -liconv -lbz2
+gcc ${ARCH_FLAGS} -o nativetest "${SCRIPT_DIR}/nativetest.c" \
+    local/lib/libarchive.a \
+    local/lib/libbz2.a \
+    local/lib/libz.a \
+    local/lib/libxml2.a \
+    local/lib/liblzma.a \
+    local/lib/liblzo2.a \
+    local/lib/libzstd.a \
+    local/lib/liblz4.a \
+    -Ilocal/include -liconv
 ./nativetest
 
 echo "Copying output to ${OUTPUT_DIR}..."
-cp libarchive.dylib "${OUTPUT_DIR}/libarchive.dylib"
+cp libarchive-${ARCH_NAME}.dylib "${OUTPUT_DIR}/libarchive-${ARCH_NAME}.dylib"
 
 echo "Cleaning up build directory..."
 cd /
 rm -rf "${BUILD_DIR}"
 
-echo "macOS build complete: ${OUTPUT_DIR}/libarchive.dylib"
+echo "macOS ${ARCH_NAME} build complete: ${OUTPUT_DIR}/libarchive-${ARCH_NAME}.dylib"

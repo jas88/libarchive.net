@@ -3,14 +3,15 @@
 # Source this file in platform-specific build scripts
 
 # Library versions
-LIBARCHIVE_VERSION="3.7.3"
-LZ4_VERSION="1.9.4"
-ZSTD_VERSION="1.5.6"
+LIBARCHIVE_VERSION="3.8.2"
+LZ4_VERSION="1.10.0"
+ZSTD_VERSION="1.5.7"
 LZO_VERSION="2.10"
-LIBXML2_VERSION="2.12.6"
+LIBXML2_VERSION="2.15.1"
 ZLIB_VERSION="1.3.1"
-XZ_VERSION="5.4.6"
+XZ_VERSION="5.8.1"
 BZIP2_VERSION="1.0.8"
+ICONV_VERSION="1.17"
 
 # Bootlin toolchain versions (Linux only)
 # Bootlin stable 2025.08-1: GCC 14.3.0, musl latest, binutils 2.43.1
@@ -31,10 +32,11 @@ LIBARCHIVE_URL="https://github.com/libarchive/libarchive/releases/download/v${LI
 LZ4_URL="https://github.com/lz4/lz4/archive/refs/tags/v${LZ4_VERSION}.tar.gz"
 ZSTD_URL="https://github.com/facebook/zstd/releases/download/v${ZSTD_VERSION}/zstd-${ZSTD_VERSION}.tar.gz"
 LZO_URL="https://www.oberhumer.com/opensource/lzo/download/lzo-${LZO_VERSION}.tar.gz"
-LIBXML2_URL="https://download.gnome.org/sources/libxml2/2.12/libxml2-${LIBXML2_VERSION}.tar.xz"
+LIBXML2_URL="https://download.gnome.org/sources/libxml2/${LIBXML2_VERSION%.*}/libxml2-${LIBXML2_VERSION}.tar.xz"
 BZIP2_URL="https://www.sourceware.org/pub/bzip2/bzip2-${BZIP2_VERSION}.tar.gz"
 ZLIB_URL="https://zlib.net/zlib-${ZLIB_VERSION}.tar.xz"
 XZ_URL="https://github.com/tukaani-project/xz/releases/download/v${XZ_VERSION}/xz-${XZ_VERSION}.tar.xz"
+ICONV_URL="https://ftp.gnu.org/pub/gnu/libiconv/libiconv-${ICONV_VERSION}.tar.gz"
 
 # Common build settings
 export PREFIX="${PREFIX:-$(pwd)/local}"
@@ -156,6 +158,7 @@ download_all_libraries() {
     download_library "$BZIP2_URL" "bzip2" "bzip2-${BZIP2_VERSION}"
     download_library "$ZLIB_URL" "zlib" "zlib-${ZLIB_VERSION}"
     download_library "$XZ_URL" "xz" "xz-${XZ_VERSION}"
+    download_library "$ICONV_URL" "libiconv" "libiconv-${ICONV_VERSION}"
 }
 
 # Detect number of CPU cores
@@ -176,6 +179,7 @@ echo "  libxml2: ${LIBXML2_VERSION}"
 echo "  zlib: ${ZLIB_VERSION}"
 echo "  xz: ${XZ_VERSION}"
 echo "  bzip2: ${BZIP2_VERSION}"
+echo "  iconv: ${ICONV_VERSION:-N/A (platform-provided)}"
 echo "  musl: ${MUSL_VERSION:-N/A}"
 echo "  gcc: ${GCC_VERSION:-N/A}"
 echo "  binutils: ${BINUTILS_VERSION:-N/A}"
