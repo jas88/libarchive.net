@@ -152,7 +152,7 @@ else
     echo "ERROR: libcharset.a not found - required dependency for libxml2"
     exit 1
 fi
-
+rm -rf $PREFIX/lib/libcharset.la $PREFIX/lib/libiconv.la 
 cd ..
 
 # Build compression libraries
