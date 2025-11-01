@@ -230,6 +230,11 @@ cd ..
 
 echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
+
+# Patch configure to disable the archive error mess
+sed -i 's$lt_cv_deplibs_check_method='"'"'file_magic file format [^'"'"']\+'"'"'$lt_cv_deplibs_check_method='"'"'pass_all'"'"'$g' configure
+sed -i 's$lt_cv_deplibs_check_method='"'"'file_magic ^x86 archive import|^x86 DLL'"'"'$lt_cv_deplibs_check_method='"'"'pass_all'"'"'$g' configure
+
 # Set PKG_CONFIG_LIBDIR so pkg-config only looks at our prefix
 export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig"
 # For static linking tests, autoconf needs all dependencies in LDFLAGS
