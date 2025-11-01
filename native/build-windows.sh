@@ -276,8 +276,6 @@ ${CC} -shared -o ${OUTPUT_NAME} \
     -Wl,--no-whole-archive \
     -Wl,--start-group \
     $PREFIX/lib/libxml2.a \
-    $PREFIX/lib/libiconv.a \
-    $PREFIX/lib/libcharset.a \
     $PREFIX/lib/libz.a \
     $PREFIX/lib/liblzma.a \
     $PREFIX/lib/liblzo2.a \
