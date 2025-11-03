@@ -3,13 +3,13 @@
 # Source this file in platform-specific build scripts
 
 # Library versions
-LIBARCHIVE_VERSION="3.7.3"
-LZ4_VERSION="1.9.4"
-ZSTD_VERSION="1.5.6"
+LIBARCHIVE_VERSION="3.8.2"
+LZ4_VERSION="1.10.0"
+ZSTD_VERSION="1.5.7"
 LZO_VERSION="2.10"
-LIBXML2_VERSION="2.12.6"
+LIBXML2_VERSION="2.15.1"
 ZLIB_VERSION="1.3.1"
-XZ_VERSION="5.4.6"
+XZ_VERSION="5.8.1"
 BZIP2_VERSION="1.0.8"
 
 # Bootlin toolchain versions (Linux only)
