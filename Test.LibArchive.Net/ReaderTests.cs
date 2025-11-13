@@ -1,8 +1,3 @@
-#if NET462
-using System;
-using System.Collections.Generic;
-using System.Linq;
-#endif
 using System.Security.Cryptography;
 using LibArchive.Net;
 using NUnit.Framework;
@@ -155,36 +150,7 @@ public class SevenZipTests
 
     #region Support code
 
-#if NET462
-    // Use class instead of record for .NET Framework 4.6.2 compatibility
-    private class ExtractedEntry
-    {
-        public EntryType Type { get; }
-        public string ContentHash { get; }
-
-        public ExtractedEntry(EntryType type, string contentHash)
-        {
-            Type = type;
-            ContentHash = contentHash;
-        }
-
-        public override bool Equals(object? obj) =>
-            obj is ExtractedEntry other && Type == other.Type && ContentHash == other.ContentHash;
-
-        public override int GetHashCode()
-        {
-            unchecked
-            {
-                int hash = 17;
-                hash = hash * 31 + Type.GetHashCode();
-                hash = hash * 31 + (ContentHash?.GetHashCode() ?? 0);
-                return hash;
-            }
-        }
-    }
-#else
     private record ExtractedEntry(EntryType Type, string ContentHash);
-#endif
 
     private ExtractedEntry ToExtractedEntry(Entry entry) =>
         new ExtractedEntry(entry.Type, ContentHash(entry));
@@ -201,4 +167,9 @@ public class SevenZipTests
     #endregion
 }
 
+}
+
+namespace System.Runtime.CompilerServices
+{
+    internal static class IsExternalInit;
 }
