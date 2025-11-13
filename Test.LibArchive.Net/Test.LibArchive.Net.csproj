@@ -4,11 +4,7 @@
         <Nullable>enable</Nullable>
         <IsPackable>false</IsPackable>
         <GenerateDocumentationFile>false</GenerateDocumentationFile>
-        <!-- Use C# 8 for net462 to avoid modern language features -->
-        <LangVersion Condition="'$(TargetFramework)' == 'net462'">8.0</LangVersion>
-        <!-- Disable implicit usings for net462 (generates global using which is C# 10+) -->
-        <ImplicitUsings Condition="'$(TargetFramework)' == 'net462'">disable</ImplicitUsings>
-        <ImplicitUsings Condition="'$(TargetFramework)' != 'net462'">enable</ImplicitUsings>
+        <ImplicitUsings>enable</ImplicitUsings>
         <!-- Set PlatformTarget for net462 to trigger automatic native library copying from runtimes folder -->
         <PlatformTarget Condition="'$(TargetFramework)' == 'net462'">x64</PlatformTarget>
     </PropertyGroup>
