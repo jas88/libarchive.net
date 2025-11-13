@@ -317,9 +317,13 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         /// </summary>
         public EntryType Type;
         /// <summary>
+        /// Gets the extracted length, in bytes, of the entry.
+        /// </summary>
+        public long LengthBytes { get; }
+        /// <summary>
         /// Gets a stream to read the content of the entry.
         /// </summary>
-        public FileStream Stream => new(archiveHandle);
+        public FileStream Stream => new(archiveHandle, LengthBytes);
 
         /// <summary>
         /// Gets a value indicating whether this entry is a directory.
@@ -341,6 +345,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
             this.archiveHandle = archiveHandle;
             Name = PtrToStringUTF8(archive_entry_pathname(entryHandle)) ?? throw new ApplicationException("Unable to retrieve entry's pathname");
             Type = (EntryType)archive_entry_filetype(entryHandle);
+            LengthBytes = archive_entry_size(entryHandle);
         }
 
         internal static Entry? Create(IntPtr entryHandle, IntPtr archiveHandle)
@@ -413,9 +418,10 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         private readonly IntPtr archiveHandle;
         private bool _eof;
 
-        internal FileStream(IntPtr archiveHandle)
+        internal FileStream(IntPtr archiveHandle, long lengthBytes)
         {
             this.archiveHandle = archiveHandle;
+            Length = lengthBytes;
         }
 
         /// <summary>
@@ -500,11 +506,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         /// Gets a value indicating whether the current stream supports writing. Always returns false.
         /// </summary>
         public override bool CanWrite => false;
-        /// <summary>
-        /// Gets the length in bytes of the stream. Not supported for archive streams.
-        /// </summary>
-        /// <exception cref="NotSupportedException">Length is not supported.</exception>
-        public override long Length => throw new NotSupportedException();
+        public override long Length { get; }
         /// <summary>
         /// Gets or sets the position within the current stream. Not supported for archive streams.
         /// </summary>
@@ -548,6 +550,9 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     private static partial int archive_entry_filetype(IntPtr entry);
 
     [LibraryImport("archive")]
+    private static partial long archive_entry_size(IntPtr entry);
+
+    [LibraryImport("archive")]
     private static partial int archive_read_free(IntPtr a);
 
     [LibraryImport("archive")]
@@ -585,6 +590,9 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     [DllImport("archive")]
     private static extern int archive_entry_filetype(IntPtr entry);
+
+    [DllImport("archive")]
+    private static extern long archive_entry_size(IntPtr entry);
 
     [DllImport("archive")]
     private static extern int archive_read_free(IntPtr a);
