@@ -66,6 +66,95 @@ else
     echo "Using pre-downloaded library sources"
 fi
 
+# Build libiconv first (needed by libxml2)
+echo "Building libiconv ${ICONV_VERSION}..."
+cd libiconv-${ICONV_VERSION}
+
+# Use specific configure flags to avoid mbrtowc conflicts with LLVM-MinGW
+echo "Running configure with mbrtowc conflict fixes..."
+./configure --host=${MINGW_PREFIX} --prefix=$PREFIX \
+    --enable-silent-rules --disable-dependency-tracking \
+    --disable-shared --enable-static --disable-nls \
+    --disable-rpath --with-pic --disable-extra \
+    ac_cv_func_mbrtowc=no ac_cv_func_wcrtomb=no \
+    CC=$CC CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" CPPFLAGS="$CPPFLAGS"
+
+echo "Building libiconv and libcharset..."
+# Export CC and AR so make uses them correctly
+export CC AR
+make -j$NCPU
+
+# Verify build outputs exist and are valid archives before installing
+echo "Checking libiconv build outputs..."
+if [ ! -f "lib/.libs/libiconv.a" ]; then
+    echo "ERROR: lib/.libs/libiconv.a not found after build"
+    ls -la lib/.libs/ || echo "lib/.libs/ directory does not exist"
+    exit 1
+fi
+
+# Verify it's an actual ar archive, not a libtool text file
+if ! file lib/.libs/libiconv.a | grep -q "current ar archive"; then
+    echo "ERROR: lib/.libs/libiconv.a is not a valid ar archive:"
+    file lib/.libs/libiconv.a
+    exit 1
+fi
+
+if [ ! -f "libcharset/lib/.libs/libcharset.a" ]; then
+    echo "ERROR: libcharset/lib/.libs/libcharset.a not found after build"
+    ls -la libcharset/lib/.libs/ || echo "libcharset/lib/.libs/ directory does not exist"
+    exit 1
+fi
+
+if ! file libcharset/lib/.libs/libcharset.a | grep -q "current ar archive"; then
+    echo "ERROR: libcharset/lib/.libs/libcharset.a is not a valid ar archive:"
+    file libcharset/lib/.libs/libcharset.a
+    exit 1
+fi
+
+# Install libraries from build directories
+echo "Installing libiconv libraries..."
+mkdir -p "$PREFIX/lib" "$PREFIX/include"
+# Install actual archives from .libs, not libtool wrappers
+cp lib/.libs/libiconv.a "$PREFIX/lib/"
+cp include/iconv.h.inst "$PREFIX/include/iconv.h"
+cp libcharset/lib/.libs/libcharset.a "$PREFIX/lib/"
+cp libcharset/include/libcharset.h.inst "$PREFIX/include/libcharset.h"
+cp libcharset/include/localcharset.h "$PREFIX/include/"
+
+# Remove any libtool .la files that might confuse linkers (especially lld)
+rm -f "$PREFIX/lib"/*.la
+
+# Verify libraries are proper archives
+echo "=== Verifying libiconv installation ==="
+if [ -f "$PREFIX/lib/libiconv.a" ]; then
+    file "$PREFIX/lib/libiconv.a"
+    ${AR} t "$PREFIX/lib/libiconv.a" | head -5
+    echo "✓ libiconv.a built successfully"
+else
+    echo "ERROR: libiconv.a not found"
+    exit 1
+fi
+
+if [ -f "$PREFIX/include/iconv.h" ]; then
+    echo "✓ iconv.h installed successfully"
+else
+    echo "ERROR: iconv.h not found"
+    exit 1
+fi
+
+# libcharset is required - must be built successfully
+echo "=== Verifying libcharset installation ==="
+if [ -f "$PREFIX/lib/libcharset.a" ]; then
+    file "$PREFIX/lib/libcharset.a"
+    ${AR} t "$PREFIX/lib/libcharset.a" | head -5
+    echo "✓ libcharset.a built successfully"
+else
+    echo "ERROR: libcharset.a not found - required dependency for libxml2"
+    exit 1
+fi
+rm -rf $PREFIX/lib/libcharset.la $PREFIX/lib/libiconv.la 
+cd ..
+
 # Build compression libraries
 echo "Building lz4 ${LZ4_VERSION}..."
 cd lz4-${LZ4_VERSION}/lib
@@ -94,14 +183,25 @@ cd ..
 
 echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
-./configure --host=${MINGW_PREFIX} --with-pic --disable-shared --prefix=$PREFIX --disable-scripts --disable-doc
+# Touch autotools-generated files to prevent rebuild attempts
+touch aclocal.m4 configure Makefile.in */Makefile.in */*/Makefile.in 2>/dev/null || true
+./configure --host=${MINGW_PREFIX} --prefix=$PREFIX \
+    --enable-silent-rules --disable-dependency-tracking \
+    --disable-shared --with-pic \
+    --disable-xz --disable-xzdec --disable-lzmadec --disable-lzmainfo \
+    --disable-lzma-links --disable-scripts --disable-doc \
+    --disable-nls --disable-rpath
 make -j$NCPU install
+rm -f "$PREFIX/lib"/*.la
 cd ..
 
 echo "Building lzo ${LZO_VERSION}..."
 cd lzo-${LZO_VERSION}
-./configure --host=${MINGW_PREFIX} --prefix=$PREFIX --disable-shared
+./configure --host=${MINGW_PREFIX} --prefix=$PREFIX \
+    --enable-silent-rules --disable-dependency-tracking \
+    --enable-static --disable-shared --with-pic
 make -j$NCPU install
+rm -f "$PREFIX/lib"/*.la
 cd ..
 
 echo "Building zstd ${ZSTD_VERSION}..."
@@ -114,12 +214,27 @@ cd ../..
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
 cd libxml2-${LIBXML2_VERSION}
-./configure --host=${MINGW_PREFIX} --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX --with-lzma=$PREFIX
+# Set explicit iconv flags to avoid libtool static library warnings
+export ICONV_CFLAGS="-I$PREFIX/include"
+export ICONV_LIBS="-liconv -lcharset"
+./configure --host=${MINGW_PREFIX} --prefix=$PREFIX \
+    --enable-silent-rules --disable-dependency-tracking \
+    --enable-static --disable-shared \
+    --with-iconv=$PREFIX --with-zlib=$PREFIX --with-lzma=$PREFIX \
+    --without-python --without-catalog --without-debug \
+    --without-http --without-ftp --without-threads \
+    --without-icu --without-history
 make -j$NCPU install
+rm -f "$PREFIX/lib"/*.la
 cd ..
 
 echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
+
+# Patch configure to disable the archive error mess
+sed -i 's$lt_cv_deplibs_check_method='"'"'file_magic file format [^'"'"']\+'"'"'$lt_cv_deplibs_check_method='"'"'pass_all'"'"'$g' configure
+sed -i 's$lt_cv_deplibs_check_method='"'"'file_magic ^x86 archive import|^x86 DLL'"'"'$lt_cv_deplibs_check_method='"'"'pass_all'"'"'$g' configure
+
 # Set PKG_CONFIG_LIBDIR so pkg-config only looks at our prefix
 export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig"
 # For static linking tests, autoconf needs all dependencies in LDFLAGS
@@ -127,23 +242,34 @@ export LDFLAGS="$LDFLAGS -L$PREFIX/lib -lz -llzma"
 ./configure --host=${MINGW_PREFIX} --prefix=$PREFIX \
     --enable-silent-rules --disable-dependency-tracking \
     --enable-static --disable-shared \
-    --disable-bsdtar --disable-bsdcat --disable-bsdcpio \
+    --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip \
+    --disable-acl --disable-xattr \
     --enable-posix-regex-lib=libc \
-    --with-pic --with-zlib --with-bz2lib --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-xml2
+    --with-pic --with-zlib --with-bz2lib --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-xml2 \
+    --without-expat
 make -j$NCPU install
+rm -f "$PREFIX/lib"/*.la
 cd ..
 
 echo "Creating Windows DLL..."
 # Verify all libraries exist before linking
-for lib in libarchive libxml2 libz liblzma liblzo2 libzstd liblz4 libbz2; do
+echo "=== Verifying all libraries before final link ==="
+for lib in libarchive libxml2 libiconv libcharset libz liblzma liblzo2 libzstd liblz4 libbz2; do
     if [ ! -f "$PREFIX/lib/${lib}.a" ]; then
         echo "ERROR: $PREFIX/lib/${lib}.a not found!"
         exit 1
     fi
-    echo "$PREFIX/lib/${lib}.a: $(ls -lh $PREFIX/lib/${lib}.a | awk '{print $5}')"
+    echo -n "$PREFIX/lib/${lib}.a: "
+    ls -lh "$PREFIX/lib/${lib}.a" | awk '{print $5}'
+    file "$PREFIX/lib/${lib}.a"
 done
+echo "=== All libraries verified ==="
 # Use --start-group for all dependency libraries to allow multi-pass symbol resolution
-# This is needed because libxml2 depends on libz and liblzma
+# This is needed because libxml2 depends on libz, liblzma, and libiconv
+echo "=== Running final link command ==="
+echo "CC=$CC"
+echo "Linker: $(${CC} -print-prog-name=ld)"
+set -x
 ${CC} -shared -o ${OUTPUT_NAME} \
     -Wl,--whole-archive \
     $PREFIX/lib/libarchive.a \
@@ -159,6 +285,7 @@ ${CC} -shared -o ${OUTPUT_NAME} \
     -Wl,--end-group \
     -static -static-libgcc -static-libstdc++ \
     -lws2_32 -lbcrypt -lkernel32
+set +x
 
 echo "Testing DLL..."
 file ${OUTPUT_NAME}
