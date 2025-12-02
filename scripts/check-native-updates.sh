@@ -4,8 +4,7 @@ set -uo pipefail
 
 # Configuration
 REPO_ROOT="${GITHUB_WORKSPACE:-$(pwd)}"
-LINUX_SCRIPT="$REPO_ROOT/native/build-linux.sh"
-MACOS_SCRIPT="$REPO_ROOT/native/build-macos.sh"
+CONFIG_FILE="$REPO_ROOT/native/build-config.sh"
 DRY_RUN="${DRY_RUN:-1}"
 
 # Colors for output
@@ -26,6 +25,43 @@ for cmd in curl jq gh git; do
         exit 1
     fi
 done
+
+# Read current versions from build-config.sh
+read_current_version() {
+    local var_name=$1
+    grep "^${var_name}=" "$CONFIG_FILE" | sed 's/^[^=]*="\([^"]*\)"/\1/'
+}
+
+# Check for existing open PRs with native dependency updates
+check_existing_prs() {
+    echo "Checking for existing native dependency update PRs..."
+
+    # Search for open PRs with the "native" label created by github-actions
+    local existing_prs
+    existing_prs=$(gh pr list -R jas88/libarchive.net \
+        --state open \
+        --label "native" \
+        --json number,title,headRefName \
+        --jq '.[] | select(.headRefName | startswith("dependabot/native/")) | .number' 2>/dev/null || echo "")
+
+    if [ -n "$existing_prs" ]; then
+        local pr_count
+        pr_count=$(echo "$existing_prs" | wc -l | tr -d ' ')
+        echo -e "${YELLOW}Found $pr_count existing native dependency PR(s):${NC}"
+        for pr in $existing_prs; do
+            local pr_title
+            pr_title=$(gh pr view "$pr" -R jas88/libarchive.net --json title --jq '.title' 2>/dev/null || echo "Unknown")
+            echo "  - PR #$pr: $pr_title"
+        done
+        echo ""
+        echo -e "${YELLOW}Skipping update check - please review and merge existing PR(s) first${NC}"
+        echo "To force a new PR, close or merge the existing ones."
+        return 1
+    fi
+
+    echo -e "${GREEN}No existing native dependency PRs found${NC}"
+    return 0
+}
 
 # Function to check GitHub releases
 check_github_release() {
@@ -140,38 +176,54 @@ check_dependency() {
     fi
 }
 
+# Check for existing PRs first (skip if any are open)
+if ! check_existing_prs; then
+    exit 0
+fi
+
 # Main dependency checking
+echo ""
 echo "Checking native dependency versions..."
 echo ""
 
+# Read current versions from build-config.sh
+CURRENT_LIBARCHIVE=$(read_current_version "LIBARCHIVE_VERSION")
+CURRENT_LZ4=$(read_current_version "LZ4_VERSION")
+CURRENT_ZSTD=$(read_current_version "ZSTD_VERSION")
+CURRENT_XZ=$(read_current_version "XZ_VERSION")
+CURRENT_ZLIB=$(read_current_version "ZLIB_VERSION")
+CURRENT_LIBXML2=$(read_current_version "LIBXML2_VERSION")
+CURRENT_LZO=$(read_current_version "LZO_VERSION")
+CURRENT_BZIP2=$(read_current_version "BZIP2_VERSION")
+
 # libarchive
-check_dependency "libarchive" "3.7.3" "github" "libarchive/libarchive" || true
+check_dependency "libarchive" "$CURRENT_LIBARCHIVE" "github" "libarchive/libarchive" || true
 
 # lz4
-check_dependency "lz4" "1.9.4" "github" "lz4/lz4" || true
+check_dependency "lz4" "$CURRENT_LZ4" "github" "lz4/lz4" || true
 
 # zstd
-check_dependency "zstd" "1.5.6" "github" "facebook/zstd" || true
+check_dependency "zstd" "$CURRENT_ZSTD" "github" "facebook/zstd" || true
 
 # xz
-check_dependency "xz" "5.4.6" "github" "tukaani-project/xz" || true
+check_dependency "xz" "$CURRENT_XZ" "github" "tukaani-project/xz" || true
 
 # zlib
-check_dependency "zlib" "1.3.1" "web" \
+check_dependency "zlib" "$CURRENT_ZLIB" "web" \
     "https://zlib.net/" \
     'zlib-([0-9]+\.[0-9]+\.[0-9]+)\.tar\.xz' || true
 
 # libxml2
-check_dependency "libxml2" "2.12.6" "gnome" \
+check_dependency "libxml2" "$CURRENT_LIBXML2" "gnome" \
     'libxml2-([0-9]+\.[0-9]+\.[0-9]+)\.tar\.xz' || true
 
 # lzo
-check_dependency "lzo" "2.10" "web" \
+check_dependency "lzo" "$CURRENT_LZO" "web" \
     "https://www.oberhumer.com/opensource/lzo/download/" \
     'lzo-([0-9]+\.[0-9]+)\.tar\.gz' || true
 
 # bzip2
-check_dependency "bzip2" "1.0.8" "web" \
+check_dependency "bzip2" "$CURRENT_BZIP2" "web" \
     "https://www.sourceware.org/pub/bzip2/" \
     'bzip2-([0-9]+\.[0-9]+\.[0-9]+)\.tar\.gz' || true
 

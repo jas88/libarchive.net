@@ -402,3 +402,20 @@ FodyWeavers.xsd
 .claude-flow/
 .swarm/
 CLAUDE.md
+
+# Native dependency source directories (downloaded by build scripts)
+bzip2-*/
+libarchive-*/
+libiconv-*/
+libxml2-*/
+lz4-*/
+lzo-*/
+xz-*/
+zlib-*/
+zstd-*/
+
+# Playwright MCP artifacts
+.playwright-mcp/
+
+# Documentation artifacts
+WARP.md
