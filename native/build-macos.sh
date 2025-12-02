@@ -81,7 +81,7 @@ file libarchive.dylib
 otool -L libarchive.dylib
 
 echo "Building native test..."
-gcc -o nativetest "${SCRIPT_DIR}/nativetest.c" local/lib/libarchive.a -Llocal/lib -Ilocal/include -llz4 -lzstd -liconv -lbz2
+gcc -o nativetest "${SCRIPT_DIR}/nativetest.c" local/lib/libarchive.a -Llocal/lib -Ilocal/include -llz4 -lzstd -llzma -lz -liconv -lbz2
 ./nativetest
 
 echo "Copying output to ${OUTPUT_DIR}..."
