@@ -22,6 +22,12 @@ cd "$BUILD_DIR"
 echo "Installing required build tools..."
 brew install autoconf automake libtool 2>/dev/null || true
 
+# Create symlinks for automake-1.17 (xz 5.8+ was built with this version)
+# Homebrew installs automake 1.18+ but xz's build system looks for version-specific commands
+BREW_PREFIX="$(brew --prefix)"
+ln -sf "${BREW_PREFIX}/bin/automake" "${BREW_PREFIX}/bin/automake-1.17"
+ln -sf "${BREW_PREFIX}/bin/aclocal" "${BREW_PREFIX}/bin/aclocal-1.17"
+
 # macOS-specific build settings
 export CPPFLAGS="-I$PREFIX/include"
 export LDFLAGS="-L$PREFIX/lib -liconv"

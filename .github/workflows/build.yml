@@ -167,9 +167,9 @@ jobs:
             export PREFIX="$(pwd)/local-$arch"
 
             # Copy library sources from parent directory (already downloaded)
-            # Use -rp to preserve timestamps (important for xz automake fix)
+            # Use -rpl to hardlink and preserve timestamps (important for xz automake fix)
             for src in ../bzip2-* ../libarchive-* ../libxml2-* ../lz4-* ../lzo-* ../xz-* ../zlib-* ../zstd-*; do
-              [ -e "$src" ] && cp -rp "$src" .
+              [ -e "$src" ] && cp -rpl "$src" .
             done
 
             ARCH=$arch ../native/build-windows.sh
