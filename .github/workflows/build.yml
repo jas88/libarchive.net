@@ -51,7 +51,7 @@ jobs:
   linux:
     needs: [macos]
     name: Build Windows DLLs, Linux library, and test
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -80,7 +80,7 @@ jobs:
       - name: Cache apt packages
         uses: awalsh128/cache-apt-pkgs-action@v1.6.0
         with:
-          packages: libeatmydata1 mingw-w64 mono-complete mono-devel
+          packages: libeatmydata1 mingw-w64 mono-complete mono-devel pkg-config
           version: 1.0
           execute_install_scripts: true
       - name: Retrieve MacOS library
@@ -126,6 +126,25 @@ jobs:
           done
 
           echo "$HOME/.ccache-bin" >> $GITHUB_PATH
+      - name: Install autoconf and automake
+        run: |
+          # xz 5.8+ requires automake 1.17 and autoconf 2.72
+          # Install autoconf 2.72
+          curl -sL https://ftp.gnu.org/gnu/autoconf/autoconf-2.72.tar.xz | tar xJ
+          cd autoconf-2.72
+          ./configure --prefix=$HOME/.local
+          make -j$(nproc)
+          make install
+          cd ..
+          # Install automake 1.17
+          curl -sL https://ftp.gnu.org/gnu/automake/automake-1.17.tar.xz | tar xJ
+          cd automake-1.17
+          ./configure --prefix=$HOME/.local
+          make -j$(nproc)
+          make install
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          # Set ACLOCAL_PATH to include system m4 files (for pkg.m4 etc)
+          echo "ACLOCAL_PATH=/usr/share/aclocal:$HOME/.local/share/aclocal" >> $GITHUB_ENV
       - name: Download library sources once
         run: |
           # Load the download function and download all libraries once
