@@ -90,7 +90,7 @@ cd "$BUILD_DIR"
 log_info "Building in: $BUILD_DIR"
 
 # Copy native directory for builds
-cp -r "$SCRIPT_DIR"/* .
+cp -rl "$SCRIPT_DIR"/* .
 
 # Build for Linux
 if [ $BUILD_LINUX -eq 1 ]; then
