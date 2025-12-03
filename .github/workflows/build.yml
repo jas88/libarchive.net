@@ -129,15 +129,16 @@ jobs:
       - name: Install autoconf and automake
         run: |
           # xz 5.8+ requires automake 1.17 and autoconf 2.72
+          # Use ftpmirror.gnu.org to auto-select nearest mirror (more reliable than ftp.gnu.org)
           # Install autoconf 2.72
-          curl -sL https://ftp.gnu.org/gnu/autoconf/autoconf-2.72.tar.xz | tar xJ
+          curl -sSL --retry 3 --retry-delay 5 https://ftpmirror.gnu.org/gnu/autoconf/autoconf-2.72.tar.xz | tar xJ
           cd autoconf-2.72
           ./configure --prefix=$HOME/.local
           make -j$(nproc)
           make install
           cd ..
           # Install automake 1.17
-          curl -sL https://ftp.gnu.org/gnu/automake/automake-1.17.tar.xz | tar xJ
+          curl -sSL --retry 3 --retry-delay 5 https://ftpmirror.gnu.org/gnu/automake/automake-1.17.tar.xz | tar xJ
           cd automake-1.17
           ./configure --prefix=$HOME/.local
           make -j$(nproc)
