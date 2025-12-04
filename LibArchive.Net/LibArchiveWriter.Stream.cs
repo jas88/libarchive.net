@@ -91,9 +91,11 @@ public partial class LibArchiveWriter
 
         // Configure block size settings before opening (required for callback-based writing)
         // This matches what archive_write_open_filename does internally
-        archive_write_set_bytes_per_block(handle, (int)blockSize);
+        if (archive_write_set_bytes_per_block(handle, (int)blockSize) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+            Throw();
         // Set to 1 to minimize padding in the last block (important for compressed formats)
-        archive_write_set_bytes_in_last_block(handle, 1);
+        if (archive_write_set_bytes_in_last_block(handle, 1) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+            Throw();
 
         // Open archive with callbacks
         var result = archive_write_open(

@@ -40,15 +40,17 @@ foreach (var entry in reader.Entries())
     using var stream = entry.Stream;
 }
 
-// Password-protected ZIP archives
-using var reader = new LibArchiveReader("encrypted.zip", password: "secret");
-
-// Read from streams (e.g., HTTP response, memory)
-using var reader = new LibArchiveReader(httpResponseStream);
-
 // Re-enumerate entries without reopening
 reader.Reset();
 foreach (var entry in reader.Entries()) { ... }
+```
+
+```csharp
+// Password-protected ZIP archives
+using var encryptedReader = new LibArchiveReader("encrypted.zip", password: "secret");
+
+// Read from streams (e.g., HTTP response, memory)
+using var streamReader = new LibArchiveReader(httpResponseStream);
 ```
 
 ### Writing Archives
@@ -57,33 +59,37 @@ foreach (var entry in reader.Entries()) { ... }
 using LibArchive.Net;
 
 // Create a gzip-compressed TAR archive
-using var writer = new LibArchiveWriter("archive.tar.gz",
+using var tarWriter = new LibArchiveWriter("archive.tar.gz",
     ArchiveFormat.Tar,
     CompressionType.Gzip);
-writer.AddFile("document.txt");
-writer.AddDirectory("folder/", recursive: true);
+tarWriter.AddFile("document.txt");
+tarWriter.AddDirectory("folder/", recursive: true);
+```
 
+```csharp
 // Create encrypted ZIP
-using var writer = new LibArchiveWriter("secure.zip",
+using var zipWriter = new LibArchiveWriter("secure.zip",
     ArchiveFormat.Zip,
     password: "secret",
     encryption: EncryptionType.AES256);
-writer.AddEntry("secret.txt", Encoding.UTF8.GetBytes("confidential"));
+zipWriter.AddEntry("secret.txt", Encoding.UTF8.GetBytes("confidential"));
+```
 
+```csharp
 // Write to memory
-using var writer = LibArchiveWriter.CreateMemoryWriter(ArchiveFormat.Zip);
-writer.AddEntry("data.json", jsonBytes);
-writer.Dispose();
-byte[] archiveBytes = writer.ToArray();
+using var memWriter = LibArchiveWriter.CreateMemoryWriter(ArchiveFormat.Zip);
+memWriter.AddEntry("data.json", jsonBytes);
+memWriter.Dispose();
+byte[] archiveBytes = memWriter.ToArray();
+```
 
-// Write to stream
-using var writer = new LibArchiveWriter(outputStream, ArchiveFormat.SevenZip);
-
-// Batch operations with progress
+```csharp
+// Write to stream with batch operations and progress
+using var streamWriter = new LibArchiveWriter(outputStream, ArchiveFormat.SevenZip);
 var files = new DirectoryInfo("source").GetFiles();
 var progress = new Progress<FileProgress>(p =>
     Console.WriteLine($"{p.CurrentFile}: {p.BytesWritten}/{p.TotalBytes}"));
-writer.AddFiles(files, progress);
+streamWriter.AddFiles(files, progress);
 ```
 
 ## Installation
