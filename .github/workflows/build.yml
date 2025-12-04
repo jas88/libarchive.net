@@ -96,6 +96,8 @@ jobs:
         with:
           cache: true
           cache-dependency-path: '**/*.csproj'
+      - name: Update Directory.Build.props for SDK version
+        run: ./scripts/generate-build-props.sh
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
@@ -266,31 +268,16 @@ jobs:
           echo "=== Restored LibArchive.Net version ==="
           ls -la ~/.nuget/packages/libarchive.net/
 
-          # Build only net9.0 (net462 will be built when testing with Mono)
-          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net9.0 --configuration Release --no-restore /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
+          # Build tests (uses latest .NET from Directory.Build.props)
+          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --no-restore /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
           # Debug: Show test output directory
           echo "=== Test output directory ==="
-          ls -laR Test.LibArchive.Net/bin/Release/net9.0/runtimes/ 2>/dev/null || echo "No runtimes folder in test output!"
+          ls -laR Test.LibArchive.Net/bin/Release/*/runtimes/ 2>/dev/null || echo "No runtimes folder in test output!"
 
-          # Run tests for net9.0
-          echo "=== Running tests for net9.0 ==="
-          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net9.0 --configuration Release --no-build --nologo /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
-
-          echo "=== Mono version (for net462 tests) ==="
-          mono --version | head -n1
-
-          # Build and test net462 with Mono (will build net462 if needed)
-          echo "=== Running tests for net462 with Mono ==="
-          # Enable diagnostics for native library loading
-          export LIBARCHIVE_NET_DEBUG=1
-          # Enable Mono DLL loading diagnostics (suggested by @YoshiRulz)
-          export MONO_LOG_LEVEL=debug
-          export MONO_LOG_MASK=dll
-          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net462 --configuration Release --verbosity normal /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
-
-          echo "=== Checking net462 output directory for native libraries ==="
-          ls -laR Test.LibArchive.Net/bin/Release/net462/runtimes/ 2>/dev/null || echo "No runtimes folder in net462 output!"
+          # Run tests
+          echo "=== Running tests ==="
+          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --configuration Release --no-build --nologo /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
       - name: Cleanup build artifacts
         run: |
