@@ -252,6 +252,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     public class FileStream : Stream
     {
         private readonly IntPtr archiveHandle;
+        private bool _eof;
 
         internal FileStream(IntPtr archiveHandle)
         {
@@ -274,6 +275,11 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         /// <returns>The total number of bytes read into the buffer.</returns>
         public override int Read(byte[] buffer, int offset, int count)
         {
+            // Once EOF is reached, return 0 without calling native code again
+            // (libarchive throws if archive_read_data is called after EOF)
+            if (_eof)
+                return 0;
+
             int result = archive_read_data(archiveHandle, ref buffer[offset], count);
             if (result < 0)
             {
@@ -282,6 +288,10 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
                     PtrToStringUTF8(archive_error_string(archiveHandle))
                     ?? $"Error reading archive data (code: {result})");
             }
+
+            if (result == 0)
+                _eof = true;
+
             return result;
         }
 
