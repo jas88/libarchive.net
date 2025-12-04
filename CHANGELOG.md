@@ -10,6 +10,14 @@ v0.3.0 - TBD
 - Batch file operations with `IProgress<FileProgress>` reporting
 - Directory addition with recursive option and path mapping
 
+**Reader API Improvements:**
+- New `FirstEntry()` method for quick access to single-file archives
+- New `Reset()` method to re-enumerate entries without reopening
+- New `Entry.ReadAllBytes()` method to read entry content directly to byte array
+- New `Entry.ReadAllText()` method to read entry content as string (with optional encoding)
+- Stream-based reading via `LibArchiveReader(Stream)` constructor
+- Simple one-liner extraction: `new LibArchiveReader(file).FirstEntry()!.ReadAllBytes()`
+
 **Password-Protected Archive Support:**
 - Add password support for encrypted ZIP archives (traditional PKWARE and AES encryption)
 - New optional `password` parameter on `LibArchiveReader` constructors

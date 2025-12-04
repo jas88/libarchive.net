@@ -44,6 +44,7 @@ public partial class LibArchiveReader
         _inputStream = inputStream;
         _password = password;
         _blockSize = blockSize;
+        _sourceType = SourceType.Stream;
 
         InitializeFromStream();
     }

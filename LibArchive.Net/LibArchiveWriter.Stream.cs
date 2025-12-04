@@ -89,6 +89,12 @@ public partial class LibArchiveWriter
         // Keep the stream reference alive
         callbackHandle = GCHandle.Alloc(outputStream);
 
+        // Configure block size settings before opening (required for callback-based writing)
+        // This matches what archive_write_open_filename does internally
+        archive_write_set_bytes_per_block(handle, (int)blockSize);
+        // Set to 1 to minimize padding in the last block (important for compressed formats)
+        archive_write_set_bytes_in_last_block(handle, 1);
+
         // Open archive with callbacks
         var result = archive_write_open(
             handle,
