@@ -52,7 +52,7 @@ for v in $(seq $MIN_MAJOR $MAX_MAJOR); do
 done
 
 echo "Target frameworks for library: $FRAMEWORKS"
-echo "Target framework for tests: net${MAX_MAJOR}.0"
+echo "Target frameworks for tests: net${MAX_MAJOR}.0;net462"
 
 CHANGES_MADE=false
 
@@ -80,7 +80,7 @@ else
     rm -f "$TEMP_LIB"
 fi
 
-# Generate Test.LibArchive.Net/Directory.Build.props for tests (single target = latest)
+# Generate Test.LibArchive.Net/Directory.Build.props for tests (latest .NET + net462)
 TEST_PROPS="Test.LibArchive.Net/Directory.Build.props"
 TEMP_TEST=$(mktemp)
 cat > "$TEMP_TEST" << EOF
@@ -88,10 +88,10 @@ cat > "$TEMP_TEST" << EOF
   <!-- Import parent props -->
   <Import Project="\$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '\$(MSBuildThisFileDirectory)../'))" />
 
-  <!-- Test projects target only the latest .NET version -->
+  <!-- Test projects target latest .NET plus net462 for Mono testing -->
   <!-- Auto-generated based on SDK version by scripts/generate-build-props.sh -->
   <PropertyGroup>
-    <TargetFramework>net${MAX_MAJOR}.0</TargetFramework>
+    <TargetFrameworks>net${MAX_MAJOR}.0;net462</TargetFrameworks>
   </PropertyGroup>
 </Project>
 EOF

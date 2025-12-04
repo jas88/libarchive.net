@@ -2,9 +2,9 @@
   <!-- Import parent props -->
   <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
 
-  <!-- Test projects target only the latest .NET version -->
+  <!-- Test projects target latest .NET plus net462 for Mono testing -->
   <!-- Auto-generated based on SDK version by scripts/generate-build-props.sh -->
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks>net10.0;net462</TargetFrameworks>
   </PropertyGroup>
 </Project>
