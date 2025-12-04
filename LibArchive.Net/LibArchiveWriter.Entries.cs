@@ -283,6 +283,8 @@ public partial class LibArchiveWriter
             // Medium files - use ArrayPool with chunked reading
             const int chunkSize = 1 << 20; // 1 MB chunks
             var buffer = ArrayPool<byte>.Shared.Rent(chunkSize);
+            if (buffer.Length < chunkSize)
+                throw new InvalidOperationException("ArrayPool returned smaller buffer than requested");
 
             try
             {
@@ -383,6 +385,8 @@ public partial class LibArchiveWriter
     {
         const int bufferSize = 1 << 20; // 1 MB
         var buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
+        if (buffer.Length < bufferSize)
+            throw new InvalidOperationException("ArrayPool returned smaller buffer than requested");
 
         try
         {
