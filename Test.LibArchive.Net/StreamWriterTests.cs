@@ -77,7 +77,17 @@ public class StreamWriterTests
         var entry = reader.Entries().First();
         using var stream = entry.Stream;
         var readData = new byte[testData.Length];
-        stream.Read(readData, 0, readData.Length);
+#if NET7_0_OR_GREATER
+        stream.ReadExactly(readData);
+#else
+        int totalRead = 0;
+        while (totalRead < readData.Length)
+        {
+            int bytesRead = stream.Read(readData, totalRead, readData.Length - totalRead);
+            if (bytesRead == 0) break;
+            totalRead += bytesRead;
+        }
+#endif
         Assert.That(readData, Is.EqualTo(testData));
     }
 
