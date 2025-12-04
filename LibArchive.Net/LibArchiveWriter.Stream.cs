@@ -16,6 +16,11 @@ public partial class LibArchiveWriter
     private delegate int ArchiveCloseCallback(IntPtr archive, IntPtr clientData);
     private delegate IntPtr ArchiveWriteCallback(IntPtr archive, IntPtr clientData, IntPtr buffer, IntPtr length);
 
+    // Delegate instances must be kept alive to prevent GC while native code holds references
+    private ArchiveOpenCallback? _openCallback;
+    private ArchiveCloseCallback? _closeCallback;
+    private ArchiveWriteCallback? _writeCallback;
+
     /// <summary>
     /// Creates a new archive writer that writes to a stream.
     /// </summary>
@@ -76,10 +81,10 @@ public partial class LibArchiveWriter
 
     private void OpenWithCallbacks()
     {
-        // Create callback instances that won't be garbage collected
-        var openCallback = new ArchiveOpenCallback(OnOpen);
-        var closeCallback = new ArchiveCloseCallback(OnClose);
-        var writeCallback = new ArchiveWriteCallback(OnWrite);
+        // Store callback instances as class fields to prevent GC while native code holds references
+        _openCallback = new ArchiveOpenCallback(OnOpen);
+        _closeCallback = new ArchiveCloseCallback(OnClose);
+        _writeCallback = new ArchiveWriteCallback(OnWrite);
 
         // Keep the stream reference alive
         callbackHandle = GCHandle.Alloc(outputStream);
@@ -88,9 +93,9 @@ public partial class LibArchiveWriter
         var result = archive_write_open(
             handle,
             GCHandle.ToIntPtr(callbackHandle.Value),
-            openCallback,
-            writeCallback,
-            closeCallback);
+            _openCallback,
+            _writeCallback,
+            _closeCallback);
 
         if (result != (int)ARCHIVE_RESULT.ARCHIVE_OK)
             Throw();
@@ -151,6 +156,11 @@ public partial class LibArchiveWriter
             callbackHandle.Value.Free();
             callbackHandle = null;
         }
+
+        // Clear delegate references (allows GC after native code is done)
+        _openCallback = null;
+        _closeCallback = null;
+        _writeCallback = null;
     }
 
     #endregion

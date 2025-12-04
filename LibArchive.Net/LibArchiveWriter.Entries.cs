@@ -46,7 +46,8 @@ public partial class LibArchiveWriter
             {
                 fixed (byte* ptr = data)
                 {
-                    archive_write_data(handle, ptr, data.Length);
+                    if (archive_write_data(handle, ptr, data.Length) < 0)
+                        Throw();
                 }
             }
         });

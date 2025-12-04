@@ -1,5 +1,15 @@
 v0.3.0 - TBD
 
+**Archive Write Support:**
+- New `LibArchiveWriter` class for creating archives in multiple formats
+- Supported formats: ZIP, 7-Zip, TAR, Ustar, PAX, CPIO, ISO 9660, XAR
+- Compression algorithms: Gzip, Bzip2, XZ, LZMA, LZ4, Zstd, Compress, LZIP
+- Encryption support: ZIP (AES-128/192/256, Traditional PKWARE), 7-Zip (AES-256)
+- Zero-copy I/O with platform-specific optimizations (stackalloc on .NET 9, memory-mapped files for large files)
+- Stream-based writing support (MemoryStream, FileStream)
+- Batch file operations with `IProgress<FileProgress>` reporting
+- Directory addition with recursive option and path mapping
+
 **Password-Protected Archive Support:**
 - Add password support for encrypted ZIP archives (traditional PKWARE and AES encryption)
 - New optional `password` parameter on `LibArchiveReader` constructors
@@ -14,6 +24,8 @@ v0.3.0 - TBD
 **Code Quality:**
 - Simplified `Read()` method implementation (removed unnecessary MemoryMarshal complexity)
 - Fixed nullability warnings
+- Fixed `archive_write_data()` return value checks for proper error handling
+- Fixed potential GC bug with delegate instances in stream-based writing
 
 v0.2.0 - October 27, 2025
 
