@@ -3,13 +3,13 @@
 # Source this file in platform-specific build scripts
 
 # Library versions
-LIBARCHIVE_VERSION="3.7.3"
-LZ4_VERSION="1.9.4"
-ZSTD_VERSION="1.5.6"
+LIBARCHIVE_VERSION="3.8.3"
+LZ4_VERSION="1.10.0"
+ZSTD_VERSION="1.5.7"
 LZO_VERSION="2.10"
-LIBXML2_VERSION="2.12.6"
+LIBXML2_VERSION="2.15.1"
 ZLIB_VERSION="1.3.1"
-XZ_VERSION="5.4.6"
+XZ_VERSION="5.8.1"
 BZIP2_VERSION="1.0.8"
 
 # Bootlin toolchain versions (Linux only)
@@ -31,7 +31,9 @@ LIBARCHIVE_URL="https://github.com/libarchive/libarchive/releases/download/v${LI
 LZ4_URL="https://github.com/lz4/lz4/archive/refs/tags/v${LZ4_VERSION}.tar.gz"
 ZSTD_URL="https://github.com/facebook/zstd/releases/download/v${ZSTD_VERSION}/zstd-${ZSTD_VERSION}.tar.gz"
 LZO_URL="https://www.oberhumer.com/opensource/lzo/download/lzo-${LZO_VERSION}.tar.gz"
-LIBXML2_URL="https://download.gnome.org/sources/libxml2/2.12/libxml2-${LIBXML2_VERSION}.tar.xz"
+# libxml2 URL uses major.minor as directory (e.g., 2.15.1 -> 2.15)
+LIBXML2_MAJOR_MINOR="${LIBXML2_VERSION%.*}"
+LIBXML2_URL="https://download.gnome.org/sources/libxml2/${LIBXML2_MAJOR_MINOR}/libxml2-${LIBXML2_VERSION}.tar.xz"
 BZIP2_URL="https://www.sourceware.org/pub/bzip2/bzip2-${BZIP2_VERSION}.tar.gz"
 ZLIB_URL="https://zlib.net/zlib-${ZLIB_VERSION}.tar.xz"
 XZ_URL="https://github.com/tukaani-project/xz/releases/download/v${XZ_VERSION}/xz-${XZ_VERSION}.tar.xz"
@@ -156,6 +158,16 @@ download_all_libraries() {
     download_library "$BZIP2_URL" "bzip2" "bzip2-${BZIP2_VERSION}"
     download_library "$ZLIB_URL" "zlib" "zlib-${ZLIB_VERSION}"
     download_library "$XZ_URL" "xz" "xz-${XZ_VERSION}"
+
+    # Fix xz automake timestamp issue - touch generated files to prevent regeneration
+    # xz 5.8+ requires automake 1.17 which may not be available on build systems
+    if [ -d "xz-${XZ_VERSION}" ]; then
+        echo "Fixing xz automake timestamps..."
+        find "xz-${XZ_VERSION}" -name "configure" -exec touch {} \;
+        find "xz-${XZ_VERSION}" -name "Makefile.in" -exec touch {} \;
+        find "xz-${XZ_VERSION}" -name "aclocal.m4" -exec touch {} \;
+        find "xz-${XZ_VERSION}" -name "config.h.in" -exec touch {} \;
+    fi
 }
 
 # Detect number of CPU cores

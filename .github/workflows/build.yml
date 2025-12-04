@@ -14,7 +14,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
       - name: Cache library downloads
         uses: actions/cache@v4
         with:
@@ -51,10 +51,10 @@ jobs:
   linux:
     needs: [macos]
     name: Build Windows DLLs, Linux library, and test
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Cache library downloads
@@ -80,7 +80,7 @@ jobs:
       - name: Cache apt packages
         uses: awalsh128/cache-apt-pkgs-action@v1.6.0
         with:
-          packages: libeatmydata1 mingw-w64 mono-complete mono-devel
+          packages: libeatmydata1 mingw-w64 mono-complete mono-devel pkg-config
           version: 1.0
           execute_install_scripts: true
       - name: Retrieve MacOS library
@@ -92,10 +92,12 @@ jobs:
           curl -sL https://github.com/mstorsjo/llvm-mingw/releases/download/20240619/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64.tar.xz | tar xJ
           echo "$(pwd)/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64/bin" >> $GITHUB_PATH
       - name: Setup .NET Core
-        uses: actions/setup-dotnet@v5.0.0
+        uses: actions/setup-dotnet@v5.0.1
         with:
           cache: true
           cache-dependency-path: '**/*.csproj'
+      - name: Update Directory.Build.props for SDK version
+        run: ./scripts/generate-build-props.sh
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
@@ -126,6 +128,26 @@ jobs:
           done
 
           echo "$HOME/.ccache-bin" >> $GITHUB_PATH
+      - name: Install autoconf and automake
+        run: |
+          # xz 5.8+ requires automake 1.17 and autoconf 2.72
+          # Use ftpmirror.gnu.org to auto-select nearest mirror (more reliable than ftp.gnu.org)
+          # Install autoconf 2.72
+          curl -sSL --retry 3 --retry-delay 5 https://ftpmirror.gnu.org/gnu/autoconf/autoconf-2.72.tar.xz | tar xJ
+          cd autoconf-2.72
+          ./configure --prefix=$HOME/.local
+          make -j$(nproc)
+          make install
+          cd ..
+          # Install automake 1.17
+          curl -sSL --retry 3 --retry-delay 5 https://ftpmirror.gnu.org/gnu/automake/automake-1.17.tar.xz | tar xJ
+          cd automake-1.17
+          ./configure --prefix=$HOME/.local
+          make -j$(nproc)
+          make install
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          # Set ACLOCAL_PATH to include system m4 files (for pkg.m4 etc)
+          echo "ACLOCAL_PATH=/usr/share/aclocal:$HOME/.local/share/aclocal" >> $GITHUB_ENV
       - name: Download library sources once
         run: |
           # Load the download function and download all libraries once
@@ -147,8 +169,9 @@ jobs:
             export PREFIX="$(pwd)/local-$arch"
 
             # Copy library sources from parent directory (already downloaded)
+            # Use -rpl to hardlink and preserve timestamps (important for xz automake fix)
             for src in ../bzip2-* ../libarchive-* ../libxml2-* ../lz4-* ../lzo-* ../xz-* ../zlib-* ../zstd-*; do
-              [ -e "$src" ] && cp -r "$src" .
+              [ -e "$src" ] && cp -rpl "$src" .
             done
 
             ARCH=$arch ../native/build-windows.sh
@@ -193,7 +216,7 @@ jobs:
         with:
           languages: 'csharp'
           build-mode: manual
-      - name: Built .Net package and test
+      - name: Build and test .Net package
         run: |
           mkdir -p LibArchive.Net/runtimes/{osx-x64,osx-arm64,linux-x86,linux-musl-x86,linux-x64,linux-musl-x64,linux-arm,linux-musl-arm,linux-arm64,linux-musl-arm64,win-x86,win-x64,win-arm64}/native
 
@@ -245,27 +268,22 @@ jobs:
           echo "=== Restored LibArchive.Net version ==="
           ls -la ~/.nuget/packages/libarchive.net/
 
-          # Build only net9.0 (net462 will be built when testing with Mono)
-          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net9.0 --configuration Release --no-restore /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
+          # Build tests for net10.0 first (net462 will be built when testing with Mono)
+          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net10.0 --configuration Release --no-restore /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
           # Debug: Show test output directory
           echo "=== Test output directory ==="
-          ls -laR Test.LibArchive.Net/bin/Release/net9.0/runtimes/ 2>/dev/null || echo "No runtimes folder in test output!"
+          ls -laR Test.LibArchive.Net/bin/Release/net10.0/runtimes/ 2>/dev/null || echo "No runtimes folder in test output!"
 
-          # Run tests for net9.0
-          echo "=== Running tests for net9.0 ==="
-          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net9.0 --configuration Release --no-build --nologo /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
+          # Run tests for net10.0
+          echo "=== Running tests for net10.0 ==="
+          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net10.0 --configuration Release --no-build --nologo /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
           echo "=== Mono version (for net462 tests) ==="
           mono --version | head -n1
 
-          # Build and test net462 with Mono (will build net462 if needed)
+          # Build and test net462 with Mono
           echo "=== Running tests for net462 with Mono ==="
-          # Enable diagnostics for native library loading
-          export LIBARCHIVE_NET_DEBUG=1
-          # Enable Mono DLL loading diagnostics (suggested by @YoshiRulz)
-          export MONO_LOG_LEVEL=debug
-          export MONO_LOG_MASK=dll
           dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net462 --configuration Release --verbosity normal /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
           echo "=== Checking net462 output directory for native libraries ==="
@@ -279,7 +297,7 @@ jobs:
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
       - name: Upload built packages
-        uses: svenstaro/upload-release-action@2.11.2
+        uses: svenstaro/upload-release-action@2.11.3
         if: contains(github.ref, 'refs/tags/v')
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
@@ -294,7 +312,7 @@ jobs:
           path: |
             *.nupkg
       - name: Upload built packages
-        uses: svenstaro/upload-release-action@2.11.2
+        uses: svenstaro/upload-release-action@2.11.3
         if: contains(github.ref, 'refs/tags/v')
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
