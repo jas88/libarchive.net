@@ -58,6 +58,8 @@ cd ..
 
 echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
+# Regenerate autotools files for local automake version
+aclocal && automake && autoconf
 ./configure --with-pic --disable-shared --prefix=$PREFIX
 make -sj$NCPU install
 cd ..
@@ -73,6 +75,8 @@ make -j$NCPU -sC zstd-${ZSTD_VERSION} install
 
 echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
+# Regenerate autotools files for local automake version
+aclocal && automake && autoconf
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
 export LIBXML2_PC_LIBS="-L$PREFIX -lxml2"
 ./configure --prefix=$PREFIX --enable-silent-rules --disable-dependency-tracking --enable-static --disable-shared --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-rpath --enable-posix-regex-lib=libc --enable-xattr --enable-acl --enable-largefile --with-pic --with-zlib --with-bz2lib --with-libb2 --with-iconv --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-cng
