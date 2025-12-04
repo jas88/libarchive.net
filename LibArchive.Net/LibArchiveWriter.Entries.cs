@@ -397,6 +397,10 @@ public partial class LibArchiveWriter
             int read;
             while ((read = fs.Read(buffer, 0, buffer.Length)) > 0)
             {
+                // Validate read result to prevent buffer overrun from malicious Stream implementations
+                if (read > buffer.Length)
+                    throw new InvalidOperationException("Stream.Read returned more bytes than requested");
+
                 fixed (byte* ptr = buffer)
                 {
                     int writeOffset = 0;
