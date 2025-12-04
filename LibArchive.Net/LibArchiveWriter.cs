@@ -165,7 +165,7 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
         if (string.IsNullOrEmpty(password))
             return;
 
-        using var passBuffer = new SafeStringBuffer(password);
+        using var passBuffer = new SafeStringBuffer(password!);
 
         // Set passphrase
         if (archive_write_set_passphrase(handle, passBuffer.Ptr) != (int)ARCHIVE_RESULT.ARCHIVE_OK)

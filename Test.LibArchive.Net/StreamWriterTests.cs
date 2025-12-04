@@ -52,7 +52,7 @@ public class StreamWriterTests
         File.WriteAllBytes(tempFile, archiveBytes);
 
         using var reader = new LibArchiveReader(tempFile);
-        var entry = reader.Entries().Single();
+        var entry = reader.Entries().First();
         using var stream = entry.Stream;
         using var streamReader = new StreamReader(stream);
         Assert.That(streamReader.ReadToEnd(), Is.EqualTo(testContent));
@@ -74,7 +74,7 @@ public class StreamWriterTests
         Assert.That(File.Exists(archivePath), Is.True);
 
         using var reader = new LibArchiveReader(archivePath);
-        var entry = reader.Entries().Single();
+        var entry = reader.Entries().First();
         using var stream = entry.Stream;
         var readData = new byte[testData.Length];
         stream.Read(readData, 0, readData.Length);
@@ -113,7 +113,7 @@ public class StreamWriterTests
         File.WriteAllBytes(tempFile, archiveBytes);
 
         using var reader = new LibArchiveReader(tempFile);
-        var entry = reader.Entries().Single();
+        var entry = reader.Entries().First();
         using var stream = entry.Stream;
         using var streamReader = new StreamReader(stream);
         Assert.That(streamReader.ReadToEnd(), Is.EqualTo(testContent));
@@ -186,7 +186,7 @@ public class StreamWriterTests
         // Should succeed with password
         using (var reader = new LibArchiveReader(tempFile, password: password))
         {
-            var entry = reader.Entries().Single();
+            var entry = reader.Entries().First();
             using var stream = entry.Stream;
             using var streamReader = new StreamReader(stream);
             Assert.That(streamReader.ReadToEnd(), Is.EqualTo(testContent));
@@ -286,7 +286,7 @@ public class StreamWriterTests
         File.WriteAllBytes(tempArchive, archiveBytes);
 
         using var reader = new LibArchiveReader(tempArchive);
-        var entry = reader.Entries().Single();
+        var entry = reader.Entries().First();
         Assert.That(entry.Name, Is.EqualTo("archived.txt"));
     }
 

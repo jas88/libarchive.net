@@ -55,7 +55,7 @@ public class WriterTests
 
         // Read back and verify
         using var reader = new LibArchiveReader(archivePath);
-        var entry = reader.Entries().Single();
+        var entry = reader.Entries().First();
         Assert.That(entry.Name, Is.EqualTo("test.txt"));
 
         using var stream = entry.Stream;
@@ -100,7 +100,7 @@ public class WriterTests
         Assert.That(File.Exists(archivePath), Is.True);
 
         using var reader = new LibArchiveReader(archivePath);
-        var entry = reader.Entries().Single();
+        var entry = reader.Entries().First();
         Assert.That(entry.Name, Is.EqualTo("data.bin"));
     }
 
@@ -123,7 +123,7 @@ public class WriterTests
         }
 
         using var reader = new LibArchiveReader(archivePath);
-        var entry = reader.Entries().Single();
+        var entry = reader.Entries().First();
         Assert.That(entry.Name, Is.EqualTo("archived.txt"));
 
         using var stream = entry.Stream;
@@ -219,7 +219,7 @@ public class WriterTests
         // Verify can read with correct password
         using (var reader = new LibArchiveReader(archivePath, password: password))
         {
-            var entry = reader.Entries().Single();
+            var entry = reader.Entries().First();
             using var stream = entry.Stream;
             using var streamReader = new StreamReader(stream);
             Assert.That(streamReader.ReadToEnd(), Is.EqualTo(testData));
@@ -305,7 +305,7 @@ public class WriterTests
         }
 
         using var reader = new LibArchiveReader(archivePath);
-        var entry = reader.Entries().Single();
+        var entry = reader.Entries().First();
         Assert.That(entry.Name, Is.EqualTo("empty.txt"));
 
         using var stream = entry.Stream;
@@ -348,7 +348,7 @@ public class WriterTests
 
         // Read
         using var reader = new LibArchiveReader(archivePath);
-        var entry = reader.Entries().Single();
+        var entry = reader.Entries().First();
         using var stream = entry.Stream;
         var readData = new byte[originalData.Length];
         stream.Read(readData, 0, readData.Length);
@@ -375,7 +375,7 @@ public class WriterTests
         }
 
         using var reader = new LibArchiveReader(archivePath);
-        var entry = reader.Entries().Single();
+        var entry = reader.Entries().First();
         var extractedHash = hasher.ComputeHash(entry.Stream);
 
         Assert.That(extractedHash, Is.EqualTo(originalHash));
@@ -403,7 +403,7 @@ public class WriterTests
         Assert.That(File.Exists(archivePath), Is.True);
 
         using var reader = new LibArchiveReader(archivePath);
-        var entry = reader.Entries().Single();
+        var entry = reader.Entries().First();
         Assert.That(entry.Name, Is.EqualTo("compressible.txt"));
     }
 
