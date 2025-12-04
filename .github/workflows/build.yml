@@ -216,7 +216,7 @@ jobs:
         with:
           languages: 'csharp'
           build-mode: manual
-      - name: Built .Net package and test
+      - name: Build and test .Net package
         run: |
           mkdir -p LibArchive.Net/runtimes/{osx-x64,osx-arm64,linux-x86,linux-musl-x86,linux-x64,linux-musl-x64,linux-arm,linux-musl-arm,linux-arm64,linux-musl-arm64,win-x86,win-x64,win-arm64}/native
 
