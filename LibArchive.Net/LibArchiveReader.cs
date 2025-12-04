@@ -280,7 +280,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
             if (_eof)
                 return 0;
 
-            int result = archive_read_data(archiveHandle, ref buffer[offset], count);
+            nint result = archive_read_data(archiveHandle, ref buffer[offset], count);
             if (result < 0)
             {
                 // Negative return indicates error (e.g., wrong password, encryption not supported)
@@ -292,7 +292,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
             if (result == 0)
                 _eof = true;
 
-            return result;
+            return (int)result;
         }
 
         /// <summary>
@@ -377,7 +377,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     private static partial int archive_read_open_filenames(IntPtr a, IntPtr filename, int blocksize);
 
     [LibraryImport("archive")]
-    private static partial int archive_read_data(IntPtr a, ref byte buff, int size);
+    private static partial nint archive_read_data(IntPtr a, ref byte buff, nint size);
 
     [LibraryImport("archive")]
     private static partial int archive_read_next_header(IntPtr a, out IntPtr entry);
@@ -416,7 +416,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     private static extern int archive_read_open_filenames(IntPtr a, IntPtr filename, int blocksize);
 
     [DllImport("archive")]
-    private static extern int archive_read_data(IntPtr a, ref byte buff, int size);
+    private static extern nint archive_read_data(IntPtr a, ref byte buff, nint size);
 
     [DllImport("archive")]
     private static extern int archive_read_next_header(IntPtr a, out IntPtr entry);

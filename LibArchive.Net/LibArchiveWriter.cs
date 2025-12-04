@@ -348,7 +348,7 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     private static partial int archive_write_header(IntPtr archive, IntPtr entry);
 
     [LibraryImport("archive")]
-    private static unsafe partial int archive_write_data(IntPtr archive, byte* buffer, int length);
+    private static unsafe partial nint archive_write_data(IntPtr archive, byte* buffer, nint length);
 
     [LibraryImport("archive")]
     private static partial int archive_write_finish_entry(IntPtr archive);
@@ -372,7 +372,7 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     private static extern int archive_write_header(IntPtr archive, IntPtr entry);
 
     [DllImport("archive")]
-    private static extern unsafe int archive_write_data(IntPtr archive, byte* buffer, int length);
+    private static extern unsafe nint archive_write_data(IntPtr archive, byte* buffer, nint length);
 
     [DllImport("archive")]
     private static extern int archive_write_finish_entry(IntPtr archive);

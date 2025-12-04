@@ -50,13 +50,13 @@ public partial class LibArchiveWriter
                     int remaining = data.Length;
                     while (remaining > 0)
                     {
-                        int written = archive_write_data(handle, ptr + offset, remaining);
+                        nint written = archive_write_data(handle, ptr + offset, remaining);
                         if (written < 0)
                             Throw();
                         if (written == 0)
                             throw new ApplicationException("archive_write_data returned 0 bytes written");
-                        offset += written;
-                        remaining -= written;
+                        offset += (int)written;
+                        remaining -= (int)written;
                     }
                 }
             }
@@ -268,13 +268,13 @@ public partial class LibArchiveWriter
                 int remaining = buffer.Length;
                 while (remaining > 0)
                 {
-                    int written = archive_write_data(handle, ptr + offset, remaining);
+                    nint written = archive_write_data(handle, ptr + offset, remaining);
                     if (written < 0)
                         Throw();
                     if (written == 0)
                         throw new ApplicationException("archive_write_data returned 0 bytes written");
-                    offset += written;
-                    remaining -= written;
+                    offset += (int)written;
+                    remaining -= (int)written;
                 }
             }
         }
@@ -311,13 +311,13 @@ public partial class LibArchiveWriter
                         int writeRemaining = bytesRead;
                         while (writeRemaining > 0)
                         {
-                            int written = archive_write_data(handle, ptr + writeOffset, writeRemaining);
+                            nint written = archive_write_data(handle, ptr + writeOffset, writeRemaining);
                             if (written < 0)
                                 Throw();
                             if (written == 0)
                                 throw new ApplicationException("archive_write_data returned 0 bytes written");
-                            writeOffset += written;
-                            writeRemaining -= written;
+                            writeOffset += (int)written;
+                            writeRemaining -= (int)written;
                         }
                     }
 
@@ -360,13 +360,13 @@ public partial class LibArchiveWriter
                 int chunkRemaining = chunkSize;
                 while (chunkRemaining > 0)
                 {
-                    int written = archive_write_data(handle, ptr + offset + chunkOffset, chunkRemaining);
+                    nint written = archive_write_data(handle, ptr + offset + chunkOffset, chunkRemaining);
                     if (written < 0)
                         Throw();
                     if (written == 0)
                         throw new ApplicationException("archive_write_data returned 0 bytes written");
-                    chunkOffset += written;
-                    chunkRemaining -= written;
+                    chunkOffset += (int)written;
+                    chunkRemaining -= (int)written;
                 }
 
                 offset += chunkSize;
@@ -403,13 +403,13 @@ public partial class LibArchiveWriter
                     int writeRemaining = read;
                     while (writeRemaining > 0)
                     {
-                        int written = archive_write_data(handle, ptr + writeOffset, writeRemaining);
+                        nint written = archive_write_data(handle, ptr + writeOffset, writeRemaining);
                         if (written < 0)
                             Throw();
                         if (written == 0)
                             throw new ApplicationException("archive_write_data returned 0 bytes written");
-                        writeOffset += written;
-                        writeRemaining -= written;
+                        writeOffset += (int)written;
+                        writeRemaining -= (int)written;
                     }
                 }
             }
