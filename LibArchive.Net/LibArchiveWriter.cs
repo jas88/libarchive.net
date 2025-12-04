@@ -43,6 +43,17 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
 
     #endregion
 
+    #region Static Constructor
+
+    static LibArchiveWriter()
+    {
+        // Ensure native library is preloaded by triggering LibArchiveReader's static constructor
+        // This is needed for .NET Standard 2.0 (used by net462/Mono) which requires manual preloading
+        System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(LibArchiveReader).TypeHandle);
+    }
+
+    #endregion
+
     #region Constructors
 
     /// <summary>
