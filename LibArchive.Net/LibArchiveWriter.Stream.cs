@@ -131,7 +131,7 @@ public partial class LibArchiveWriter
         {
             var stream = GCHandle.FromIntPtr(clientData).Target as Stream;
             if (stream == null || !stream.CanWrite)
-                return IntPtr.Zero;
+                return new IntPtr(-1); // Signal error to libarchive
 
             int len = length.ToInt32();
 
@@ -144,7 +144,7 @@ public partial class LibArchiveWriter
         }
         catch
         {
-            return IntPtr.Zero; // Signal error
+            return new IntPtr(-1); // Signal error to libarchive
         }
     }
 

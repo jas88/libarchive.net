@@ -148,9 +148,11 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
         if (level < 0 || level > 9)
             throw new ArgumentOutOfRangeException(nameof(level), "Compression level must be between 0 and 9");
 
-        // Note: Compression level setting is filter-specific in libarchive
-        // For now, we rely on the default levels
-        // TODO: Use archive_write_set_filter_option to set compression level
+        // Set compression level via filter options
+        // The option name varies by filter: "compression-level" is the common name
+        using var levelOption = new SafeStringBuffer($"compression-level={level}");
+        // Ignore result - not all filters support compression-level, and that's ok
+        archive_write_set_filter_option(handle, IntPtr.Zero, levelOption.Ptr);
     }
 
     #endregion
@@ -219,7 +221,8 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
         if (encryptionType == EncryptionType.None)
         {
             using var optionBuffer = new SafeStringBuffer("encryption=none");
-            archive_write_set_options(handle, optionBuffer.Ptr);
+            if (archive_write_set_options(handle, optionBuffer.Ptr) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+                Throw();
         }
         // Default AES-256 is automatic when passphrase is set
     }
@@ -299,15 +302,17 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
         try
         {
             // Close the archive (writes final data)
-            archive_write_close(handle);
+            var closeResult = archive_write_close(handle);
 
             // Free resources
-            var result = archive_write_free(handle);
+            var freeResult = archive_write_free(handle);
 
             // Cleanup callbacks if stream-based writer
             CleanupCallbacks();
 
-            return result == (int)ARCHIVE_RESULT.ARCHIVE_OK;
+            // Return false if either operation failed - indicates potential archive corruption
+            return closeResult == (int)ARCHIVE_RESULT.ARCHIVE_OK &&
+                   freeResult == (int)ARCHIVE_RESULT.ARCHIVE_OK;
         }
         catch
         {
@@ -454,6 +459,9 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
 
     [LibraryImport("archive")]
     private static partial int archive_write_add_filter_lzip(IntPtr archive);
+
+    [LibraryImport("archive")]
+    private static partial int archive_write_set_filter_option(IntPtr archive, IntPtr module, IntPtr option);
 #else
     [DllImport("archive")]
     private static extern int archive_write_add_filter_gzip(IntPtr archive);
@@ -478,6 +486,9 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
 
     [DllImport("archive")]
     private static extern int archive_write_add_filter_lzip(IntPtr archive);
+
+    [DllImport("archive")]
+    private static extern int archive_write_set_filter_option(IntPtr archive, IntPtr module, IntPtr option);
 #endif
 
     #endregion

@@ -288,9 +288,11 @@ public class StreamWriterTests
     [Test]
     public void TestStreamWriterWithLargeFile()
     {
-        // Create 5 MB of data
+        // Create 5 MB of compressible data (repetitive pattern)
         var largeData = new byte[5 * 1024 * 1024];
-        new Random(123).NextBytes(largeData);
+        var pattern = Encoding.UTF8.GetBytes("This is a repeating pattern for compression testing. ");
+        for (int i = 0; i < largeData.Length; i++)
+            largeData[i] = pattern[i % pattern.Length];
 
         byte[] archiveBytes;
 
@@ -308,7 +310,7 @@ public class StreamWriterTests
         }
 
         Assert.That(archiveBytes, Is.Not.Empty);
-        // Compressed size should be less than original
+        // Compressed size should be less than original (compressible data)
         Assert.That(archiveBytes.Length, Is.LessThan(largeData.Length));
     }
 

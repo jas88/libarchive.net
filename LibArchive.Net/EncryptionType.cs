@@ -41,5 +41,5 @@ public enum EncryptionType
     /// <summary>
     /// Alias for Traditional - legacy PKWARE encryption.
     /// </summary>
-    ZipCrypto,
+    ZipCrypto = Traditional,
 }

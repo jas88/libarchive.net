@@ -46,8 +46,18 @@ public partial class LibArchiveWriter
             {
                 fixed (byte* ptr = data)
                 {
-                    if (archive_write_data(handle, ptr, data.Length) < 0)
-                        Throw();
+                    int offset = 0;
+                    int remaining = data.Length;
+                    while (remaining > 0)
+                    {
+                        int written = archive_write_data(handle, ptr + offset, remaining);
+                        if (written < 0)
+                            Throw();
+                        if (written == 0)
+                            throw new ApplicationException("archive_write_data returned 0 bytes written");
+                        offset += written;
+                        remaining -= written;
+                    }
                 }
             }
         });
@@ -243,12 +253,29 @@ public partial class LibArchiveWriter
                 FileShare.Read,
                 FileOptions.SequentialScan);
 
-            RandomAccess.Read(fileHandle, buffer, 0);
+            int totalRead = 0;
+            while (totalRead < buffer.Length)
+            {
+                int bytesRead = RandomAccess.Read(fileHandle, buffer.Slice(totalRead), totalRead);
+                if (bytesRead == 0)
+                    throw new EndOfStreamException($"Unexpected end of file: {fileInfo.FullName}");
+                totalRead += bytesRead;
+            }
 
             fixed (byte* ptr = buffer)
             {
-                if (archive_write_data(handle, ptr, buffer.Length) < 0)
-                    Throw();
+                int offset = 0;
+                int remaining = buffer.Length;
+                while (remaining > 0)
+                {
+                    int written = archive_write_data(handle, ptr + offset, remaining);
+                    if (written < 0)
+                        Throw();
+                    if (written == 0)
+                        throw new ApplicationException("archive_write_data returned 0 bytes written");
+                    offset += written;
+                    remaining -= written;
+                }
             }
         }
         else
@@ -280,8 +307,18 @@ public partial class LibArchiveWriter
 
                     fixed (byte* ptr = span.Slice(0, bytesRead))
                     {
-                        if (archive_write_data(handle, ptr, bytesRead) < 0)
-                            Throw();
+                        int writeOffset = 0;
+                        int writeRemaining = bytesRead;
+                        while (writeRemaining > 0)
+                        {
+                            int written = archive_write_data(handle, ptr + writeOffset, writeRemaining);
+                            if (written < 0)
+                                Throw();
+                            if (written == 0)
+                                throw new ApplicationException("archive_write_data returned 0 bytes written");
+                            writeOffset += written;
+                            writeRemaining -= written;
+                        }
                     }
 
                     offset += bytesRead;
@@ -319,8 +356,18 @@ public partial class LibArchiveWriter
             {
                 int chunkSize = (int)Math.Min(remaining, int.MaxValue);
 
-                if (archive_write_data(handle, ptr + offset, chunkSize) < 0)
-                    Throw();
+                int chunkOffset = 0;
+                int chunkRemaining = chunkSize;
+                while (chunkRemaining > 0)
+                {
+                    int written = archive_write_data(handle, ptr + offset + chunkOffset, chunkRemaining);
+                    if (written < 0)
+                        Throw();
+                    if (written == 0)
+                        throw new ApplicationException("archive_write_data returned 0 bytes written");
+                    chunkOffset += written;
+                    chunkRemaining -= written;
+                }
 
                 offset += chunkSize;
                 remaining -= chunkSize;
@@ -352,8 +399,18 @@ public partial class LibArchiveWriter
             {
                 fixed (byte* ptr = buffer)
                 {
-                    if (archive_write_data(handle, ptr, read) < 0)
-                        Throw();
+                    int writeOffset = 0;
+                    int writeRemaining = read;
+                    while (writeRemaining > 0)
+                    {
+                        int written = archive_write_data(handle, ptr + writeOffset, writeRemaining);
+                        if (written < 0)
+                            Throw();
+                        if (written == 0)
+                            throw new ApplicationException("archive_write_data returned 0 bytes written");
+                        writeOffset += written;
+                        writeRemaining -= written;
+                    }
                 }
             }
         }
