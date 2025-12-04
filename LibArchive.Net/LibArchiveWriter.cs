@@ -150,9 +150,10 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
 
         // Set compression level via filter options
         // The option name varies by filter: "compression-level" is the common name
-        using var levelOption = new SafeStringBuffer($"compression-level={level}");
+        using var optionName = new SafeStringBuffer("compression-level");
+        using var optionValue = new SafeStringBuffer(level.ToString());
         // Ignore result - not all filters support compression-level, and that's ok
-        archive_write_set_filter_option(handle, IntPtr.Zero, levelOption.Ptr);
+        archive_write_set_filter_option(handle, IntPtr.Zero, optionName.Ptr, optionValue.Ptr);
     }
 
     #endregion
@@ -461,7 +462,7 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     private static partial int archive_write_add_filter_lzip(IntPtr archive);
 
     [LibraryImport("archive")]
-    private static partial int archive_write_set_filter_option(IntPtr archive, IntPtr module, IntPtr option);
+    private static partial int archive_write_set_filter_option(IntPtr archive, IntPtr module, IntPtr option, IntPtr value);
 #else
     [DllImport("archive")]
     private static extern int archive_write_add_filter_gzip(IntPtr archive);
@@ -488,7 +489,7 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     private static extern int archive_write_add_filter_lzip(IntPtr archive);
 
     [DllImport("archive")]
-    private static extern int archive_write_set_filter_option(IntPtr archive, IntPtr module, IntPtr option);
+    private static extern int archive_write_set_filter_option(IntPtr archive, IntPtr module, IntPtr option, IntPtr value);
 #endif
 
     #endregion
