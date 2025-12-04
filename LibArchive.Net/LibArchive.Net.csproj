@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.0;net6.0;net8.0;net9.0</TargetFrameworks>
+    <!-- TargetFrameworks set by Directory.Build.props (auto-generated from SDK version) -->
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <!-- Allow unsafe code for UTF-8 string handling and LibraryImportAttribute -->

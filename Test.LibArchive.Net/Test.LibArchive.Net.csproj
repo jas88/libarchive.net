@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
-        <TargetFrameworks>net$(NETCoreAppMaximumVersion);net462</TargetFrameworks>
+        <!-- TargetFrameworks set by Directory.Build.props (auto-generated from SDK version) -->
         <Nullable>enable</Nullable>
         <IsPackable>false</IsPackable>
         <GenerateDocumentationFile>false</GenerateDocumentationFile>
