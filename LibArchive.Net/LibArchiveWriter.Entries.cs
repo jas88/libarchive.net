@@ -313,9 +313,9 @@ public partial class LibArchiveWriter
                         int writeRemaining = bytesRead;
                         while (writeRemaining > 0)
                         {
-                            // Validate offset is within buffer bounds before pointer arithmetic
-                            if (writeOffset < 0 || writeOffset >= bytesRead)
-                                throw new InvalidOperationException("Write offset out of bounds");
+                            // Validate entire write range is within buffer bounds before pointer arithmetic
+                            if (writeOffset < 0 || writeRemaining < 0 || writeOffset + writeRemaining > bytesRead)
+                                throw new InvalidOperationException("Write range out of bounds");
                             nint written = archive_write_data(handle, ptr + writeOffset, writeRemaining);
                             if (written < 0)
                                 Throw();
@@ -415,9 +415,9 @@ public partial class LibArchiveWriter
                     int writeRemaining = read;
                     while (writeRemaining > 0)
                     {
-                        // Validate offset is within buffer bounds before pointer arithmetic
-                        if (writeOffset < 0 || writeOffset >= bufferSize)
-                            throw new InvalidOperationException("Write offset out of bounds");
+                        // Validate entire write range is within buffer bounds before pointer arithmetic
+                        if (writeOffset < 0 || writeRemaining < 0 || writeOffset + writeRemaining > bufferSize)
+                            throw new InvalidOperationException("Write range out of bounds");
                         nint written = archive_write_data(handle, ptr + writeOffset, writeRemaining);
                         if (written < 0)
                             Throw();
