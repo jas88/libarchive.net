@@ -395,10 +395,11 @@ public partial class LibArchiveWriter
                 FileOptions.SequentialScan);
 
             int read;
-            while ((read = fs.Read(buffer, 0, buffer.Length)) > 0)
+            // Use bufferSize, not buffer.Length - ArrayPool may return a larger array
+            while ((read = fs.Read(buffer, 0, bufferSize)) > 0)
             {
                 // Validate read result to prevent buffer overrun from malicious Stream implementations
-                if (read > buffer.Length)
+                if (read > bufferSize)
                     throw new InvalidOperationException("Stream.Read returned more bytes than requested");
 
                 fixed (byte* ptr = buffer)
