@@ -300,8 +300,7 @@ public class StreamWriterTests
         {
             using (var writer = new LibArchiveWriter(
                 memoryStream,
-                ArchiveFormat.Zip,
-                compression: CompressionType.Deflate))
+                ArchiveFormat.Zip))
             {
                 writer.AddEntry("large.bin", largeData);
             }
