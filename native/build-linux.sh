@@ -102,7 +102,7 @@ cd ..
 
 echo "Building lzo ${LZO_VERSION}..."
 cd lzo-${LZO_VERSION}
-./configure --cache-file=$(get_config_cache x86_64-linux) --prefix=$PREFIX --disable-shared --enable-static
+./configure --cache-file="$(get_config_cache x86_64-linux)" --prefix=$PREFIX --disable-shared --enable-static
 make -sj$NCPU install
 cd ..
 
@@ -114,13 +114,13 @@ cd ..
 
 echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
-./configure --cache-file=$(get_config_cache x86_64-linux) --with-pic --disable-shared --prefix=$PREFIX
+./configure --cache-file="$(get_config_cache x86_64-linux)" --with-pic --disable-shared --prefix=$PREFIX
 make -sj$NCPU install
 cd ..
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
 cd libxml2-${LIBXML2_VERSION}
-./autogen.sh --cache-file=$(get_config_cache x86_64-linux) --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX/../zlib-${ZLIB_VERSION} --with-lzma=$PREFIX/../xz-${XZ_VERSION}
+./autogen.sh --cache-file="$(get_config_cache x86_64-linux)" --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX/../zlib-${ZLIB_VERSION} --with-lzma=$PREFIX/../xz-${XZ_VERSION}
 make -sj$NCPU install
 cd ..
 
@@ -128,7 +128,7 @@ echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
 export LIBXML2_PC_LIBS=-L$PREFIX
-./configure --cache-file=$(get_config_cache x86_64-linux) --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2 --disable-shared --enable-static
+./configure --cache-file="$(get_config_cache x86_64-linux)" --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2 --disable-shared --enable-static
 make -sj$NCPU install
 cd ..
 
