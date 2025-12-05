@@ -22,6 +22,13 @@ jobs:
           key: library-downloads-${{ hashFiles('native/build-config.sh') }}
           restore-keys: |
             library-downloads-
+      - name: Cache configure results
+        uses: actions/cache@v4
+        with:
+          path: ~/config-cache
+          key: config-cache-macos-${{ hashFiles('native/build-config.sh') }}
+          restore-keys: |
+            config-cache-macos-
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
@@ -64,6 +71,13 @@ jobs:
           key: library-downloads-${{ hashFiles('native/build-config.sh') }}
           restore-keys: |
             library-downloads-
+      - name: Cache configure results
+        uses: actions/cache@v4
+        with:
+          path: ~/config-cache
+          key: config-cache-linux-${{ hashFiles('native/build-config.sh') }}
+          restore-keys: |
+            config-cache-linux-
       - name: Extract version from tag
         id: version
         run: |
