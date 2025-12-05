@@ -416,7 +416,8 @@ public partial class LibArchiveWriter
                     while (writeRemaining > 0)
                     {
                         // Validate entire write range is within buffer bounds before pointer arithmetic
-                        if (writeOffset < 0 || writeRemaining < 0 || writeOffset + writeRemaining > bufferSize)
+                        // Explicit writeOffset >= bufferSize check satisfies CodeQL taint sanitizer detection
+                        if (writeOffset < 0 || writeOffset >= bufferSize || writeRemaining < 0 || writeOffset + writeRemaining > bufferSize)
                             throw new InvalidOperationException("Write range out of bounds");
                         nint written = archive_write_data(handle, ptr + writeOffset, writeRemaining);
                         if (written < 0)
