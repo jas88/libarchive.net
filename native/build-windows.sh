@@ -125,7 +125,8 @@ cd libarchive-${LIBARCHIVE_VERSION}
 export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig"
 # For static linking tests, autoconf needs all dependencies in LDFLAGS
 export LDFLAGS="$LDFLAGS -L$PREFIX/lib -lz -llzma"
-./configure --cache-file=$(get_config_cache ${MINGW_PREFIX}) --host=${MINGW_PREFIX} --prefix=$PREFIX \
+# Use libarchive-specific cache to avoid conflicts from modified LDFLAGS/PKG_CONFIG_LIBDIR
+./configure --cache-file=$(get_config_cache ${MINGW_PREFIX}-libarchive) --host=${MINGW_PREFIX} --prefix=$PREFIX \
     --enable-silent-rules --disable-dependency-tracking \
     --enable-static --disable-shared \
     --disable-bsdtar --disable-bsdcat --disable-bsdcpio \
