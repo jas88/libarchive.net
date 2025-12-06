@@ -150,7 +150,7 @@ public class SevenZipTests
 
     #region Support code
 
-    private record class ExtractedEntry(EntryType Type, long LengthBytes, string ContentHash);
+    private record class ExtractedEntry(EntryType Type, long? LengthBytes, string ContentHash);
 
     private ExtractedEntry ToExtractedEntry(Entry entry) =>
         new ExtractedEntry(entry.Type, entry.LengthBytes, ContentHash(entry));
@@ -169,7 +169,7 @@ public class SevenZipTests
 
 }
 
-#if !NET_5_OR_GREATER
+#if !NET5_0_OR_GREATER
 namespace System.Runtime.CompilerServices
 {
     internal static class IsExternalInit;
