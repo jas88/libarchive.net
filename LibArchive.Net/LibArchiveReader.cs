@@ -31,8 +31,8 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     // Fields to store constructor parameters for Reset() support
     private readonly string? _filename;
     private readonly string[]? _filenames;
-    private uint _blockSize;
-    private string? _password;
+    private readonly uint _blockSize;
+    private readonly string? _password;
 
     private enum SourceType { File, MultiVolume, Stream }
     private readonly SourceType _sourceType;
