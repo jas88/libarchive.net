@@ -94,13 +94,13 @@ cd ..
 
 echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
-./configure --host=${MINGW_PREFIX} --with-pic --disable-shared --prefix=$PREFIX --disable-scripts --disable-doc
+./configure --cache-file=$(get_config_cache ${MINGW_PREFIX}) --host=${MINGW_PREFIX} --with-pic --disable-shared --prefix=$PREFIX --disable-scripts --disable-doc
 make -j$NCPU install
 cd ..
 
 echo "Building lzo ${LZO_VERSION}..."
 cd lzo-${LZO_VERSION}
-./configure --host=${MINGW_PREFIX} --prefix=$PREFIX --disable-shared
+./configure --cache-file=$(get_config_cache ${MINGW_PREFIX}) --host=${MINGW_PREFIX} --prefix=$PREFIX --disable-shared
 make -j$NCPU install
 cd ..
 
@@ -115,7 +115,7 @@ cd ../..
 echo "Building libxml2 ${LIBXML2_VERSION}..."
 cd libxml2-${LIBXML2_VERSION}
 # --without-iconv: Windows has native encoding support, avoids needing libiconv
-./configure --host=${MINGW_PREFIX} --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --without-iconv --with-zlib=$PREFIX --with-lzma=$PREFIX
+./configure --cache-file=$(get_config_cache ${MINGW_PREFIX}) --host=${MINGW_PREFIX} --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --without-iconv --with-zlib=$PREFIX --with-lzma=$PREFIX
 make -j$NCPU install
 cd ..
 
@@ -125,7 +125,8 @@ cd libarchive-${LIBARCHIVE_VERSION}
 export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig"
 # For static linking tests, autoconf needs all dependencies in LDFLAGS
 export LDFLAGS="$LDFLAGS -L$PREFIX/lib -lz -llzma"
-./configure --host=${MINGW_PREFIX} --prefix=$PREFIX \
+# Use libarchive-specific cache to avoid conflicts from modified LDFLAGS/PKG_CONFIG_LIBDIR
+./configure --cache-file=$(get_config_cache ${MINGW_PREFIX}-libarchive) --host=${MINGW_PREFIX} --prefix=$PREFIX \
     --enable-silent-rules --disable-dependency-tracking \
     --enable-static --disable-shared \
     --disable-bsdtar --disable-bsdcat --disable-bsdcpio \

@@ -44,6 +44,18 @@ export PREFIX="${PREFIX:-$(pwd)/local}"
 # Download cache directory (persistent across builds)
 export DOWNLOAD_CACHE="${HOME}/downloads"
 
+# Configure cache directory (persistent across builds, shared per host triplet)
+export CONFIG_CACHE_DIR="${HOME}/config-cache"
+
+# Get the config.cache file path for a given host triplet
+# Usage: get_config_cache [host-triplet]
+# If no host is specified, uses "native"
+get_config_cache() {
+    local host="${1:-native}"
+    mkdir -p "$CONFIG_CACHE_DIR"
+    echo "$CONFIG_CACHE_DIR/config.cache.${host}"
+}
+
 # Function to download and extract a library
 # Downloads to cache if not present, then unpacks fresh copy
 download_library() {

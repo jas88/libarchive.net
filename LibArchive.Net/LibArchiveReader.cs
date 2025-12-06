@@ -28,6 +28,15 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         ARCHIVE_FATAL=-30
     }
 
+    // Fields to store constructor parameters for Reset() support
+    private readonly string? _filename;
+    private readonly string[]? _filenames;
+    private uint _blockSize;
+    private string? _password;
+
+    private enum SourceType { File, MultiVolume, Stream }
+    private readonly SourceType _sourceType;
+
     static LibArchiveReader()
     {
 #if NETSTANDARD2_0
@@ -77,6 +86,11 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     /// <exception cref="NotSupportedException">Thrown when attempting to read an encrypted RAR or 7z archive (not supported by libarchive).</exception>
     public LibArchiveReader(string filename, uint blockSize = 1<<20, string? password = null) : base(true)
     {
+        _filename = filename;
+        _blockSize = blockSize;
+        _password = password;
+        _sourceType = SourceType.File;
+
         using var uName = new SafeStringBuffer(filename);
         handle = archive_read_new();
         archive_read_support_filter_all(handle);
@@ -105,6 +119,11 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     /// <exception cref="NotSupportedException">Thrown when attempting to read an encrypted RAR or 7z archive (not supported by libarchive).</exception>
     public LibArchiveReader(string[] filenames, uint blockSize=1<<20, string? password = null) : base(true)
     {
+        _filenames = filenames;
+        _blockSize = blockSize;
+        _password = password;
+        _sourceType = SourceType.MultiVolume;
+
         using var names = new DisposableStringArray(filenames);
         handle = archive_read_new();
         archive_read_support_filter_all(handle);
@@ -121,6 +140,9 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         if (archive_read_open_filenames(handle, names.Ptr, (int)blockSize) != 0)
             Throw();
     }
+
+    // Partial method for cleanup - implemented in LibArchiveReader.Stream.cs
+    partial void CleanupCallbacks();
 
     private void Throw()
     {
@@ -146,6 +168,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     /// <returns>true if the handle is released successfully; otherwise, false.</returns>
     protected override bool ReleaseHandle()
     {
+        CleanupCallbacks();
         return archive_read_free(handle) == 0;
     }
 
@@ -168,6 +191,108 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         if (r != (int)ARCHIVE_RESULT.ARCHIVE_EOF)
             Throw();
     }
+
+    /// <summary>
+    /// Resets the archive reader to the beginning, allowing entries to be enumerated again.
+    /// </summary>
+    /// <remarks>
+    /// For file-based archives, this closes and reopens the file.
+    /// For stream-based archives, the stream must be seekable (CanSeek = true).
+    /// </remarks>
+    /// <exception cref="NotSupportedException">Thrown when the archive source does not support reset (e.g., non-seekable stream).</exception>
+    /// <exception cref="ObjectDisposedException">Thrown when the reader has been disposed.</exception>
+    public void Reset()
+    {
+        if (IsClosed || IsInvalid)
+            throw new ObjectDisposedException(nameof(LibArchiveReader));
+
+        // Close current handle
+        archive_read_free(handle);
+        handle = IntPtr.Zero;
+        CleanupCallbacks();
+
+        // Reopen based on source type
+        switch (_sourceType)
+        {
+            case SourceType.File:
+                ReopenFile();
+                break;
+            case SourceType.MultiVolume:
+                ReopenMultiVolume();
+                break;
+            case SourceType.Stream:
+                ReopenStream();
+                break;
+        }
+    }
+
+    private void ReopenFile()
+    {
+        using var uName = new SafeStringBuffer(_filename!);
+        handle = archive_read_new();
+        archive_read_support_filter_all(handle);
+        archive_read_support_format_all(handle);
+
+        if (_password != null)
+        {
+            using var uPassword = new SafeStringBuffer(_password);
+            if (archive_read_add_passphrase(handle, uPassword.Ptr) != 0)
+                Throw();
+        }
+
+        if (archive_read_open_filename(handle, uName.Ptr, (int)_blockSize) != 0)
+            Throw();
+    }
+
+    private void ReopenMultiVolume()
+    {
+        using var names = new DisposableStringArray(_filenames!);
+        handle = archive_read_new();
+        archive_read_support_filter_all(handle);
+        archive_read_support_format_all(handle);
+
+        if (_password != null)
+        {
+            using var uPassword = new SafeStringBuffer(_password);
+            if (archive_read_add_passphrase(handle, uPassword.Ptr) != 0)
+                Throw();
+        }
+
+        if (archive_read_open_filenames(handle, names.Ptr, (int)_blockSize) != 0)
+            Throw();
+    }
+
+    private void ReopenStream()
+    {
+        if (_inputStream == null)
+            throw new InvalidOperationException("No input stream available");
+
+        if (!_inputStream.CanSeek)
+            throw new NotSupportedException("Cannot reset: the underlying stream is not seekable. Use a seekable stream or reopen from file.");
+
+        _inputStream.Seek(0, SeekOrigin.Begin);
+        InitializeFromStream();
+    }
+
+    /// <summary>
+    /// Gets the first entry in the archive without consuming the iterator.
+    /// </summary>
+    /// <returns>The first entry, or null if the archive is empty.</returns>
+    /// <remarks>
+    /// This is a convenience method for archives containing a single file.
+    /// The entry's stream must be consumed before calling other methods on the reader.
+    /// Unlike using Entries().First(), this method does not advance past the entry.
+    /// </remarks>
+    public Entry? FirstEntry()
+    {
+        int r = archive_read_next_header(handle, out var entryHandle);
+        if (r == (int)ARCHIVE_RESULT.ARCHIVE_EOF)
+            return null;
+        if (r != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+            Throw();
+        return Entry.Create(entryHandle, handle);
+    }
+
 
     /// <summary>
     /// Represents an entry (file or directory) within an archive.
@@ -229,6 +354,40 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
                 return null;
             }
         }
+
+        /// <summary>
+        /// Reads the entire content of the entry into a byte array.
+        /// </summary>
+        /// <returns>A byte array containing the entry's content.</returns>
+        /// <remarks>
+        /// This method reads the entire entry content into memory.
+        /// For large files, consider using the Stream property directly.
+        /// This method can only be called once per entry; subsequent calls will return incomplete data.
+        /// </remarks>
+        public byte[] ReadAllBytes()
+        {
+            using var stream = Stream;
+            using var ms = new MemoryStream();
+            stream.CopyTo(ms);
+            return ms.ToArray();
+        }
+
+        /// <summary>
+        /// Reads the entire content of the entry as a string.
+        /// </summary>
+        /// <param name="encoding">The encoding to use. Defaults to UTF-8 if not specified.</param>
+        /// <returns>A string containing the entry's content.</returns>
+        /// <remarks>
+        /// This method reads the entire entry content into memory.
+        /// For large files, consider using the Stream property directly.
+        /// This method can only be called once per entry; subsequent calls will return incomplete data.
+        /// </remarks>
+        public string ReadAllText(System.Text.Encoding? encoding = null)
+        {
+            encoding ??= System.Text.Encoding.UTF8;
+            return encoding.GetString(ReadAllBytes());
+        }
+
     }
 
     /// <summary>
@@ -252,6 +411,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     public class FileStream : Stream
     {
         private readonly IntPtr archiveHandle;
+        private bool _eof;
 
         internal FileStream(IntPtr archiveHandle)
         {
@@ -274,7 +434,12 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         /// <returns>The total number of bytes read into the buffer.</returns>
         public override int Read(byte[] buffer, int offset, int count)
         {
-            int result = archive_read_data(archiveHandle, ref buffer[offset], count);
+            // Once EOF is reached, return 0 without calling native code again
+            // (libarchive throws if archive_read_data is called after EOF)
+            if (_eof)
+                return 0;
+
+            nint result = archive_read_data(archiveHandle, ref buffer[offset], count);
             if (result < 0)
             {
                 // Negative return indicates error (e.g., wrong password, encryption not supported)
@@ -282,7 +447,11 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
                     PtrToStringUTF8(archive_error_string(archiveHandle))
                     ?? $"Error reading archive data (code: {result})");
             }
-            return result;
+
+            if (result == 0)
+                _eof = true;
+
+            return (int)result;
         }
 
         /// <summary>
@@ -367,7 +536,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     private static partial int archive_read_open_filenames(IntPtr a, IntPtr filename, int blocksize);
 
     [LibraryImport("archive")]
-    private static partial int archive_read_data(IntPtr a, ref byte buff, int size);
+    private static partial nint archive_read_data(IntPtr a, ref byte buff, nint size);
 
     [LibraryImport("archive")]
     private static partial int archive_read_next_header(IntPtr a, out IntPtr entry);
@@ -406,7 +575,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     private static extern int archive_read_open_filenames(IntPtr a, IntPtr filename, int blocksize);
 
     [DllImport("archive")]
-    private static extern int archive_read_data(IntPtr a, ref byte buff, int size);
+    private static extern nint archive_read_data(IntPtr a, ref byte buff, nint size);
 
     [DllImport("archive")]
     private static extern int archive_read_next_header(IntPtr a, out IntPtr entry);

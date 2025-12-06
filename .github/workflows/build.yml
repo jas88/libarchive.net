@@ -22,6 +22,13 @@ jobs:
           key: library-downloads-${{ hashFiles('native/build-config.sh') }}
           restore-keys: |
             library-downloads-
+      - name: Cache configure results
+        uses: actions/cache@v4
+        with:
+          path: ~/config-cache
+          key: config-cache-macos-${{ hashFiles('native/build-*.sh') }}
+          restore-keys: |
+            config-cache-macos-
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
@@ -64,6 +71,13 @@ jobs:
           key: library-downloads-${{ hashFiles('native/build-config.sh') }}
           restore-keys: |
             library-downloads-
+      - name: Cache configure results
+        uses: actions/cache@v4
+        with:
+          path: ~/config-cache
+          key: config-cache-linux-${{ hashFiles('native/build-*.sh') }}
+          restore-keys: |
+            config-cache-linux-
       - name: Extract version from tag
         id: version
         run: |
@@ -107,10 +121,8 @@ jobs:
           CCACHE_COMPILERCHECK: mtime
       - name: Verify MinGW compilers are installed
         run: |
-          echo "Checking for MinGW compilers..."
           which i686-w64-mingw32-gcc || echo "WARNING: i686-w64-mingw32-gcc not found"
           which x86_64-w64-mingw32-gcc || echo "WARNING: x86_64-w64-mingw32-gcc not found"
-          ls -la /usr/bin/*mingw32* || true
       - name: Setup sccache wrappers for all compilers
         run: |
           mkdir -p $HOME/.ccache-bin
@@ -185,8 +197,6 @@ jobs:
 
           echo "=== sccache stats after Windows build ==="
           sccache --show-stats
-
-          ls -lh archive-*.dll
       - name: Build Linux libraries (x86, x64, arm64, arm)
         run: |
           # Each build script handles its own toolchain and sccache setup
@@ -209,8 +219,6 @@ jobs:
 
           echo "=== sccache stats after Linux builds ==="
           sccache --show-stats
-
-          ls -lh $HOME/libarchive-native/
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
@@ -250,50 +258,25 @@ jobs:
           # Build and pack the library first
           dotnet pack LibArchive.Net/LibArchive.Net.csproj -o . -p:PackageVersion=${{ steps.version.outputs.VERSION }} --configuration Release --nologo
 
-          # Extract package info
+          # Extract package version for testing
           PACKAGE_FILE=$(ls LibArchive.Net.*.nupkg)
           PACKAGE_VERSION=$(echo "$PACKAGE_FILE" | sed 's/LibArchive.Net.\(.*\).nupkg/\1/')
-          echo "=== Package: $PACKAGE_FILE (version: $PACKAGE_VERSION) ==="
-          unzip -l "$PACKAGE_FILE" | grep -E "runtimes/|\.targets|lib/"
 
           # Clear old cached versions to force using local package
           rm -rf ~/.nuget/packages/libarchive.net/
 
           # Restore and test using the local NuGet package
-          echo "=== Testing with local NuGet package version $PACKAGE_VERSION ==="
-          # Use local source first, then nuget.org for other dependencies
           dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --source . --source https://api.nuget.org/v3/index.json /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
-          # Verify the correct version was restored
-          echo "=== Restored LibArchive.Net version ==="
-          ls -la ~/.nuget/packages/libarchive.net/
-
-          # Build tests for net10.0 first (net462 will be built when testing with Mono)
+          # Build and run tests for net10.0
           dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net10.0 --configuration Release --no-restore /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
-
-          # Debug: Show test output directory
-          echo "=== Test output directory ==="
-          ls -laR Test.LibArchive.Net/bin/Release/net10.0/runtimes/ 2>/dev/null || echo "No runtimes folder in test output!"
-
-          # Run tests for net10.0
-          echo "=== Running tests for net10.0 ==="
           dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net10.0 --configuration Release --no-build --nologo /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
-          echo "=== Mono version (for net462 tests) ==="
-          mono --version | head -n1
-
           # Build and test net462 with Mono
-          echo "=== Running tests for net462 with Mono ==="
-          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net462 --configuration Release --verbosity normal /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
-
-          echo "=== Checking net462 output directory for native libraries ==="
-          ls -laR Test.LibArchive.Net/bin/Release/net462/runtimes/ 2>/dev/null || echo "No runtimes folder in net462 output!"
+          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net462 --configuration Release --nologo /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
       - name: Cleanup build artifacts
-        run: |
-          ls -lh *.nupkg
-          du -sh *
-          rm -rf local {bzip2,libarchive,libxml2,lz4,lzo,xz,zlib,zstd}-* x86-64--musl--stable-*
+        run: rm -rf local {bzip2,libarchive,libxml2,lz4,lzo,xz,zlib,zstd}-* x86-64--musl--stable-*
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
       - name: Upload built packages
