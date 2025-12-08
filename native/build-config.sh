@@ -3,7 +3,7 @@
 # Source this file in platform-specific build scripts
 
 # Library versions
-LIBARCHIVE_VERSION="3.8.3"
+LIBARCHIVE_VERSION="3.8.4"
 LZ4_VERSION="1.10.0"
 ZSTD_VERSION="1.5.7"
 LZO_VERSION="2.10"
