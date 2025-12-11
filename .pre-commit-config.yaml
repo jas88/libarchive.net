@@ -1,16 +1,62 @@
+# Pre-commit hooks - extends shared configuration from build-standards
+# Install: pip install pre-commit && pre-commit install
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v4.6.0
     hooks:
       - id: trailing-whitespace
+        exclude: '\.md$'
       - id: end-of-file-fixer
       - id: check-yaml
-        args: ['--unsafe']  # Allow custom YAML tags
+        args: ['--unsafe']  # Allow custom YAML tags for this repo
+      - id: check-json
+      - id: check-xml
       - id: check-added-large-files
         args: ['--maxkb=1000']
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: ['--fix=lf']
 
   - repo: https://github.com/adrienverge/yamllint
     rev: v1.37.1
     hooks:
       - id: yamllint
         args: ['-c', '.yamllint']
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.41.0
+    hooks:
+      - id: markdownlint
+        args: ['--fix', '--disable', 'MD013', 'MD033', 'MD041']
+
+  - repo: local
+    hooks:
+      - id: dotnet-format
+        name: dotnet format
+        entry: dotnet format --verify-no-changes
+        language: system
+        types: [csharp]
+        pass_filenames: false
+
+      - id: dotnet-build
+        name: dotnet build
+        entry: dotnet build --no-restore
+        language: system
+        types: [csharp]
+        pass_filenames: false
+        stages: [push]
+
+# Commit message format (conventional commits)
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v3.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args: [feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert]

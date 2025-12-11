@@ -1,0 +1,3 @@
+[submodule "build-standards"]
+	path = build-standards
+	url = https://github.com/jas88/build-standards.git

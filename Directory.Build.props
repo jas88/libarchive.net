@@ -1,27 +1,22 @@
 <Project>
+  <!-- Import shared build properties from build-standards submodule -->
+  <Import Project="build-standards/Directory.Build.props.shared" />
+
   <PropertyGroup>
-    <!-- Common properties for all projects -->
-    <LangVersion>latest</LangVersion>
-    <Nullable>enable</Nullable>
+    <!-- Repository-specific overrides -->
+    <!-- Override ImplicitUsings - this repo doesn't use it -->
     <ImplicitUsings>disable</ImplicitUsings>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
 
     <!-- Repository information -->
-    <Authors>James A Sutherland</Authors>
     <Copyright>Copyright 2022-2024</Copyright>
     <PackageLicenseExpression>BSD-2-Clause</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/jas88/libarchive.net/</PackageProjectUrl>
     <RepositoryUrl>https://github.com/jas88/libarchive.net.git</RepositoryUrl>
-    <RepositoryType>git</RepositoryType>
 
     <!-- Build configuration -->
     <DebugType>embedded</DebugType>
-    <EmbedUntrackedSources>true</EmbedUntrackedSources>
-    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
 
-    <!-- Deterministic builds -->
-    <Deterministic>true</Deterministic>
-    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <!-- Override CI build detection for GitHub Actions -->
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
 </Project>
