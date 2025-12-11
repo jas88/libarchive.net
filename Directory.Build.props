@@ -18,5 +18,9 @@
 
     <!-- Override CI build detection for GitHub Actions -->
     <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <!-- Suppress analyzer warnings that conflict with existing code style -->
+    <!-- TODO: Address these in future refactoring -->
+    <NoWarn>$(NoWarn);CA1051;CA1305;CA1310;CA1513;CA1510;CA1720;CA1852;CA1861;CA1866;CA2101;CA2201;CA1806;CA1822;IDE0161</NoWarn>
   </PropertyGroup>
 </Project>

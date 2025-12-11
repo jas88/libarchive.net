@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- TargetFrameworks set by Directory.Build.props (auto-generated from SDK version) -->
+    <IsPackable>true</IsPackable>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <!-- Allow unsafe code for UTF-8 string handling and LibraryImportAttribute -->
@@ -29,12 +30,7 @@
     <MinVerMinimumMajorMinor>0.2</MinVerMinimumMajorMinor>
     <MinVerTagPrefix>v</MinVerTagPrefix>
   </PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="MinVer" Version="6.0.0">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-  </ItemGroup>
+  <!-- MinVer is now inherited from build-standards/Directory.Build.props.shared -->
   <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
     <PackageReference Include="System.Buffers" Version="4.5.1" />
     <PackageReference Include="System.Memory" Version="4.5.5" />
