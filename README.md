@@ -4,6 +4,7 @@
 
 [![NuGet](https://img.shields.io/nuget/v/LibArchive.Net.svg)](https://www.nuget.org/packages/LibArchive.Net/)
 [![License](https://img.shields.io/badge/license-BSD--2--Clause-blue.svg)](LICENSE)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=jas88_libarchive.net&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=jas88_libarchive.net)
 
 ## Features
 
