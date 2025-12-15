@@ -49,7 +49,7 @@ jobs:
           echo "=== ccache stats after build ==="
           ccache -s
       - name: Archive MacOS library
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: maclib
           path: ~/libarchive-native/libarchive.dylib
@@ -289,7 +289,7 @@ jobs:
           overwrite: true
           file_glob: true
       - name: Archive production artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: dist
           path: |
