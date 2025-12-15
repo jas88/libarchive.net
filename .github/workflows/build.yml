@@ -16,14 +16,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
       - name: Cache library downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/downloads
           key: library-downloads-${{ hashFiles('native/build-config.sh') }}
           restore-keys: |
             library-downloads-
       - name: Cache configure results
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/config-cache
           key: config-cache-macos-${{ hashFiles('native/build-*.sh') }}
@@ -65,14 +65,14 @@ jobs:
         with:
           fetch-depth: 0
       - name: Cache library downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/downloads
           key: library-downloads-${{ hashFiles('native/build-config.sh') }}
           restore-keys: |
             library-downloads-
       - name: Cache configure results
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/config-cache
           key: config-cache-linux-${{ hashFiles('native/build-*.sh') }}
