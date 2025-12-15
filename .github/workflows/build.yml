@@ -98,7 +98,7 @@ jobs:
           version: 1.0
           execute_install_scripts: true
       - name: Retrieve MacOS library
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: maclib
       - name: Install LLVM-MinGW for ARM64
