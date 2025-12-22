@@ -94,9 +94,9 @@ cd ..
 
 echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
-# --disable-maintainer-mode prevents make from regenerating autotools files (avoids automake version mismatch)
-./configure --cache-file=$(get_config_cache ${MINGW_PREFIX}) --host=${MINGW_PREFIX} --with-pic --disable-shared --prefix=$PREFIX --disable-scripts --disable-doc --disable-maintainer-mode
-make -j$NCPU install
+./configure --cache-file=$(get_config_cache ${MINGW_PREFIX}) --host=${MINGW_PREFIX} --with-pic --disable-shared --prefix=$PREFIX --disable-scripts --disable-doc
+# Set AUTOMAKE/ACLOCAL to true to prevent make from regenerating autotools files (avoids automake version mismatch)
+AUTOMAKE=true ACLOCAL=true make -j$NCPU install
 cd ..
 
 echo "Building lzo ${LZO_VERSION}..."

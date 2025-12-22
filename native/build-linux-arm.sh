@@ -114,9 +114,9 @@ cd ..
 
 echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
-# --disable-maintainer-mode prevents make from regenerating autotools files (avoids automake version mismatch)
-./configure --cache-file=$(get_config_cache arm-linux) --build=x86_64-pc-linux-gnu --host=arm-linux --with-pic --disable-shared --prefix=$PREFIX --disable-maintainer-mode
-make -sj$NCPU install
+./configure --cache-file=$(get_config_cache arm-linux) --build=x86_64-pc-linux-gnu --host=arm-linux --with-pic --disable-shared --prefix=$PREFIX
+# Set AUTOMAKE/ACLOCAL to true to prevent make from regenerating autotools files (avoids automake version mismatch)
+AUTOMAKE=true ACLOCAL=true make -sj$NCPU install
 cd ..
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
