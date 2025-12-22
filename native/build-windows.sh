@@ -95,11 +95,6 @@ cd ..
 echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
 ./configure --cache-file=$(get_config_cache ${MINGW_PREFIX}) --host=${MINGW_PREFIX} --with-pic --disable-shared --prefix=$PREFIX --disable-scripts --disable-doc
-# Touch all generated files to prevent make from triggering automake regeneration
-# This avoids version mismatch errors when xz was built with a different automake patch version
-find . -name Makefile.in -exec touch {} \;
-find . -name Makefile -exec touch {} \;
-touch config.status aclocal.m4 configure
 make -j$NCPU install
 cd ..
 

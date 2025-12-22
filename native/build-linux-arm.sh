@@ -115,10 +115,6 @@ cd ..
 echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
 ./configure --cache-file=$(get_config_cache arm-linux) --build=x86_64-pc-linux-gnu --host=arm-linux --with-pic --disable-shared --prefix=$PREFIX
-# Touch all generated files to prevent make from triggering automake regeneration
-find . -name Makefile.in -exec touch {} \;
-find . -name Makefile -exec touch {} \;
-touch config.status aclocal.m4 configure
 make -sj$NCPU install
 cd ..
 
