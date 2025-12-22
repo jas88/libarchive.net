@@ -172,7 +172,7 @@ download_all_libraries() {
     download_library "$XZ_URL" "xz" "xz-${XZ_VERSION}"
 
     # Fix xz automake timestamp issue - touch generated files to prevent regeneration
-    # xz 5.8+ requires automake 1.17 which may not be available on build systems
+    # xz 5.8.2+ requires automake 1.18 which may not be available on build systems
     if [ -d "xz-${XZ_VERSION}" ]; then
         echo "Fixing xz automake timestamps..."
         find "xz-${XZ_VERSION}" -name "configure" -exec touch {} \;
