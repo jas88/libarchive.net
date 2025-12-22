@@ -9,7 +9,7 @@ ZSTD_VERSION="1.5.7"
 LZO_VERSION="2.10"
 LIBXML2_VERSION="2.15.1"
 ZLIB_VERSION="1.3.1"
-XZ_VERSION="5.8.1"
+XZ_VERSION="5.8.2"
 BZIP2_VERSION="1.0.8"
 
 # Bootlin toolchain versions (Linux only)
