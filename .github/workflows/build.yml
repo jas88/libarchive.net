@@ -144,15 +144,16 @@ jobs:
         run: |
           # xz 5.8.2+ requires automake 1.18 and autoconf 2.72
           # Use ftpmirror.gnu.org to auto-select nearest mirror (more reliable than ftp.gnu.org)
+          # --proto =https ensures redirects stay on HTTPS (security requirement)
           # Install autoconf 2.72
-          curl -sSL --retry 3 --retry-delay 5 https://ftpmirror.gnu.org/gnu/autoconf/autoconf-2.72.tar.xz | tar xJ
+          curl -sSL --proto =https --retry 3 --retry-delay 5 https://ftpmirror.gnu.org/gnu/autoconf/autoconf-2.72.tar.xz | tar xJ
           cd autoconf-2.72
           ./configure --prefix=$HOME/.local
           make -j$(nproc)
           make install
           cd ..
           # Install automake 1.18
-          curl -sSL --retry 3 --retry-delay 5 https://ftpmirror.gnu.org/gnu/automake/automake-1.18.tar.xz | tar xJ
+          curl -sSL --proto =https --retry 3 --retry-delay 5 https://ftpmirror.gnu.org/gnu/automake/automake-1.18.tar.xz | tar xJ
           cd automake-1.18
           ./configure --prefix=$HOME/.local
           make -j$(nproc)
