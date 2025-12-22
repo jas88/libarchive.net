@@ -114,7 +114,8 @@ cd ..
 
 echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
-./configure --cache-file="$(get_config_cache x86_64-linux)" --with-pic --disable-shared --prefix=$PREFIX
+# --disable-maintainer-mode prevents make from regenerating autotools files (avoids automake version mismatch)
+./configure --cache-file="$(get_config_cache x86_64-linux)" --with-pic --disable-shared --prefix=$PREFIX --disable-maintainer-mode
 make -sj$NCPU install
 cd ..
 
