@@ -1,4 +1,4 @@
-v0.3.0 - TBD
+v0.3.0 - December 22, 2025
 
 **Archive Write Support:**
 - New `LibArchiveWriter` class for creating archives in multiple formats
