@@ -115,8 +115,11 @@ cd ..
 echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
 ./configure --cache-file="$(get_config_cache x86_64-linux)" --with-pic --disable-shared --prefix=$PREFIX
-# Set AUTOMAKE/ACLOCAL to true to prevent make from regenerating autotools files (avoids automake version mismatch)
-AUTOMAKE=true ACLOCAL=true make -sj$NCPU install
+# Touch all generated files to prevent make from triggering automake regeneration
+find . -name Makefile.in -exec touch {} \;
+find . -name Makefile -exec touch {} \;
+touch config.status aclocal.m4 configure
+make -sj$NCPU install
 cd ..
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
