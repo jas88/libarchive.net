@@ -199,6 +199,19 @@ echo "" >> "$DEPS_FILE"
 echo "=== Imported Symbols (from system DLLs) ===" >> "$DEPS_FILE"
 ${MINGW_PREFIX}-nm -u ${OUTPUT_NAME} | awk '{print $2}' | sort >> "$DEPS_FILE"
 
+echo "" >> "$DEPS_FILE"
+echo "=== UCRT Imports by Module ===" >> "$DEPS_FILE"
+# Extract import table showing which functions come from which DLL
+${MINGW_PREFIX}-objdump -p ${OUTPUT_NAME} | awk '
+    /DLL Name:.*api-ms-win-crt/ { current_dll = $3; next }
+    /DLL Name:/ { current_dll = ""; next }
+    current_dll && /^[[:space:]]+[0-9a-f]+[[:space:]]+[0-9a-f]+[[:space:]]+[0-9]+[[:space:]]+/ {
+        # Import table entry format: ordinal hint name
+        func = $4
+        if (func != "") print current_dll ": " func
+    }
+' | sort >> "$DEPS_FILE"
+
 echo "=== Checking DLL dependencies ==="
 ${MINGW_PREFIX}-objdump -p ${OUTPUT_NAME} | grep "DLL Name:" || echo "No external DLL dependencies"
 
