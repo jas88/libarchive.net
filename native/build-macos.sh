@@ -128,7 +128,8 @@ nm -gu libarchive.dylib | awk '{print $2}' | sort >> "$DEPS_FILE"
 
 # Fail on unexpected dependencies (only system libs allowed)
 echo "=== Checking for unexpected dependencies ==="
-DEPS=$(otool -L libarchive.dylib | tail -n +2 | awk '{print $1}')
+# Skip first two lines: library name header and its own install name
+DEPS=$(otool -L libarchive.dylib | tail -n +3 | awk '{print $1}')
 for dep in $DEPS; do
     case "$dep" in
         /usr/lib/libSystem.B.dylib) ;;
