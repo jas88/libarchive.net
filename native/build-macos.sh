@@ -128,10 +128,11 @@ nm -gu libarchive.dylib | awk '{print $2}' | sort >> "$DEPS_FILE"
 
 # Fail on unexpected dependencies (only system libs allowed)
 echo "=== Checking for unexpected dependencies ==="
-# Skip first two lines: library name header and its own install name
-DEPS=$(otool -L libarchive.dylib | tail -n +3 | awk '{print $1}')
+DEPS=$(otool -L libarchive.dylib | awk '{print $1}')
 for dep in $DEPS; do
     case "$dep" in
+        libarchive.dylib) ;;  # library's own install name (appears per architecture in universal binary)
+        libarchive.dylib*) ;;  # architecture headers like "libarchive.dylib (architecture x86_64):"
         /usr/lib/libSystem.B.dylib) ;;
         /usr/lib/libiconv.*.dylib) ;;
         /usr/lib/libresolv.*.dylib) ;;
