@@ -225,23 +225,12 @@ jobs:
           sccache --show-stats
       - name: Build Linux libraries (x86, x64, arm64, arm)
         run: |
-          # Each build script handles its own toolchain and sccache setup
-
-          # Build x86 (32-bit)
-          echo "=== Building Linux x86 ==="
-          ./native/build-linux-x86.sh
-
-          # Build x64
-          echo "=== Building Linux x64 ==="
-          ./native/build-linux.sh
-
-          # Build arm64
-          echo "=== Building Linux ARM64 ==="
-          ./native/build-linux-arm64.sh
-
-          # Build armv7
-          echo "=== Building Linux ARM v7 ==="
-          ./native/build-linux-arm.sh
+          # Build all Linux architectures using unified script
+          for arch in x86 x64 arm64 arm; do
+            echo "=== Building Linux $arch ==="
+            ./native/build-linux-all.sh $arch
+            echo "✓ Linux $arch build complete"
+          done
 
           echo "=== sccache stats after Linux builds ==="
           sccache --show-stats
