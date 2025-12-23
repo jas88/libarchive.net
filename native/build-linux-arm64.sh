@@ -62,9 +62,10 @@ export PATH="$(pwd)/.ccache-bin:$TOOLCHAIN_PREFIX/bin:$PATH"
 export PREFIX="${PREFIX:-$(pwd)/local}"
 
 # Set compiler flags for static linking
+# Use hidden visibility and function sections to enable dead code elimination
 export CPPFLAGS="-I$PREFIX/include"
-export CFLAGS="-fPIC -O2 $CPPFLAGS -static-libgcc"
-export CXXFLAGS="-fPIC -O2 $CPPFLAGS -static-libstdc++ -static-libgcc"
+export CFLAGS="-fPIC -O2 $CPPFLAGS -static-libgcc -fvisibility=hidden -ffunction-sections -fdata-sections"
+export CXXFLAGS="-fPIC -O2 $CPPFLAGS -static-libstdc++ -static-libgcc -fvisibility=hidden -ffunction-sections -fdata-sections"
 export LDFLAGS="-L$PREFIX/lib -static"
 
 echo "Toolchain installed:"
@@ -148,7 +149,13 @@ cd ..
 verify_static_lib "$PREFIX/lib/libarchive.a" "${AR/ar/nm}"
 
 echo "Creating final shared library..."
-$CC -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/liblzo2.a local/lib/libzstd.a local/lib/liblz4.a ${TOOLCHAIN_SYSROOT}/lib/libc.a -nostdlib
+$CC -shared -o libarchive.so \
+    -Wl,--version-script="$(dirname "$0")/libarchive.map" \
+    -Wl,--gc-sections \
+    -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive \
+    local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a \
+    local/lib/liblzo2.a local/lib/libzstd.a local/lib/liblz4.a \
+    ${TOOLCHAIN_SYSROOT}/lib/libc.a -nostdlib
 
 echo "Testing library..."
 cat > test.c <<EOT
