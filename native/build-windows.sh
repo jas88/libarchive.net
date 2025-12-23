@@ -4,11 +4,14 @@
 
 set -e
 
+# Get absolute path to script directory
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 # Detect platform and set up cross-compilation
 ARCH="${ARCH:-x86_64}"
 
 # Load shared configuration
-. "$(dirname "$0")/build-config.sh"
+. "${SCRIPT_DIR}/build-config.sh"
 
 case "$ARCH" in
     x86_64|x64)
@@ -165,7 +168,7 @@ done
 # Use .def file to export only functions needed by libarchive.net
 # Use --gc-sections to eliminate dead code
 ${CC} -shared -o ${OUTPUT_NAME} \
-    "$(dirname "$0")/libarchive.def" \
+    "${SCRIPT_DIR}/libarchive.def" \
     -Wl,--gc-sections \
     -Wl,--whole-archive \
     $PREFIX/lib/libarchive.a \

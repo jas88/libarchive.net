@@ -150,7 +150,7 @@ verify_static_lib "$PREFIX/lib/libarchive.a" "${AR/ar/nm}"
 
 echo "Creating final shared library..."
 $CC -shared -o libarchive.so \
-    -Wl,--version-script="$(dirname "$0")/libarchive.map" \
+    -Wl,--version-script="${SCRIPT_DIR}/libarchive.map" \
     -Wl,--gc-sections \
     -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive \
     local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a \
