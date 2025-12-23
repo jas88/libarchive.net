@@ -205,3 +205,37 @@ echo "  gcc: ${GCC_VERSION:-N/A}"
 echo "  binutils: ${BINUTILS_VERSION:-N/A}"
 echo "  CPUs: ${NCPU}"
 echo "  PREFIX: ${PREFIX}"
+
+# Static library verification output file
+export STATIC_LIBS_FILE="${STATIC_LIBS_FILE:-static-libs.txt}"
+
+# Function to verify a static library and capture symbol information
+# Usage: verify_static_lib <library_path> [nm_command]
+verify_static_lib() {
+    local lib="$1"
+    local nm_cmd="${2:-${NM:-nm}}"
+    local lib_name
+    lib_name="$(basename "$lib")"
+
+    echo "=== Verifying $lib_name ===" >> "$STATIC_LIBS_FILE"
+
+    if [ ! -f "$lib" ]; then
+        echo "ERROR: Library not found: $lib" >> "$STATIC_LIBS_FILE"
+        echo "" >> "$STATIC_LIBS_FILE"
+        return 1
+    fi
+
+    # Count symbols
+    local defined
+    local undefined
+    defined=$($nm_cmd "$lib" 2>/dev/null | grep -c " [TtDdBbRr] " || echo 0)
+    undefined=$($nm_cmd -u "$lib" 2>/dev/null | wc -l | tr -d ' ')
+
+    echo "Defined symbols: $defined" >> "$STATIC_LIBS_FILE"
+    echo "Undefined symbols: $undefined" >> "$STATIC_LIBS_FILE"
+
+    # List undefined symbols (these get resolved at link time)
+    echo "Undefined symbol sample:" >> "$STATIC_LIBS_FILE"
+    $nm_cmd -u "$lib" 2>/dev/null | head -30 >> "$STATIC_LIBS_FILE"
+    echo "" >> "$STATIC_LIBS_FILE"
+}

@@ -59,6 +59,15 @@ jobs:
           path: ~/libarchive-native/libarchive.dylib
           if-no-files-found: error
           retention-days: 1
+      - name: Archive MacOS dependency verification
+        uses: actions/upload-artifact@v6
+        with:
+          name: dependencies-macos
+          path: |
+            ~/libarchive-native/dependencies-macos.txt
+            ~/libarchive-native/static-libs-macos.txt
+          if-no-files-found: warn
+          retention-days: 30
   linux:
     needs: [macos]
     name: Build Windows DLLs, Linux library, and test
@@ -193,6 +202,8 @@ jobs:
 
             ARCH=$arch ../native/build-windows.sh
             mv archive-*.dll ../
+            # Preserve verification files before cleanup
+            mv dependencies-*.txt static-libs-*.txt ../ 2>/dev/null || true
             cd ..
 
             # Clean up to avoid conflicts with next architecture
@@ -224,6 +235,28 @@ jobs:
 
           echo "=== sccache stats after Linux builds ==="
           sccache --show-stats
+      - name: Archive Windows dependency verification
+        uses: actions/upload-artifact@v6
+        with:
+          name: dependencies-windows
+          path: |
+            dependencies-x86.txt
+            dependencies-x64.txt
+            dependencies-arm64.txt
+            static-libs-x86.txt
+            static-libs-x64.txt
+            static-libs-arm64.txt
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Archive Linux dependency verification
+        uses: actions/upload-artifact@v6
+        with:
+          name: dependencies-linux
+          path: |
+            ~/libarchive-native/dependencies-linux-*.txt
+            ~/libarchive-native/static-libs-linux-*.txt
+          if-no-files-found: warn
+          retention-days: 30
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:

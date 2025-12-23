@@ -66,6 +66,13 @@ else
     echo "Using pre-downloaded library sources"
 fi
 
+# Initialize static library verification file
+export STATIC_LIBS_FILE="$(pwd)/static-libs-${ARCH}.txt"
+echo "Static Library Verification Report" > "$STATIC_LIBS_FILE"
+echo "Platform: Windows ${ARCH} (MinGW)" >> "$STATIC_LIBS_FILE"
+echo "Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$STATIC_LIBS_FILE"
+echo "" >> "$STATIC_LIBS_FILE"
+
 # Build compression libraries
 echo "Building lz4 ${LZ4_VERSION}..."
 cd lz4-${LZ4_VERSION}/lib
@@ -74,6 +81,7 @@ mkdir -p $PREFIX/lib $PREFIX/include
 cp liblz4.a $PREFIX/lib/
 cp lz4.h lz4hc.h lz4frame.h $PREFIX/include/
 cd ../..
+verify_static_lib "$PREFIX/lib/liblz4.a" "${MINGW_PREFIX}-nm"
 
 echo "Building bzip2 ${BZIP2_VERSION}..."
 cd bzip2-${BZIP2_VERSION}
@@ -85,24 +93,28 @@ mkdir -p $PREFIX/lib $PREFIX/include
 cp libbz2.a $PREFIX/lib/
 cp bzlib.h $PREFIX/include/
 cd ..
+verify_static_lib "$PREFIX/lib/libbz2.a" "${MINGW_PREFIX}-nm"
 
 echo "Building zlib ${ZLIB_VERSION}..."
 cd zlib-${ZLIB_VERSION}
 CHOST=${MINGW_PREFIX} ./configure --static --prefix=$PREFIX
 make -j$NCPU install
 cd ..
+verify_static_lib "$PREFIX/lib/libz.a" "${MINGW_PREFIX}-nm"
 
 echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
 ./configure --cache-file=$(get_config_cache ${MINGW_PREFIX}) --host=${MINGW_PREFIX} --with-pic --disable-shared --prefix=$PREFIX --disable-scripts --disable-doc
 make -j$NCPU install
 cd ..
+verify_static_lib "$PREFIX/lib/liblzma.a" "${MINGW_PREFIX}-nm"
 
 echo "Building lzo ${LZO_VERSION}..."
 cd lzo-${LZO_VERSION}
 ./configure --cache-file=$(get_config_cache ${MINGW_PREFIX}) --host=${MINGW_PREFIX} --prefix=$PREFIX --disable-shared
 make -j$NCPU install
 cd ..
+verify_static_lib "$PREFIX/lib/liblzo2.a" "${MINGW_PREFIX}-nm"
 
 echo "Building zstd ${ZSTD_VERSION}..."
 cd zstd-${ZSTD_VERSION}/lib
@@ -111,6 +123,7 @@ mkdir -p $PREFIX/lib $PREFIX/include
 cp libzstd.a $PREFIX/lib/
 cp zstd.h zstd_errors.h zdict.h $PREFIX/include/
 cd ../..
+verify_static_lib "$PREFIX/lib/libzstd.a" "${MINGW_PREFIX}-nm"
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
 cd libxml2-${LIBXML2_VERSION}
@@ -118,6 +131,7 @@ cd libxml2-${LIBXML2_VERSION}
 ./configure --cache-file=$(get_config_cache ${MINGW_PREFIX}) --host=${MINGW_PREFIX} --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --without-iconv --with-zlib=$PREFIX --with-lzma=$PREFIX
 make -j$NCPU install
 cd ..
+verify_static_lib "$PREFIX/lib/libxml2.a" "${MINGW_PREFIX}-nm"
 
 echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
@@ -134,6 +148,7 @@ export LDFLAGS="$LDFLAGS -L$PREFIX/lib -lz -llzma"
     --with-pic --with-zlib --with-bz2lib --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-xml2
 make -j$NCPU install
 cd ..
+verify_static_lib "$PREFIX/lib/libarchive.a" "${MINGW_PREFIX}-nm"
 
 echo "Creating Windows DLL..."
 # Verify all libraries exist before linking
@@ -165,8 +180,36 @@ ${CC} -shared -o ${OUTPUT_NAME} \
 echo "Testing DLL..."
 file ${OUTPUT_NAME}
 
+# Generate dependency verification report
+DEPS_FILE="$(pwd)/dependencies-${ARCH}.txt"
+
+echo "=== Dependency Verification ===" > "$DEPS_FILE"
+echo "Platform: Windows ${ARCH} (MinGW)" >> "$DEPS_FILE"
+echo "Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$DEPS_FILE"
+echo "" >> "$DEPS_FILE"
+
+echo "=== DLL Dependencies ===" >> "$DEPS_FILE"
+${MINGW_PREFIX}-objdump -p ${OUTPUT_NAME} | grep "DLL Name:" >> "$DEPS_FILE" || echo "No external DLL dependencies" >> "$DEPS_FILE"
+
+echo "" >> "$DEPS_FILE"
+echo "=== Exported Symbols (API) ===" >> "$DEPS_FILE"
+${MINGW_PREFIX}-nm ${OUTPUT_NAME} | grep " T " | awk '{print $3}' | sort >> "$DEPS_FILE"
+
+echo "" >> "$DEPS_FILE"
+echo "=== Imported Symbols (from system DLLs) ===" >> "$DEPS_FILE"
+${MINGW_PREFIX}-nm -u ${OUTPUT_NAME} | awk '{print $2}' | sort >> "$DEPS_FILE"
+
 echo "=== Checking DLL dependencies ==="
 ${MINGW_PREFIX}-objdump -p ${OUTPUT_NAME} | grep "DLL Name:" || echo "No external DLL dependencies"
+
+# Fail on unexpected DLL dependencies
+UNEXPECTED=$(${MINGW_PREFIX}-objdump -p ${OUTPUT_NAME} | grep "DLL Name:" | grep -viE "KERNEL32.dll|WS2_32.dll|BCRYPT.dll|ADVAPI32.dll|ntdll.dll")
+if [ -n "$UNEXPECTED" ]; then
+    echo "ERROR: Unexpected DLL dependencies found:"
+    echo "$UNEXPECTED"
+    exit 1
+fi
+echo "Dependency check passed: only Windows system DLLs linked"
 
 echo "=== Inspecting symbols (before stripping) ==="
 ${MINGW_PREFIX}-nm ${OUTPUT_NAME} | grep -c " T " | xargs echo "Defined symbols:"
@@ -176,5 +219,10 @@ ${MINGW_PREFIX}-nm ${OUTPUT_NAME} | grep -E "(__udivdi3|__umoddi3|__divdi3|__mod
 echo "Stripping debug symbols..."
 ${STRIP} ${OUTPUT_NAME} || echo "WARNING: strip failed, continuing with unstripped DLL"
 ls -lh ${OUTPUT_NAME}
+
+# Copy verification files to a common location (will be collected by build-all.sh)
+echo "Verification files saved:"
+echo "  $DEPS_FILE"
+echo "  $STATIC_LIBS_FILE"
 
 echo "Windows ${ARCH} build complete: ${OUTPUT_NAME}"
