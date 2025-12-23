@@ -133,7 +133,7 @@ verify_static_lib "$PREFIX/lib/liblzma.a" "${AR/ar/nm}"
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
 cd libxml2-${LIBXML2_VERSION}
-./autogen.sh --cache-file=$(get_config_cache i686-linux) --build=x86_64-pc-linux-gnu --host=i686-linux --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX/../zlib-${ZLIB_VERSION} --with-lzma=$PREFIX/../xz-${XZ_VERSION}
+./autogen.sh --cache-file=$(get_config_cache i686-linux) --build=x86_64-pc-linux-gnu --host=i686-linux --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX --with-lzma=$PREFIX
 make -sj$NCPU install
 cd ..
 verify_static_lib "$PREFIX/lib/libxml2.a" "${AR/ar/nm}"
