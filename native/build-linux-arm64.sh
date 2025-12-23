@@ -91,7 +91,7 @@ mkdir -p $PREFIX/lib $PREFIX/include
 cp liblz4.a $PREFIX/lib/
 cp lz4.h lz4hc.h lz4frame.h $PREFIX/include/
 cd ../..
-verify_static_lib "$PREFIX/lib/liblz4.a" "${AR/ar/nm}"
+verify_static_lib "$PREFIX/lib/liblz4.a" "${AR/%ar/nm}"
 
 echo "Building zstd ${ZSTD_VERSION}..."
 cd zstd-${ZSTD_VERSION}/lib
@@ -100,7 +100,7 @@ mkdir -p $PREFIX/lib $PREFIX/include
 cp libzstd.a $PREFIX/lib/
 cp zstd.h zstd_errors.h zdict.h $PREFIX/include/
 cd ../..
-verify_static_lib "$PREFIX/lib/libzstd.a" "${AR/ar/nm}"
+verify_static_lib "$PREFIX/lib/libzstd.a" "${AR/%ar/nm}"
 
 echo "Building bzip2 ${BZIP2_VERSION}..."
 cd bzip2-${BZIP2_VERSION}
@@ -109,35 +109,35 @@ mkdir -p $PREFIX/lib $PREFIX/include
 cp libbz2.a $PREFIX/lib/
 cp bzlib.h $PREFIX/include/
 cd ..
-verify_static_lib "$PREFIX/lib/libbz2.a" "${AR/ar/nm}"
+verify_static_lib "$PREFIX/lib/libbz2.a" "${AR/%ar/nm}"
 
 echo "Building lzo ${LZO_VERSION}..."
 cd lzo-${LZO_VERSION}
 ./configure --quiet --cache-file="$(get_config_cache aarch64-linux)" --build=x86_64-pc-linux-gnu --host=aarch64-linux --prefix=$PREFIX --disable-shared --enable-static
 make -sj$NCPU install
 cd ..
-verify_static_lib "$PREFIX/lib/liblzo2.a" "${AR/ar/nm}"
+verify_static_lib "$PREFIX/lib/liblzo2.a" "${AR/%ar/nm}"
 
 echo "Building zlib ${ZLIB_VERSION}..."
 cd zlib-${ZLIB_VERSION}
 CHOST=aarch64-linux ./configure --static --prefix=$PREFIX
 make -sj$NCPU install
 cd ..
-verify_static_lib "$PREFIX/lib/libz.a" "${AR/ar/nm}"
+verify_static_lib "$PREFIX/lib/libz.a" "${AR/%ar/nm}"
 
 echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
 ./configure --quiet --cache-file="$(get_config_cache aarch64-linux)" --build=x86_64-pc-linux-gnu --host=aarch64-linux --with-pic --disable-shared --prefix=$PREFIX
 make -sj$NCPU install
 cd ..
-verify_static_lib "$PREFIX/lib/liblzma.a" "${AR/ar/nm}"
+verify_static_lib "$PREFIX/lib/liblzma.a" "${AR/%ar/nm}"
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
 cd libxml2-${LIBXML2_VERSION}
 ./autogen.sh --cache-file="$(get_config_cache aarch64-linux)" --build=x86_64-pc-linux-gnu --host=aarch64-linux --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX --with-lzma=$PREFIX
 make -sj$NCPU install
 cd ..
-verify_static_lib "$PREFIX/lib/libxml2.a" "${AR/ar/nm}"
+verify_static_lib "$PREFIX/lib/libxml2.a" "${AR/%ar/nm}"
 
 echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
@@ -146,7 +146,7 @@ export LIBXML2_PC_LIBS=-L$PREFIX
 ./configure --cache-file="$(get_config_cache aarch64-linux)" --build=x86_64-pc-linux-gnu --host=aarch64-linux --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2 --disable-shared --enable-static
 make -sj$NCPU install
 cd ..
-verify_static_lib "$PREFIX/lib/libarchive.a" "${AR/ar/nm}"
+verify_static_lib "$PREFIX/lib/libarchive.a" "${AR/%ar/nm}"
 
 echo "Creating final shared library..."
 $CC -shared -o libarchive.so \
@@ -172,7 +172,7 @@ file libarchive.so
 
 # Generate dependency verification report
 DEPS_FILE="$(pwd)/dependencies.txt"
-NM_CMD="${AR/ar/nm}"
+NM_CMD="${AR/%ar/nm}"
 
 echo "=== Dependency Verification ===" > "$DEPS_FILE"
 echo "Platform: Linux ARM64 (aarch64 musl)" >> "$DEPS_FILE"
