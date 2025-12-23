@@ -121,10 +121,9 @@ export PATH="$(pwd)/.ccache-bin:$TOOLCHAIN_PREFIX/bin:$PATH"
 export PREFIX="${PREFIX:-$(pwd)/local}"
 
 # Set compiler flags for static linking
-# Use hidden visibility and function sections to enable dead code elimination
 export CPPFLAGS="-I$PREFIX/include"
-export CFLAGS="-fPIC -O2 $CPPFLAGS -static-libgcc -fvisibility=hidden -ffunction-sections -fdata-sections"
-export CXXFLAGS="-fPIC -O2 $CPPFLAGS -static-libstdc++ -static-libgcc -fvisibility=hidden -ffunction-sections -fdata-sections"
+export CFLAGS="-fPIC -O2 $CPPFLAGS -static-libgcc"
+export CXXFLAGS="-fPIC -O2 $CPPFLAGS -static-libstdc++ -static-libgcc"
 export LDFLAGS="-L$PREFIX/lib -static"
 
 # Configure flags for cross-compilation (all builds run on x86_64 host)
@@ -217,11 +216,7 @@ if [ -n "$EXTRA_LINK_LIBS" ]; then
     LIBGCC_PATH=$($CC -print-libgcc-file-name)
 fi
 
-# Use version script to export only functions needed by libarchive.net
-# Use --gc-sections to eliminate dead code
 $CC -shared -o libarchive.so \
-    -Wl,--version-script="${SCRIPT_DIR}/libarchive.map" \
-    -Wl,--gc-sections \
     -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive \
     local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a \
     local/lib/liblzo2.a local/lib/libzstd.a local/lib/liblz4.a \
