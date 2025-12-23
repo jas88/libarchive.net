@@ -217,7 +217,8 @@ ${MINGW_PREFIX}-objdump -p ${OUTPUT_NAME} | grep "DLL Name:" || echo "No externa
 
 # Fail on unexpected DLL dependencies
 # Allow: Windows system DLLs and Universal CRT (api-ms-win-crt-*) which is standard on Windows 10+
-UNEXPECTED=$(${MINGW_PREFIX}-objdump -p ${OUTPUT_NAME} | grep "DLL Name:" | grep -viE "KERNEL32.dll|WS2_32.dll|BCRYPT.dll|ADVAPI32.dll|ntdll.dll|api-ms-win-crt-")
+# Note: grep returns 1 when no matches found (which is success for us), so add || true
+UNEXPECTED=$(${MINGW_PREFIX}-objdump -p ${OUTPUT_NAME} | grep "DLL Name:" | grep -viE "KERNEL32.dll|WS2_32.dll|BCRYPT.dll|ADVAPI32.dll|ntdll.dll|api-ms-win-crt-" || true)
 if [ -n "$UNEXPECTED" ]; then
     echo "ERROR: Unexpected DLL dependencies found:"
     echo "$UNEXPECTED"
