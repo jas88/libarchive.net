@@ -55,7 +55,7 @@ verify_static_lib "$PREFIX/lib/libbz2.a"
 
 echo "Building lzo ${LZO_VERSION}..."
 cd lzo-${LZO_VERSION}
-./configure --cache-file=$(get_config_cache darwin-universal) --prefix=$PREFIX
+./configure --quiet --cache-file=$(get_config_cache darwin-universal) --prefix=$PREFIX
 make -sj$NCPU install
 cd ..
 verify_static_lib "$PREFIX/lib/liblzo2.a"
@@ -71,7 +71,7 @@ echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
 # Regenerate autotools files for local automake version
 aclocal && automake && autoconf
-./configure --cache-file=$(get_config_cache darwin-universal) --with-pic --disable-shared --prefix=$PREFIX
+./configure --quiet --cache-file=$(get_config_cache darwin-universal) --with-pic --disable-shared --prefix=$PREFIX
 make -sj$NCPU install
 cd ..
 verify_static_lib "$PREFIX/lib/liblzma.a"

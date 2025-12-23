@@ -103,7 +103,7 @@ verify_static_lib "$PREFIX/lib/libzstd.a" "${AR/ar/nm}"
 
 echo "Building bzip2 ${BZIP2_VERSION}..."
 cd bzip2-${BZIP2_VERSION}
-make -j$NCPU libbz2.a CC=$CC AR=$AR RANLIB=$RANLIB CFLAGS="-fPIC -O2 -D_FILE_OFFSET_BITS=64"
+make -sj$NCPU libbz2.a CC=$CC AR=$AR RANLIB=$RANLIB CFLAGS="-fPIC -O2 -w -D_FILE_OFFSET_BITS=64"
 mkdir -p $PREFIX/lib $PREFIX/include
 cp libbz2.a $PREFIX/lib/
 cp bzlib.h $PREFIX/include/
@@ -112,7 +112,7 @@ verify_static_lib "$PREFIX/lib/libbz2.a" "${AR/ar/nm}"
 
 echo "Building lzo ${LZO_VERSION}..."
 cd lzo-${LZO_VERSION}
-./configure --cache-file="$(get_config_cache aarch64-linux)" --build=x86_64-pc-linux-gnu --host=aarch64-linux --prefix=$PREFIX --disable-shared --enable-static
+./configure --quiet --cache-file="$(get_config_cache aarch64-linux)" --build=x86_64-pc-linux-gnu --host=aarch64-linux --prefix=$PREFIX --disable-shared --enable-static
 make -sj$NCPU install
 cd ..
 verify_static_lib "$PREFIX/lib/liblzo2.a" "${AR/ar/nm}"
@@ -126,7 +126,7 @@ verify_static_lib "$PREFIX/lib/libz.a" "${AR/ar/nm}"
 
 echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
-./configure --cache-file="$(get_config_cache aarch64-linux)" --build=x86_64-pc-linux-gnu --host=aarch64-linux --with-pic --disable-shared --prefix=$PREFIX
+./configure --quiet --cache-file="$(get_config_cache aarch64-linux)" --build=x86_64-pc-linux-gnu --host=aarch64-linux --with-pic --disable-shared --prefix=$PREFIX
 make -sj$NCPU install
 cd ..
 verify_static_lib "$PREFIX/lib/liblzma.a" "${AR/ar/nm}"

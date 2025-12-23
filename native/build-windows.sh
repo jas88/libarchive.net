@@ -85,7 +85,7 @@ verify_static_lib "$PREFIX/lib/liblz4.a" "${MINGW_PREFIX}-nm"
 
 echo "Building bzip2 ${BZIP2_VERSION}..."
 cd bzip2-${BZIP2_VERSION}
-make -j$NCPU libbz2.a CC=$CC AR=$AR RANLIB=$RANLIB CFLAGS="$CFLAGS -D_FILE_OFFSET_BITS=64"
+make -sj$NCPU libbz2.a CC=$CC AR=$AR RANLIB=$RANLIB CFLAGS="$CFLAGS -w -D_FILE_OFFSET_BITS=64"
 # Verify library was built and has symbols
 ls -lh libbz2.a
 ${MINGW_PREFIX}-nm -g libbz2.a | grep BZ2_bzCompressInit || echo "WARNING: BZ2_bzCompressInit not found in libbz2.a"
@@ -104,15 +104,15 @@ verify_static_lib "$PREFIX/lib/libz.a" "${MINGW_PREFIX}-nm"
 
 echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
-./configure --cache-file=$(get_config_cache ${MINGW_PREFIX}) --host=${MINGW_PREFIX} --with-pic --disable-shared --prefix=$PREFIX --disable-scripts --disable-doc
-make -j$NCPU install
+./configure --quiet --cache-file=$(get_config_cache ${MINGW_PREFIX}) --host=${MINGW_PREFIX} --with-pic --disable-shared --prefix=$PREFIX --disable-scripts --disable-doc
+make -sj$NCPU install
 cd ..
 verify_static_lib "$PREFIX/lib/liblzma.a" "${MINGW_PREFIX}-nm"
 
 echo "Building lzo ${LZO_VERSION}..."
 cd lzo-${LZO_VERSION}
-./configure --cache-file=$(get_config_cache ${MINGW_PREFIX}) --host=${MINGW_PREFIX} --prefix=$PREFIX --disable-shared
-make -j$NCPU install
+./configure --quiet --cache-file=$(get_config_cache ${MINGW_PREFIX}) --host=${MINGW_PREFIX} --prefix=$PREFIX --disable-shared
+make -sj$NCPU install
 cd ..
 verify_static_lib "$PREFIX/lib/liblzo2.a" "${MINGW_PREFIX}-nm"
 
