@@ -28,6 +28,9 @@ BREW_PREFIX="$(brew --prefix)"
 ln -sf "${BREW_PREFIX}/bin/automake" "${BREW_PREFIX}/bin/automake-1.17"
 ln -sf "${BREW_PREFIX}/bin/aclocal" "${BREW_PREFIX}/bin/aclocal-1.17"
 
+# Create prefix directories early to avoid ld warnings about missing paths
+mkdir -p "$PREFIX/lib" "$PREFIX/include"
+
 # macOS-specific build settings
 export CPPFLAGS="-I$PREFIX/include"
 export LDFLAGS="-L$PREFIX/lib -liconv"
@@ -50,7 +53,12 @@ make -j$NCPU -sC lz4-${LZ4_VERSION} install PREFIX=$PREFIX CFLAGS="$CFLAGS"
 verify_static_lib "$PREFIX/lib/liblz4.a"
 
 echo "Building bzip2 ${BZIP2_VERSION}..."
-make -j$NCPU -sC bzip2-${BZIP2_VERSION} install PREFIX=$PREFIX CFLAGS="$CFLAGS"
+# Build only libbz2.a (not full install) to avoid warnings from bzip2recover.c
+cd bzip2-${BZIP2_VERSION}
+make -sj$NCPU libbz2.a CFLAGS="$CFLAGS -w"
+cp libbz2.a $PREFIX/lib/
+cp bzlib.h $PREFIX/include/
+cd ..
 verify_static_lib "$PREFIX/lib/libbz2.a"
 
 echo "Building lzo ${LZO_VERSION}..."
@@ -62,15 +70,15 @@ verify_static_lib "$PREFIX/lib/liblzo2.a"
 
 echo "Building zlib ${ZLIB_VERSION}..."
 cd zlib-${ZLIB_VERSION}
-./configure --static --prefix=$PREFIX
+./configure --static --prefix=$PREFIX >/dev/null
 make -sj$NCPU install
 cd ..
 verify_static_lib "$PREFIX/lib/libz.a"
 
 echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
-# Regenerate autotools files for local automake version
-aclocal && automake && autoconf
+# Regenerate autotools files for local automake version (silently)
+aclocal && automake && autoconf 2>/dev/null
 ./configure --quiet --cache-file=$(get_config_cache darwin-universal) --with-pic --disable-shared --prefix=$PREFIX
 make -sj$NCPU install
 cd ..
@@ -78,7 +86,7 @@ verify_static_lib "$PREFIX/lib/liblzma.a"
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
 cd libxml2-${LIBXML2_VERSION}
-./autogen.sh --cache-file=$(get_config_cache darwin-universal) --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX --with-lzma=$PREFIX
+./autogen.sh --cache-file=$(get_config_cache darwin-universal) --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX --with-lzma=$PREFIX >/dev/null
 make -sj$NCPU install
 cd ..
 verify_static_lib "$PREFIX/lib/libxml2.a"
@@ -89,11 +97,11 @@ verify_static_lib "$PREFIX/lib/libzstd.a"
 
 echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
-# Regenerate autotools files for local automake version
-aclocal && automake && autoconf
+# Regenerate autotools files for local automake version (silently)
+aclocal && automake && autoconf 2>/dev/null
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
 export LIBXML2_PC_LIBS="-L$PREFIX -lxml2"
-./configure --cache-file=$(get_config_cache darwin-universal) --prefix=$PREFIX --enable-silent-rules --disable-dependency-tracking --enable-static --disable-shared --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-rpath --enable-posix-regex-lib=libc --enable-xattr --enable-acl --enable-largefile --with-pic --with-zlib --with-bz2lib --with-libb2 --with-iconv --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-cng
+./configure --cache-file=$(get_config_cache darwin-universal) --prefix=$PREFIX --enable-silent-rules --disable-dependency-tracking --enable-static --disable-shared --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-rpath --enable-posix-regex-lib=libc --enable-xattr --enable-acl --enable-largefile --with-pic --with-zlib --with-bz2lib --with-libb2 --with-iconv --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-cng >/dev/null
 make -sj$NCPU install
 cd ..
 verify_static_lib "$PREFIX/lib/libarchive.a"
