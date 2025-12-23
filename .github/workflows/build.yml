@@ -34,9 +34,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/config-cache
-          key: config-cache-macos-${{ hashFiles('native/build-*.sh') }}
-          restore-keys: |
-            config-cache-macos-
+          key: config-cache-macos
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
@@ -92,9 +90,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/config-cache
-          key: config-cache-linux-${{ hashFiles('native/build-*.sh') }}
-          restore-keys: |
-            config-cache-linux-
+          key: config-cache-linux
       - name: Extract version from tag
         id: version
         run: |
@@ -143,6 +139,16 @@ jobs:
       - name: Setup sccache wrappers for all compilers
         run: |
           mkdir -p $HOME/.ccache-bin
+
+          # Wrap native gcc/g++ for autoconf/automake builds
+          for tool in gcc g++ cc c++; do
+            REAL_PATH=$(which $tool 2>/dev/null || true)
+            if [ -n "$REAL_PATH" ]; then
+              echo '#!/bin/sh' > $HOME/.ccache-bin/$tool
+              echo "exec sccache $REAL_PATH \"\$@\"" >> $HOME/.ccache-bin/$tool
+              chmod +x $HOME/.ccache-bin/$tool
+            fi
+          done
 
           # Use LLVM-MinGW for all Windows architectures (x86, x64, arm64)
           # This provides a consistent, modern toolchain across all targets
@@ -239,6 +245,9 @@ jobs:
 
           echo "=== sccache stats after Linux builds ==="
           sccache --show-stats
+
+          echo "=== Running sccache garbage collection ==="
+          sccache --gc
       - name: Archive Windows dependency verification
         uses: actions/upload-artifact@v6
         with:
