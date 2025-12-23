@@ -207,8 +207,8 @@ ${MINGW_PREFIX}-objdump -p ${OUTPUT_NAME} | awk '
     /DLL Name:/ { current_dll = ""; next }
     current_dll && /^[[:space:]]+[0-9a-f]+[[:space:]]+[0-9a-f]+[[:space:]]+[0-9]+[[:space:]]+/ {
         # Import table entry format: ordinal hint name
-        func = $4
-        if (func != "") print current_dll ": " func
+        fn = $4
+        if (fn != "") print current_dll ": " fn
     }
 ' | sort >> "$DEPS_FILE"
 
