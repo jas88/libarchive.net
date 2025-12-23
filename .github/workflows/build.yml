@@ -245,9 +245,6 @@ jobs:
 
           echo "=== sccache stats after Linux builds ==="
           sccache --show-stats
-
-          echo "=== Running sccache garbage collection ==="
-          sccache --gc
       - name: Archive Windows dependency verification
         uses: actions/upload-artifact@v6
         with:
