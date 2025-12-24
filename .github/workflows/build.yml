@@ -90,7 +90,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/config-cache
-          key: config-cache-linux
+          key: config-cache-linux-v2
       - name: Extract version from tag
         id: version
         run: |
