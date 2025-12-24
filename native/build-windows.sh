@@ -57,8 +57,9 @@ export STRIP="${MINGW_PREFIX}-strip"
 
 export PREFIX="${PREFIX}-${ARCH}"
 export CPPFLAGS="-I$PREFIX/include"
-export CFLAGS="-O2 -fPIC ${ARCH_FLAGS}"
-export CXXFLAGS="-O2 -fPIC ${ARCH_FLAGS}"
+# Use function sections to enable dead code elimination with --gc-sections
+export CFLAGS="-O2 -fPIC ${ARCH_FLAGS} -ffunction-sections -fdata-sections"
+export CXXFLAGS="-O2 -fPIC ${ARCH_FLAGS} -ffunction-sections -fdata-sections"
 export LDFLAGS="-L$PREFIX/lib"
 
 # Download all libraries if not already present
@@ -165,8 +166,10 @@ done
 # Use --start-group for all dependency libraries to allow multi-pass symbol resolution
 # This is needed because libxml2 depends on libz and liblzma
 # Use .def file to export only functions needed by libarchive.net
+# Use --gc-sections to eliminate dead code
 ${CC} -shared -o ${OUTPUT_NAME} \
     "${SCRIPT_DIR}/libarchive.def" \
+    -Wl,--gc-sections \
     -Wl,--whole-archive \
     $PREFIX/lib/libarchive.a \
     -Wl,--no-whole-archive \
