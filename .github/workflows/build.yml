@@ -314,6 +314,11 @@ jobs:
 
       - name: Cleanup build artifacts
         run: rm -rf local {bzip2,libarchive,libxml2,lz4,lzo,xz,zlib,zstd}-* x86-64--musl--stable-*
+      - name: Prune NuGet cache
+        run: |
+          dotnet tool install -g dotnet-nuget-gc
+          # Remove packages not used in today's build (-m1 = 1 day, -p = prune old versions)
+          dotnet nuget-gc -m1 -p -f
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
       - name: Upload built packages
