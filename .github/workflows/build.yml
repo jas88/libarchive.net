@@ -316,9 +316,14 @@ jobs:
         run: rm -rf local {bzip2,libarchive,libxml2,lz4,lzo,xz,zlib,zstd}-* x86-64--musl--stable-*
       - name: Prune NuGet cache
         run: |
-          dotnet tool install -g dotnet-nuget-gc
-          # Remove packages not used in today's build (-m1 = 1 day, -p = prune old versions)
-          dotnet nuget-gc -m1 -p -f
+          # dotnet-nuget-gc requires .NET 2.1 which may not be available
+          # Try to install and run, but don't fail the build if it doesn't work
+          if dotnet tool install -g dotnet-nuget-gc 2>/dev/null; then
+            # Remove packages not used in today's build (-m1 = 1 day, -p = prune old versions)
+            dotnet nuget-gc -m1 -p -f || echo "NuGet cache pruning skipped (tool requires .NET 2.1)"
+          else
+            echo "Could not install dotnet-nuget-gc, skipping cache pruning"
+          fi
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
       - name: Upload built packages

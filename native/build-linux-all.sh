@@ -232,10 +232,10 @@ echo "Creating static library (fat archive with all dependencies, internal symbo
 # Create a combined static archive with all dependencies
 mkdir -p _ar_combine
 cd _ar_combine
-# Extract all object files from each static library
-for lib in ../local/lib/libarchive.a ../local/lib/libbz2.a ../local/lib/libz.a \
-           ../local/lib/libxml2.a ../local/lib/liblzma.a ../local/lib/liblzo2.a \
-           ../local/lib/libzstd.a ../local/lib/liblz4.a $LIBGCC_PATH; do
+# Extract all object files from each static library (use absolute paths)
+for lib in $PREFIX/lib/libarchive.a $PREFIX/lib/libbz2.a $PREFIX/lib/libz.a \
+           $PREFIX/lib/libxml2.a $PREFIX/lib/liblzma.a $PREFIX/lib/liblzo2.a \
+           $PREFIX/lib/libzstd.a $PREFIX/lib/liblz4.a $LIBGCC_PATH; do
     # Use a subdir per library to avoid filename collisions
     libname=$(basename "$lib" .a)
     mkdir -p "$libname"
