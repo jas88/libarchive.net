@@ -122,10 +122,9 @@ export PREFIX="${PREFIX:-$(pwd)/local}"
 
 # Set compiler flags for static linking
 # Use function sections to enable dead code elimination with --gc-sections
-# Use -fno-unique-section-names to reduce section name bloat
 export CPPFLAGS="-I$PREFIX/include"
-export CFLAGS="-fPIC -O2 $CPPFLAGS -static-libgcc -ffunction-sections -fdata-sections -fno-unique-section-names"
-export CXXFLAGS="-fPIC -O2 $CPPFLAGS -static-libstdc++ -static-libgcc -ffunction-sections -fdata-sections -fno-unique-section-names"
+export CFLAGS="-fPIC -O2 $CPPFLAGS -static-libgcc -ffunction-sections -fdata-sections"
+export CXXFLAGS="-fPIC -O2 $CPPFLAGS -static-libstdc++ -static-libgcc -ffunction-sections -fdata-sections"
 export LDFLAGS="-L$PREFIX/lib -static"
 
 # Configure flags for cross-compilation (all builds run on x86_64 host)
