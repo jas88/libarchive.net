@@ -1,7 +1,6 @@
-/* Version script for libarchive.so - export only functions needed by libarchive.net */
+/* Version script for libarchive.so - export only the API functions needed by libarchive.net */
 {
     global:
-        /* Archive entry functions */
         archive_entry_filetype;
         archive_entry_free;
         archive_entry_new;
@@ -13,11 +12,7 @@
         archive_entry_set_size;
         archive_entry_size;
         archive_entry_size_is_set;
-
-        /* Error handling */
         archive_error_string;
-
-        /* Read functions */
         archive_read_add_passphrase;
         archive_read_data;
         archive_read_free;
@@ -29,8 +24,6 @@
         archive_read_open_filenames;
         archive_read_support_filter_all;
         archive_read_support_format_all;
-
-        /* Write functions */
         archive_write_add_filter_bzip2;
         archive_write_add_filter_compress;
         archive_write_add_filter_gzip;
@@ -60,7 +53,6 @@
         archive_write_set_format_zip;
         archive_write_set_options;
         archive_write_set_passphrase;
-
     local:
         *;
 };

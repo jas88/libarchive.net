@@ -1,8 +1,3 @@
-# Functions exported by libarchive.net native library
-# This list is derived from P/Invoke declarations in LibArchive.Net/*.cs
-# Used to create platform-specific export filters
-
-# Archive entry functions
 archive_entry_filetype
 archive_entry_free
 archive_entry_new
@@ -14,11 +9,7 @@ archive_entry_set_perm
 archive_entry_set_size
 archive_entry_size
 archive_entry_size_is_set
-
-# Error handling
 archive_error_string
-
-# Read functions
 archive_read_add_passphrase
 archive_read_data
 archive_read_free
@@ -30,8 +21,6 @@ archive_read_open_filename
 archive_read_open_filenames
 archive_read_support_filter_all
 archive_read_support_format_all
-
-# Write functions
 archive_write_add_filter_bzip2
 archive_write_add_filter_compress
 archive_write_add_filter_gzip

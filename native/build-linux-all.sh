@@ -215,9 +215,11 @@ LIBGCC_PATH=$($CC -print-libgcc-file-name)
 # Use --gc-sections with linker script to preserve init sections
 # Use --start-group/--end-group for multi-pass symbol resolution between
 # dependency libraries, libgcc (compiler intrinsics), and libc
+# Use version script to export only libarchive API functions
 $CC -shared -o libarchive.so \
     -Wl,-T,"${SCRIPT_DIR}/gc-sections.ld" \
     -Wl,--gc-sections \
+    -Wl,--version-script="${SCRIPT_DIR}/libarchive.map" \
     -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive \
     -Wl,--start-group \
     local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a \
@@ -225,6 +227,32 @@ $CC -shared -o libarchive.so \
     $LIBGCC_PATH ${TOOLCHAIN_SYSROOT}/lib/libc.a \
     -Wl,--end-group \
     -nostdlib
+
+echo "Creating static library (fat archive with all dependencies, internal symbols localized)..."
+# Create a combined static archive with all dependencies
+mkdir -p _ar_combine
+cd _ar_combine
+# Extract all object files from each static library
+for lib in ../local/lib/libarchive.a ../local/lib/libbz2.a ../local/lib/libz.a \
+           ../local/lib/libxml2.a ../local/lib/liblzma.a ../local/lib/liblzo2.a \
+           ../local/lib/libzstd.a ../local/lib/liblz4.a $LIBGCC_PATH; do
+    # Use a subdir per library to avoid filename collisions
+    libname=$(basename "$lib" .a)
+    mkdir -p "$libname"
+    cd "$libname"
+    $AR x "$lib"
+    cd ..
+done
+# Combine all object files into one archive
+$AR rcs ../libarchive-static.a */*.o
+cd ..
+rm -rf _ar_combine
+# Localize all symbols except the public API (prevents namespace pollution)
+OBJCOPY=${COMPILER_PREFIX}-objcopy
+$OBJCOPY --keep-global-symbols="${SCRIPT_DIR}/libarchive-exports.txt" libarchive-static.a
+ls -lh libarchive-static.a
+echo "Exported symbols in static library:"
+$NM libarchive-static.a | grep " T " | awk '{print $3}' | sort -u | head -20
 
 echo "Testing library..."
 cat > test.c <<EOT
@@ -278,6 +306,7 @@ echo "Skipping native test (cross-compilation - library validated via dlopen tes
 
 echo "Copying output to ${OUTPUT_DIR}..."
 cp libarchive.so "${OUTPUT_DIR}/libarchive-linux-${ARCH_NAME}.so"
+cp libarchive-static.a "${OUTPUT_DIR}/libarchive-linux-${ARCH_NAME}.a"
 cp "$DEPS_FILE" "${OUTPUT_DIR}/dependencies-linux-${ARCH_NAME}.txt"
 cp "$STATIC_LIBS_FILE" "${OUTPUT_DIR}/static-libs-linux-${ARCH_NAME}.txt"
 
