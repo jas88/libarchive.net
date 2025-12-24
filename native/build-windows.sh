@@ -58,8 +58,9 @@ export STRIP="${MINGW_PREFIX}-strip"
 export PREFIX="${PREFIX}-${ARCH}"
 export CPPFLAGS="-I$PREFIX/include"
 # Use function sections to enable dead code elimination with --gc-sections
-export CFLAGS="-O2 -fPIC ${ARCH_FLAGS} -ffunction-sections -fdata-sections"
-export CXXFLAGS="-O2 -fPIC ${ARCH_FLAGS} -ffunction-sections -fdata-sections"
+# Use -fno-unique-section-names to reduce section name bloat
+export CFLAGS="-O2 -fPIC ${ARCH_FLAGS} -ffunction-sections -fdata-sections -fno-unique-section-names"
+export CXXFLAGS="-O2 -fPIC ${ARCH_FLAGS} -ffunction-sections -fdata-sections -fno-unique-section-names"
 export LDFLAGS="-L$PREFIX/lib"
 
 # Download all libraries if not already present
