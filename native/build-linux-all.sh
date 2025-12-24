@@ -20,7 +20,6 @@ case "$ARCH" in
         SYSROOT_TRIPLE="x86_64-buildroot-linux-musl"
         COMPILER_PREFIX="x86_64-linux"
         PLATFORM_DESC="Linux x86-64 (musl)"
-        EXTRA_LINK_LIBS=""
         ;;
     x86|i686)
         ARCH_NAME="x86"
@@ -29,8 +28,6 @@ case "$ARCH" in
         SYSROOT_TRIPLE="i686-buildroot-linux-musl"
         COMPILER_PREFIX="i686-linux"
         PLATFORM_DESC="Linux x86 (i686 musl)"
-        # 32-bit needs libgcc for 64-bit division intrinsics (__udivdi3, etc.)
-        EXTRA_LINK_LIBS='$($CC -print-libgcc-file-name)'
         ;;
     arm64|aarch64)
         ARCH_NAME="arm64"
@@ -39,7 +36,6 @@ case "$ARCH" in
         SYSROOT_TRIPLE="aarch64-buildroot-linux-musl"
         COMPILER_PREFIX="aarch64-linux"
         PLATFORM_DESC="Linux ARM64 (aarch64 musl)"
-        EXTRA_LINK_LIBS=""
         ;;
     arm|armv7)
         ARCH_NAME="arm"
@@ -48,7 +44,6 @@ case "$ARCH" in
         SYSROOT_TRIPLE="arm-buildroot-linux-musleabihf"
         COMPILER_PREFIX="arm-linux"
         PLATFORM_DESC="Linux ARM (armv7-eabihf musl)"
-        EXTRA_LINK_LIBS=""
         ;;
     *)
         echo "Error: Unsupported architecture: $ARCH"
@@ -211,20 +206,25 @@ cd ..
 verify_static_lib "$PREFIX/lib/libarchive.a" "$NM"
 
 echo "Creating final shared library..."
-# For 32-bit x86 builds, we need libgcc for 64-bit division intrinsics (__udivdi3, etc.)
-LIBGCC_PATH=""
-if [ -n "$EXTRA_LINK_LIBS" ]; then
-    LIBGCC_PATH=$($CC -print-libgcc-file-name)
-fi
+# All architectures need libgcc for compiler intrinsics:
+# - x86: 64-bit division (__divmoddi4, __udivdi3, etc.)
+# - arm: ARM EABI division (__aeabi_idiv, __aeabi_ldivmod, etc.)
+# - arm64: 128-bit float for long double (__addtf3, __multf3, etc.)
+LIBGCC_PATH=$($CC -print-libgcc-file-name)
 
 # Use --gc-sections with linker script to preserve init sections
+# Use --start-group/--end-group for multi-pass symbol resolution between
+# dependency libraries, libgcc (compiler intrinsics), and libc
 $CC -shared -o libarchive.so \
     -Wl,-T,"${SCRIPT_DIR}/gc-sections.ld" \
     -Wl,--gc-sections \
     -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive \
+    -Wl,--start-group \
     local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a \
     local/lib/liblzo2.a local/lib/libzstd.a local/lib/liblz4.a \
-    $LIBGCC_PATH ${TOOLCHAIN_SYSROOT}/lib/libc.a -nostdlib
+    $LIBGCC_PATH ${TOOLCHAIN_SYSROOT}/lib/libc.a \
+    -Wl,--end-group \
+    -nostdlib
 
 echo "Testing library..."
 cat > test.c <<EOT
