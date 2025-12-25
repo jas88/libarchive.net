@@ -228,6 +228,14 @@ $CC -shared -o libarchive.so \
     -Wl,--end-group \
     -nostdlib
 
+# Localize all symbols except the public API (reduces exported symbol pollution)
+# This must be done post-link because musl needs its internal symbols visible during linking
+echo "Localizing internal symbols in shared library..."
+OBJCOPY=${COMPILER_PREFIX}-objcopy
+$OBJCOPY --keep-global-symbols="${SCRIPT_DIR}/libarchive-exports.txt" libarchive.so
+echo "Exported symbols after localization:"
+$NM -D --defined-only libarchive.so | grep " T " | wc -l | xargs echo "  Count:"
+
 echo "Creating static library (fat archive with all dependencies, internal symbols localized)..."
 # Create a combined static archive with all dependencies
 mkdir -p _ar_combine
