@@ -167,12 +167,14 @@ done
 # Use --start-group for all dependency libraries to allow multi-pass symbol resolution
 # This is needed because libxml2 depends on libz and liblzma
 # Use .def file to export only functions needed by libarchive.net
+# Disable automatic symbol export so only .def symbols are exported
 # Use --gc-sections for dead code elimination
 # Note: LLD automatically preserves CRT init sections on Windows since they're
 # referenced by the entry point stub that calls DllMain
 ${CC} -shared -o ${OUTPUT_NAME} \
-    "${SCRIPT_DIR}/libarchive.def" \
     -Wl,--gc-sections \
+    -Wl,--exclude-all-symbols \
+    "${SCRIPT_DIR}/libarchive.def" \
     -Wl,--whole-archive \
     $PREFIX/lib/libarchive.a \
     -Wl,--no-whole-archive \
