@@ -209,19 +209,15 @@ echo "=== Exported Symbols (API) ===" >> "$DEPS_FILE"
 ${MINGW_PREFIX}-nm ${OUTPUT_NAME} | grep " T " | awk '{print $3}' | sort >> "$DEPS_FILE"
 
 echo "" >> "$DEPS_FILE"
-echo "=== Imported Symbols (from system DLLs) ===" >> "$DEPS_FILE"
-${MINGW_PREFIX}-nm -u ${OUTPUT_NAME} | awk '{print $2}' | sort >> "$DEPS_FILE"
-
-echo "" >> "$DEPS_FILE"
-echo "=== UCRT Imports by Module ===" >> "$DEPS_FILE"
-# Extract import table showing which functions come from which DLL
+echo "=== Imported Symbols (by DLL) ===" >> "$DEPS_FILE"
+# Extract import table from PE file - nm doesn't work for PE imports
+# Parse objdump -p output to show DLL and imported function names
 ${MINGW_PREFIX}-objdump -p ${OUTPUT_NAME} | awk '
-    /DLL Name:.*api-ms-win-crt/ { current_dll = $3; next }
-    /DLL Name:/ { current_dll = ""; next }
-    current_dll && /^[[:space:]]+[0-9a-f]+[[:space:]]+[0-9a-f]+[[:space:]]+[0-9]+[[:space:]]+/ {
-        # Import table entry format: ordinal hint name
-        fn = $4
-        if (fn != "") print current_dll ": " fn
+    /DLL Name:/ { current_dll = $3; next }
+    # Import table entry: vma hint/ord name
+    current_dll && /^[[:space:]]+[0-9a-f]+[[:space:]]+[0-9]+/ {
+        # Third field is the function name
+        if (NF >= 3) print current_dll ": " $3
     }
 ' | sort >> "$DEPS_FILE"
 
