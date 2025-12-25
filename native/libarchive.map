@@ -1,8 +1,8 @@
-/* Version script for libarchive.so - export only the API functions needed by libarchive.net */
-/* Plus essential musl runtime symbols that must remain visible for the library to function */
-{
+/* Version script for libarchive.so */
+/* Export libarchive API as LIBARCHIVE_1.0, let other symbols use default visibility */
+/* This avoids hiding essential musl runtime symbols needed for static libc to function */
+LIBARCHIVE_1.0 {
     global:
-        /* libarchive API */
         archive_entry_filetype;
         archive_entry_free;
         archive_entry_new;
@@ -55,16 +55,4 @@
         archive_write_set_format_zip;
         archive_write_set_options;
         archive_write_set_passphrase;
-
-        /* musl runtime symbols - required for embedded static libc to function */
-        __errno_location;      /* errno access */
-        __stack_chk_fail;      /* stack protector */
-        __stack_chk_guard;     /* stack protector */
-
-        /* Linker-defined symbols for init/fini arrays - use wildcards for linker symbols */
-        __init_array*;
-        __fini_array*;
-
-    local:
-        *;
 };
