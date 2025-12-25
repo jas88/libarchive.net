@@ -61,6 +61,12 @@
         __stack_chk_fail;      /* stack protector */
         __stack_chk_guard;     /* stack protector */
 
+        /* Linker-defined symbols for init/fini arrays - musl exit() needs these */
+        __init_array_start;
+        __init_array_end;
+        __fini_array_start;
+        __fini_array_end;
+
     local:
         *;
 };
