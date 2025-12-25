@@ -214,12 +214,11 @@ LIBGCC_PATH=$($CC -print-libgcc-file-name)
 
 # Use --start-group/--end-group for multi-pass symbol resolution between
 # dependency libraries, libgcc (compiler intrinsics), and libc
-# Use gc-sections for dead code elimination, preserving init arrays
+# Use gc-sections for dead code elimination
 # Use version script to export only libarchive API + essential musl runtime symbols
+# Note: init/fini array symbols are linker-generated and handled via version script wildcards
 $CC -shared -o libarchive.so \
     -Wl,--gc-sections \
-    -Wl,-u,__init_array_start -Wl,-u,__init_array_end \
-    -Wl,-u,__fini_array_start -Wl,-u,__fini_array_end \
     -Wl,--version-script="${SCRIPT_DIR}/libarchive.map" \
     -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive \
     -Wl,--start-group \
