@@ -212,13 +212,11 @@ echo "Creating final shared library..."
 # - arm64: 128-bit float for long double (__addtf3, __multf3, etc.)
 LIBGCC_PATH=$($CC -print-libgcc-file-name)
 
-# Use --gc-sections with linker script to preserve init sections
 # Use --start-group/--end-group for multi-pass symbol resolution between
 # dependency libraries, libgcc (compiler intrinsics), and libc
 # Use version script to export only libarchive API functions
+# Note: Avoid --gc-sections as it can break init/fini sections needed for static libc
 $CC -shared -o libarchive.so \
-    -Wl,-T,"${SCRIPT_DIR}/gc-sections.ld" \
-    -Wl,--gc-sections \
     -Wl,--version-script="${SCRIPT_DIR}/libarchive.map" \
     -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive \
     -Wl,--start-group \
