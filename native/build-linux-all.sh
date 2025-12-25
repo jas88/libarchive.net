@@ -214,10 +214,8 @@ LIBGCC_PATH=$($CC -print-libgcc-file-name)
 
 # Use --start-group/--end-group for multi-pass symbol resolution between
 # dependency libraries, libgcc (compiler intrinsics), and libc
-# Use version script to export only libarchive API functions
-# Note: Avoid --gc-sections as it can break init/fini sections needed for static libc
+# Note: Version script causes test crashes - musl symbols need investigation
 $CC -shared -o libarchive.so \
-    -Wl,--version-script="${SCRIPT_DIR}/libarchive.map" \
     -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive \
     -Wl,--start-group \
     local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a \
