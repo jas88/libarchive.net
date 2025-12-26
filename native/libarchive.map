@@ -1,8 +1,7 @@
 /* Version script for libarchive.so */
-/* Export libarchive API (versioned) and preserve musl/libc internal symbols (unversioned) */
-/* Hide everything else to reduce symbol pollution */
+/* Define versioned libarchive public API */
+/* Symbol hiding is done via objcopy post-link (version script local:* breaks musl) */
 
-/* Versioned libarchive public API */
 LIBARCHIVE_1.0 {
     global:
         archive_entry_filetype;
@@ -57,12 +56,4 @@ LIBARCHIVE_1.0 {
         archive_write_set_format_zip;
         archive_write_set_options;
         archive_write_set_passphrase;
-};
-
-/* Unversioned: musl/libc internals (must be visible) + hide everything else */
-{
-    global:
-        __*;
-    local:
-        *;
 };
