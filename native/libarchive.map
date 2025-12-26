@@ -1,6 +1,8 @@
 /* Version script for libarchive.so */
-/* Export libarchive API as LIBARCHIVE_1.0, let other symbols use default visibility */
-/* This avoids hiding essential musl runtime symbols needed for static libc to function */
+/* Export libarchive API (versioned) and preserve musl/libc internal symbols (unversioned) */
+/* Hide everything else to reduce symbol pollution */
+
+/* Versioned libarchive public API */
 LIBARCHIVE_1.0 {
     global:
         archive_entry_filetype;
@@ -55,4 +57,12 @@ LIBARCHIVE_1.0 {
         archive_write_set_format_zip;
         archive_write_set_options;
         archive_write_set_passphrase;
+};
+
+/* Unversioned: musl/libc internals (must be visible) + hide everything else */
+{
+    global:
+        __*;
+    local:
+        *;
 };
