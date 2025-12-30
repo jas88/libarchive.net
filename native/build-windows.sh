@@ -210,14 +210,39 @@ ${MINGW_PREFIX}-nm ${OUTPUT_NAME} | grep " T " | awk '{print $3}' | sort >> "$DE
 
 echo "" >> "$DEPS_FILE"
 echo "=== Imported Symbols (by DLL) ===" >> "$DEPS_FILE"
-# Extract import table from PE file - nm doesn't work for PE imports
-# Parse objdump -p output to show DLL and imported function names
+# Extract import table from PE file using objdump -p
+# Format: after "DLL Name: xxx.dll", import entries have format:
+#   <hex vma>  <hint number>  <function name>
+# We detect import lines by: starts with whitespace+hex, has 3+ fields, 3rd field is a C identifier
 ${MINGW_PREFIX}-objdump -p ${OUTPUT_NAME} | awk '
-    /DLL Name:/ { current_dll = $3; next }
-    # Import table entry: vma hint/ord name
-    current_dll && /^[[:space:]]+[0-9a-f]+[[:space:]]+[0-9]+/ {
-        # Third field is the function name
-        if (NF >= 3) print current_dll ": " $3
+    /^[[:space:]]*DLL Name:/ { current_dll = $3; next }
+    # Reset DLL context at section boundaries
+    /^[[:space:]]*$/ || /^The / || /^There is/ { current_dll = ""; next }
+    # Import entry: whitespace, hex address, hint number, function name
+    # Function names are C identifiers (start with letter/underscore)
+    current_dll && /^[[:space:]]+[0-9a-fA-F]+[[:space:]]+[0-9]+[[:space:]]+[_a-zA-Z]/ {
+        # $3 is the function name
+        if ($3 ~ /^[_a-zA-Z][_a-zA-Z0-9]*$/) {
+            print current_dll ": " $3
+        }
+    }
+' | sort >> "$DEPS_FILE"
+
+# Also generate a summary by DLL
+echo "" >> "$DEPS_FILE"
+echo "=== Import Summary by DLL ===" >> "$DEPS_FILE"
+${MINGW_PREFIX}-objdump -p ${OUTPUT_NAME} | awk '
+    /^[[:space:]]*DLL Name:/ { current_dll = $3; next }
+    /^[[:space:]]*$/ || /^The / || /^There is/ { current_dll = ""; next }
+    current_dll && /^[[:space:]]+[0-9a-fA-F]+[[:space:]]+[0-9]+[[:space:]]+[_a-zA-Z]/ {
+        if ($3 ~ /^[_a-zA-Z][_a-zA-Z0-9]*$/) {
+            count[current_dll]++
+        }
+    }
+    END {
+        for (dll in count) {
+            printf "%s: %d functions\n", dll, count[dll]
+        }
     }
 ' | sort >> "$DEPS_FILE"
 
