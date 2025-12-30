@@ -210,55 +210,10 @@ ${MINGW_PREFIX}-nm ${OUTPUT_NAME} | grep " T " | awk '{print $3}' | sort >> "$DE
 
 echo "" >> "$DEPS_FILE"
 echo "=== Imported Symbols (by DLL) ===" >> "$DEPS_FILE"
-# Use nm to find undefined symbols (imports) - these are the actual runtime dependencies
-# Format: "U symbolname" for undefined/imported symbols
-${MINGW_PREFIX}-nm ${OUTPUT_NAME} 2>/dev/null | grep " U " | awk '{print $2}' | sort -u >> "$DEPS_FILE"
-
-# Count imports
-echo "" >> "$DEPS_FILE"
-echo "=== Import Summary ===" >> "$DEPS_FILE"
-IMPORT_COUNT=$(${MINGW_PREFIX}-nm ${OUTPUT_NAME} 2>/dev/null | grep -c " U " || echo 0)
-echo "Total imported symbols: $IMPORT_COUNT" >> "$DEPS_FILE"
-
-# Group by prefix to show which libraries they likely come from
-echo "" >> "$DEPS_FILE"
-echo "=== Import Categories ===" >> "$DEPS_FILE"
-${MINGW_PREFIX}-nm ${OUTPUT_NAME} 2>/dev/null | grep " U " | awk '{print $2}' | sort -u | awk '
-    /^__imp_/ { sub(/^__imp_/, ""); }
-    /^_*BCrypt/ { bcrypt++; next }
-    /^_*(Get|Set|Create|Delete|Close|Read|Write|Find|Load|Free|Virtual|Heap|Local|Global|Query|Format|Multi|Wide|Sleep|Wait|Enter|Leave|Initialize|Terminate|Rtl|Tls|Interlocked)/ { kernel32++; next }
-    /^_*(WSA|send|recv|socket|connect|bind|listen|accept|select|gethost|getaddr|inet_|hton|ntoh)/ { ws2_32++; next }
-    /^_*(__acrt|__std|_errno|_invalid_parameter|_crt|_initterm|_seh|_c_exit|_cexit|_exit|_amsg|_set_|_get_|_matherr|_controlfp|_fmode|_commode)/ { ucrt_private++; next }
-    /^_*(malloc|free|calloc|realloc|_malloc|_free|_calloc|_realloc|_expand|_msize)/ { ucrt_heap++; next }
-    /^_*(fopen|fclose|fread|fwrite|fseek|ftell|fflush|fgets|fputs|fprintf|fscanf|fgetc|fputc|feof|ferror|clearerr|rewind|tmpfile|tmpnam|remove|rename|stdin|stdout|stderr|_fileno|_fdopen|_wfopen)/ { ucrt_stdio++; next }
-    /^_*(printf|sprintf|snprintf|vprintf|vsprintf|vsnprintf|scanf|sscanf|puts|gets|getchar|putchar)/ { ucrt_stdio++; next }
-    /^_*(memcpy|memmove|memset|memcmp|memchr|strlen|strcpy|strncpy|strcat|strncat|strcmp|strncmp|strchr|strrchr|strstr|strtok|strdup|_strdup|wcs|_wcs|mbstowcs|wcstombs)/ { ucrt_string++; next }
-    /^_*(time|mktime|localtime|gmtime|strftime|difftime|clock|_time|_mktime|_localtime|_gmtime|_strftime)/ { ucrt_time++; next }
-    /^_*(strtol|strtoul|strtoll|strtoull|strtod|strtof|atoi|atol|atoll|atof|_strtoi64|_strtoui64)/ { ucrt_convert++; next }
-    /^_*(getenv|_putenv|_wgetenv|_wputenv|environ|_environ)/ { ucrt_env++; next }
-    /^_*(sin|cos|tan|asin|acos|atan|atan2|sinh|cosh|tanh|exp|log|log10|pow|sqrt|ceil|floor|fabs|fmod|ldexp|frexp|modf)/ { ucrt_math++; next }
-    /^_*(qsort|bsearch|abs|labs|llabs|div|ldiv|lldiv|rand|srand)/ { ucrt_utility++; next }
-    /^_*(stat|_stat|fstat|_fstat|access|_access|chmod|_chmod|mkdir|_mkdir|rmdir|_rmdir|chdir|_chdir|getcwd|_getcwd|unlink|_unlink)/ { ucrt_filesystem++; next }
-    /^_*(setlocale|localeconv|_setlocale|_create_locale)/ { ucrt_locale++; next }
-    { other++ }
-    END {
-        if (bcrypt) printf "bcrypt.dll: %d\n", bcrypt
-        if (kernel32) printf "KERNEL32.dll: %d\n", kernel32
-        if (ws2_32) printf "WS2_32.dll: %d\n", ws2_32
-        if (ucrt_heap) printf "ucrt-heap: %d\n", ucrt_heap
-        if (ucrt_stdio) printf "ucrt-stdio: %d\n", ucrt_stdio
-        if (ucrt_string) printf "ucrt-string: %d\n", ucrt_string
-        if (ucrt_time) printf "ucrt-time: %d\n", ucrt_time
-        if (ucrt_convert) printf "ucrt-convert: %d\n", ucrt_convert
-        if (ucrt_env) printf "ucrt-environment: %d\n", ucrt_env
-        if (ucrt_math) printf "ucrt-math: %d\n", ucrt_math
-        if (ucrt_utility) printf "ucrt-utility: %d\n", ucrt_utility
-        if (ucrt_filesystem) printf "ucrt-filesystem: %d\n", ucrt_filesystem
-        if (ucrt_locale) printf "ucrt-locale: %d\n", ucrt_locale
-        if (ucrt_private) printf "ucrt-private: %d\n", ucrt_private
-        if (other) printf "other/uncategorized: %d\n", other
-    }
-' >> "$DEPS_FILE"
+# Dump raw objdump -p import section for debugging format
+echo "--- Raw import table sample ---" >> "$DEPS_FILE"
+${MINGW_PREFIX}-objdump -p ${OUTPUT_NAME} 2>/dev/null | grep -A 100 "Import Tables" | head -120 >> "$DEPS_FILE"
+echo "--- End raw sample ---" >> "$DEPS_FILE"
 
 echo "=== Checking DLL dependencies ==="
 ${MINGW_PREFIX}-objdump -p ${OUTPUT_NAME} | grep "DLL Name:" || echo "No external DLL dependencies"
