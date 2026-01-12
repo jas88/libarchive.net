@@ -350,6 +350,15 @@ if echo "$pr_body" | gh pr create -R jas88/libarchive.net \
     --label "dependencies" \
     --label "native"; then
     echo -e "${GREEN}✓ Pull request created successfully${NC}"
+
+    # Trigger the Build workflow on the new branch
+    # (PRs created by GitHub Actions using GITHUB_TOKEN don't trigger workflows)
+    echo "Triggering Build workflow on branch..."
+    if gh workflow run build.yml -R jas88/libarchive.net --ref "$branch_name"; then
+        echo -e "${GREEN}✓ Build workflow triggered${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Failed to trigger build workflow - may need manual trigger${NC}"
+    fi
 else
     pr_exit_code=$?
     echo -e "${RED}✗ Failed to create pull request (exit code: $pr_exit_code)${NC}"
