@@ -274,11 +274,11 @@ jobs:
           # Restore and test using the local NuGet package
           dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --source . --source https://api.nuget.org/v3/index.json /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
-          # Build and run tests for net10.0
+          # Build and run tests for net10.0 with Microsoft Testing Platform
           dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net10.0 --configuration Release --no-restore /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
           dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net10.0 --configuration Release --no-build --nologo /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
-          # Build and test net462 with Mono
+          # Build and test net462 with Mono via Microsoft Testing Platform
           dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net462 --configuration Release --nologo /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
       - name: Cleanup build artifacts

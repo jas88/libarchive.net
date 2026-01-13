@@ -7,11 +7,13 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <!-- Set PlatformTarget for net462 to trigger automatic native library copying from runtimes folder -->
         <PlatformTarget Condition="'$(TargetFramework)' == 'net462'">x64</PlatformTarget>
+        <!-- Enable Microsoft Testing Platform via NUnit3TestAdapter -->
+        <UseTestingPlatform>true</UseTestingPlatform>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
         <PackageReference Include="NUnit" Version="4.4.0" />
-        <PackageReference Include="NUnit3TestAdapter" Version="6.0.1" />
+        <PackageReference Include="NUnit3TestAdapter" Version="6.1.0" />
         <PackageReference Include="NUnit.Analyzers" Version="4.11.2" />
         <PackageReference Include="coverlet.collector" Version="6.0.4" />
     </ItemGroup>
