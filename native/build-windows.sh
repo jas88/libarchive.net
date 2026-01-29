@@ -210,10 +210,24 @@ ${MINGW_PREFIX}-nm ${OUTPUT_NAME} | grep " T " | awk '{print $3}' | sort >> "$DE
 
 echo "" >> "$DEPS_FILE"
 echo "=== Imported Symbols (by DLL) ===" >> "$DEPS_FILE"
-# Dump raw objdump -p import section for debugging format
-echo "--- Raw import table sample ---" >> "$DEPS_FILE"
-${MINGW_PREFIX}-objdump -p ${OUTPUT_NAME} 2>/dev/null | grep -A 100 "Import Tables" | head -120 >> "$DEPS_FILE"
-echo "--- End raw sample ---" >> "$DEPS_FILE"
+# Parse PE import table from objdump -p
+# Format: after "DLL Name: x.dll" + "Hint/Ord  Name" header, imports are "  <num>  <name>"
+${MINGW_PREFIX}-objdump -p ${OUTPUT_NAME} | awk '
+    /DLL Name:/ { current_dll = $3; getline; next }
+    /^[[:space:]]*lookup/ || /^$/ || /^The / { current_dll = ""; next }
+    current_dll && /^[[:space:]]+[0-9]+[[:space:]]+[A-Za-z_]/ {
+        print current_dll ": " $2
+    }
+' | sort >> "$DEPS_FILE"
+
+echo "" >> "$DEPS_FILE"
+echo "=== Import Summary by DLL ===" >> "$DEPS_FILE"
+${MINGW_PREFIX}-objdump -p ${OUTPUT_NAME} | awk '
+    /DLL Name:/ { current_dll = $3; getline; next }
+    /^[[:space:]]*lookup/ || /^$/ || /^The / { current_dll = ""; next }
+    current_dll && /^[[:space:]]+[0-9]+[[:space:]]+[A-Za-z_]/ { count[current_dll]++ }
+    END { for (dll in count) printf "%s: %d functions\n", dll, count[dll] }
+' | sort >> "$DEPS_FILE"
 
 echo "=== Checking DLL dependencies ==="
 ${MINGW_PREFIX}-objdump -p ${OUTPUT_NAME} | grep "DLL Name:" || echo "No external DLL dependencies"
