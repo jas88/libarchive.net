@@ -155,6 +155,13 @@ make -j$NCPU install
 cd ..
 verify_static_lib "$PREFIX/lib/libarchive.a" "${MINGW_PREFIX}-nm"
 
+echo "Compiling Win32 CRT wrapper..."
+# Compile Win32 CRT replacements with -fno-builtin to prevent compiler intrinsics
+# These provide Win32 implementations of heap, memory, string, environment functions
+# to reduce UCRT DLL dependencies
+${CC} -c -fno-builtin ${CFLAGS} -o win32-crt.o "${SCRIPT_DIR}/win32-crt.c"
+echo "win32-crt.o: $(ls -lh win32-crt.o | awk '{print $5}')"
+
 echo "Creating Windows DLL..."
 # Verify all libraries exist before linking
 for lib in libarchive libxml2 libz liblzma liblzo2 libzstd liblz4 libbz2; do
@@ -171,10 +178,12 @@ done
 # Use --gc-sections for dead code elimination
 # Note: LLD automatically preserves CRT init sections on Windows since they're
 # referenced by the entry point stub that calls DllMain
+# win32-crt.o is linked FIRST so its symbols take precedence over UCRT
 ${CC} -shared -o ${OUTPUT_NAME} \
     -Wl,--gc-sections \
     -Wl,--exclude-all-symbols \
     "${SCRIPT_DIR}/libarchive.def" \
+    win32-crt.o \
     -Wl,--whole-archive \
     $PREFIX/lib/libarchive.a \
     -Wl,--no-whole-archive \
