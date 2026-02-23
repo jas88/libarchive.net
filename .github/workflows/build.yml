@@ -8,8 +8,6 @@ on:
   push:
     tags:
       - 'v*'
-    branches:
-      - 'dependabot/native/**'
 
 env:
   DOTNET_NOLOGO: 1
