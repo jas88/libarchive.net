@@ -128,23 +128,6 @@ jobs:
         run: |
           which i686-w64-mingw32-gcc || echo "WARNING: i686-w64-mingw32-gcc not found"
           which x86_64-w64-mingw32-gcc || echo "WARNING: x86_64-w64-mingw32-gcc not found"
-      - name: Setup sccache wrappers for all compilers
-        run: |
-          mkdir -p $HOME/.ccache-bin
-
-          # Use LLVM-MinGW for all Windows architectures (x86, x64, arm64)
-          # This provides a consistent, modern toolchain across all targets
-          LLVM_MINGW_BIN="$(pwd)/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64/bin"
-
-          for arch in i686 x86_64 aarch64; do
-            for tool in gcc g++; do
-              echo '#!/bin/sh' > $HOME/.ccache-bin/${arch}-w64-mingw32-$tool
-              echo "exec sccache $LLVM_MINGW_BIN/${arch}-w64-mingw32-${tool} \"\$@\"" >> $HOME/.ccache-bin/${arch}-w64-mingw32-$tool
-              chmod +x $HOME/.ccache-bin/${arch}-w64-mingw32-$tool
-            done
-          done
-
-          echo "$HOME/.ccache-bin" >> $GITHUB_PATH
       - name: Install autoconf and automake
         run: |
           # xz 5.8.2 was built with automake 1.18.1 and autoconf 2.72

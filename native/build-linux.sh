@@ -42,21 +42,12 @@ if [ ! -f "$TOOLCHAIN_PREFIX/bin/x86_64-linux-gcc" ]; then
     exit 1
 fi
 
-export CC=x86_64-linux-gcc
-export CXX=x86_64-linux-g++
-export AR=x86_64-linux-ar
-export RANLIB=x86_64-linux-ranlib
+export CC="sccache $TOOLCHAIN_PREFIX/bin/x86_64-linux-gcc"
+export CXX="sccache $TOOLCHAIN_PREFIX/bin/x86_64-linux-g++"
+export AR=$TOOLCHAIN_PREFIX/bin/x86_64-linux-ar
+export RANLIB=$TOOLCHAIN_PREFIX/bin/x86_64-linux-ranlib
 
-# Generate sccache wrappers for compilers only (not ar/ranlib)
-echo "Setting up sccache wrappers..."
-mkdir -p .ccache-bin
-for tool in gcc g++; do
-    printf '#!/bin/sh\nexec sccache "%s/bin/x86_64-linux-%s" "$@"\n' "$TOOLCHAIN_PREFIX" "$tool" > .ccache-bin/x86_64-linux-$tool
-    chmod +x .ccache-bin/x86_64-linux-$tool
-done
-
-# Add wrappers to PATH (before toolchain bin)
-export PATH="$(pwd)/.ccache-bin:$TOOLCHAIN_PREFIX/bin:$PATH"
+export PATH="$TOOLCHAIN_PREFIX/bin:$PATH"
 
 # Keep PREFIX for our built libraries (same as before)
 export PREFIX="${PREFIX:-$(pwd)/local}"
@@ -78,7 +69,7 @@ download_all_libraries
 # Build compression libraries (static only to avoid conflicts with -static LDFLAGS)
 echo "Building lz4 ${LZ4_VERSION}..."
 cd lz4-${LZ4_VERSION}/lib
-make -j$NCPU liblz4.a CC=$CC AR=$AR
+make -j$NCPU liblz4.a "CC=$CC" "AR=$AR"
 mkdir -p $PREFIX/lib $PREFIX/include
 cp liblz4.a $PREFIX/lib/
 cp lz4.h lz4hc.h lz4frame.h $PREFIX/include/
@@ -86,7 +77,7 @@ cd ../..
 
 echo "Building zstd ${ZSTD_VERSION}..."
 cd zstd-${ZSTD_VERSION}/lib
-make -j$NCPU libzstd.a CC=$CC AR=$AR
+make -j$NCPU libzstd.a "CC=$CC" "AR=$AR"
 mkdir -p $PREFIX/lib $PREFIX/include
 cp libzstd.a $PREFIX/lib/
 cp zstd.h zstd_errors.h zdict.h $PREFIX/include/
@@ -94,7 +85,7 @@ cd ../..
 
 echo "Building bzip2 ${BZIP2_VERSION}..."
 cd bzip2-${BZIP2_VERSION}
-make -j$NCPU libbz2.a CC=$CC AR=$AR RANLIB=$RANLIB CFLAGS="-fPIC -O2 -D_FILE_OFFSET_BITS=64"
+make -j$NCPU libbz2.a "CC=$CC" "AR=$AR" "RANLIB=$RANLIB" CFLAGS="-fPIC -O2 -D_FILE_OFFSET_BITS=64"
 mkdir -p $PREFIX/lib $PREFIX/include
 cp libbz2.a $PREFIX/lib/
 cp bzlib.h $PREFIX/include/
