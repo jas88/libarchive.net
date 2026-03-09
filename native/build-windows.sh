@@ -45,8 +45,13 @@ if ! command -v ${MINGW_PREFIX}-gcc >/dev/null 2>&1; then
 fi
 
 # Windows-specific build settings
-export CC="${MINGW_PREFIX}-gcc"
-export CXX="${MINGW_PREFIX}-g++"
+if command -v sccache >/dev/null 2>&1; then
+    export CC="sccache ${MINGW_PREFIX}-gcc"
+    export CXX="sccache ${MINGW_PREFIX}-g++"
+else
+    export CC="${MINGW_PREFIX}-gcc"
+    export CXX="${MINGW_PREFIX}-g++"
+fi
 export AR="${MINGW_PREFIX}-ar"
 export RANLIB="${MINGW_PREFIX}-ranlib"
 export RC="${MINGW_PREFIX}-windres"
@@ -69,7 +74,7 @@ fi
 # Build compression libraries
 echo "Building lz4 ${LZ4_VERSION}..."
 cd lz4-${LZ4_VERSION}/lib
-make -j$NCPU liblz4.a CC=$CC AR=$AR
+make -j$NCPU liblz4.a "CC=$CC" "AR=$AR"
 mkdir -p $PREFIX/lib $PREFIX/include
 cp liblz4.a $PREFIX/lib/
 cp lz4.h lz4hc.h lz4frame.h $PREFIX/include/
@@ -77,7 +82,7 @@ cd ../..
 
 echo "Building bzip2 ${BZIP2_VERSION}..."
 cd bzip2-${BZIP2_VERSION}
-make -j$NCPU libbz2.a CC=$CC AR=$AR RANLIB=$RANLIB CFLAGS="$CFLAGS -D_FILE_OFFSET_BITS=64"
+make -j$NCPU libbz2.a "CC=$CC" "AR=$AR" "RANLIB=$RANLIB" CFLAGS="$CFLAGS -D_FILE_OFFSET_BITS=64"
 # Verify library was built and has symbols
 ls -lh libbz2.a
 ${MINGW_PREFIX}-nm -g libbz2.a | grep BZ2_bzCompressInit || echo "WARNING: BZ2_bzCompressInit not found in libbz2.a"
@@ -106,7 +111,7 @@ cd ..
 
 echo "Building zstd ${ZSTD_VERSION}..."
 cd zstd-${ZSTD_VERSION}/lib
-make -j$NCPU libzstd.a CC=$CC AR=$AR
+make -j$NCPU libzstd.a "CC=$CC" "AR=$AR"
 mkdir -p $PREFIX/lib $PREFIX/include
 cp libzstd.a $PREFIX/lib/
 cp zstd.h zstd_errors.h zdict.h $PREFIX/include/
