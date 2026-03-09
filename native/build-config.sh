@@ -48,30 +48,26 @@ BZIP2_URL="https://www.sourceware.org/pub/bzip2/bzip2-${BZIP2_VERSION}.tar.gz"
 ZLIB_URL="https://zlib.net/zlib-${ZLIB_VERSION}.tar.xz"
 XZ_URL="https://github.com/tukaani-project/xz/releases/download/v${XZ_VERSION}/xz-${XZ_VERSION}.tar.xz"
 
-# Portable SHA256 helper (prefers sha256sum on Linux, shasum on macOS)
-sha256_check() {
-    local expected="$1"
-    local file="$2"
-    if command -v sha256sum >/dev/null 2>&1; then
-        echo "$expected  $file" | sha256sum --check --status
-    elif command -v shasum >/dev/null 2>&1; then
-        echo "$expected  $file" | shasum -a 256 --check --status
+# Portable SHA256 helper (computes hash and compares directly;
+# avoids --check flag which differs between GNU and BSD sha256sum)
+sha256_compute() {
+    local file="$1"
+    if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$file" | cut -d' ' -f1
+    elif command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$file" | cut -d' ' -f1
     else
-        echo "ERROR: No SHA256 tool found (need sha256sum or shasum)" >&2
+        echo "ERROR: No SHA256 tool found (need shasum or sha256sum)" >&2
         return 1
     fi
 }
 
-sha256_compute() {
-    local file="$1"
-    if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum "$file" | cut -d' ' -f1
-    elif command -v shasum >/dev/null 2>&1; then
-        shasum -a 256 "$file" | cut -d' ' -f1
-    else
-        echo "ERROR: No SHA256 tool found (need sha256sum or shasum)" >&2
-        return 1
-    fi
+sha256_check() {
+    local expected="$1"
+    local file="$2"
+    local actual
+    actual=$(sha256_compute "$file") || return 1
+    [ "$expected" = "$actual" ]
 }
 
 # Common build settings
