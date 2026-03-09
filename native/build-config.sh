@@ -48,6 +48,32 @@ BZIP2_URL="https://www.sourceware.org/pub/bzip2/bzip2-${BZIP2_VERSION}.tar.gz"
 ZLIB_URL="https://zlib.net/zlib-${ZLIB_VERSION}.tar.xz"
 XZ_URL="https://github.com/tukaani-project/xz/releases/download/v${XZ_VERSION}/xz-${XZ_VERSION}.tar.xz"
 
+# Portable SHA256 helper (prefers sha256sum on Linux, shasum on macOS)
+sha256_check() {
+    local expected="$1"
+    local file="$2"
+    if command -v sha256sum >/dev/null 2>&1; then
+        echo "$expected  $file" | sha256sum --check --status
+    elif command -v shasum >/dev/null 2>&1; then
+        echo "$expected  $file" | shasum -a 256 --check --status
+    else
+        echo "ERROR: No SHA256 tool found (need sha256sum or shasum)" >&2
+        return 1
+    fi
+}
+
+sha256_compute() {
+    local file="$1"
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$file" | cut -d' ' -f1
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$file" | cut -d' ' -f1
+    else
+        echo "ERROR: No SHA256 tool found (need sha256sum or shasum)" >&2
+        return 1
+    fi
+}
+
 # Common build settings
 export PREFIX="${PREFIX:-$(pwd)/local}"
 
@@ -115,10 +141,12 @@ download_library() {
     # Verify SHA256 checksum if provided
     if [ -n "$expected_sha256" ]; then
         echo "Verifying ${name} checksum..."
-        if ! echo "$expected_sha256  $cache_file" | shasum -a 256 --check --status 2>/dev/null; then
+        if ! sha256_check "$expected_sha256" "$cache_file"; then
+            local actual
+            actual=$(sha256_compute "$cache_file") || actual="(unable to compute)"
             echo "ERROR: SHA256 checksum mismatch for ${name}"
             echo "Expected: $expected_sha256"
-            echo "Got:      $(shasum -a 256 "$cache_file" | cut -d' ' -f1)"
+            echo "Got:      $actual"
             rm -f "$cache_file"
             return 1
         fi

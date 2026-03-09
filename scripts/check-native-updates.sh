@@ -132,20 +132,27 @@ update_version() {
             local tmpfile
             tmpfile=$(mktemp)
             if curl -fsSL "$new_url" -o "$tmpfile" 2>/dev/null; then
+                # Use sha256_compute from build-config.sh (already sourced above)
                 local new_sha256
-                new_sha256=$(shasum -a 256 "$tmpfile" | cut -d' ' -f1)
+                new_sha256=$(sha256_compute "$tmpfile") || true
                 rm -f "$tmpfile"
 
-                # Update SHA256 in config
-                local old_sha256
-                old_sha256=$(grep "^${sha_var_name}=" "$config_script" | sed 's/^[^=]*="\([^"]*\)"/\1/')
-                if [ -n "$old_sha256" ]; then
-                    if [[ "$OSTYPE" == "darwin"* ]]; then
-                        sed -i '' "s/^${sha_var_name}=\"${old_sha256}\"$/${sha_var_name}=\"${new_sha256}\"/" "$config_script"
-                    else
-                        sed -i "s/^${sha_var_name}=\"${old_sha256}\"$/${sha_var_name}=\"${new_sha256}\"/" "$config_script"
+                # Validate we got a 64-char hex string before writing
+                if [[ "$new_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+                    # Update SHA256 in config
+                    local old_sha256
+                    old_sha256=$(grep "^${sha_var_name}=" "$config_script" | sed 's/^[^=]*="\([^"]*\)"/\1/')
+                    if [ -n "$old_sha256" ]; then
+                        if [[ "$OSTYPE" == "darwin"* ]]; then
+                            sed -i '' "s/^${sha_var_name}=\"${old_sha256}\"$/${sha_var_name}=\"${new_sha256}\"/" "$config_script"
+                        else
+                            sed -i "s/^${sha_var_name}=\"${old_sha256}\"$/${sha_var_name}=\"${new_sha256}\"/" "$config_script"
+                        fi
+                        echo "  Updated $sha_var_name: $new_sha256"
                     fi
-                    echo "  Updated $sha_var_name: $new_sha256"
+                else
+                    echo -e "  ${RED}ERROR: SHA256 computation failed (got: '$new_sha256')${NC}"
+                    echo -e "  ${RED}Please manually update $sha_var_name in build-config.sh${NC}"
                 fi
             else
                 rm -f "$tmpfile"
