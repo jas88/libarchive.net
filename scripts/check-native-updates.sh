@@ -120,19 +120,19 @@ update_version() {
             sed -i "s/^${var_name}=\"${old_ver}\"$/${var_name}=\"${new_ver}\"/" "$config_script"
         fi
 
-        # Compute new download URL and SHA256
-        # Re-source config (which now has the new version) to get the URL
+        # Re-source config in current shell to get updated URL and sha256_compute
+        . "$config_script" >/dev/null 2>&1 || true
+
         local url_var_name
         url_var_name="$(echo "$dep_name" | tr '[:lower:]-' '[:upper:]_')_URL"
         local new_url
-        new_url=$(. "$config_script" 2>/dev/null; eval echo "\$$url_var_name" 2>/dev/null || true)
+        eval "new_url=\$$url_var_name"
 
         if [ -n "$new_url" ]; then
             echo "  Downloading new version to compute SHA256..."
             local tmpfile
             tmpfile=$(mktemp)
             if curl -fsSL "$new_url" -o "$tmpfile" 2>/dev/null; then
-                # Use sha256_compute from build-config.sh (already sourced above)
                 local new_sha256
                 new_sha256=$(sha256_compute "$tmpfile") || true
                 rm -f "$tmpfile"
