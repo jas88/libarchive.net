@@ -272,7 +272,7 @@ jobs:
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
       - name: Upload built packages
-        uses: svenstaro/upload-release-action@2.11.4
+        uses: svenstaro/upload-release-action@2.11.5
         if: contains(github.ref, 'refs/tags/v')
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
@@ -287,7 +287,7 @@ jobs:
           path: |
             *.nupkg
       - name: Upload built packages
-        uses: svenstaro/upload-release-action@2.11.4
+        uses: svenstaro/upload-release-action@2.11.5
         if: contains(github.ref, 'refs/tags/v')
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
