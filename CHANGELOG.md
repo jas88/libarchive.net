@@ -1,3 +1,25 @@
+v0.3.1 - April 7, 2026
+
+**Native Library Updates:**
+- Bump libarchive from 3.8.4 to 3.8.6
+- Bump xz from 5.8.2 to 5.8.3
+- Bump zlib from 1.3.1 to 1.3.2
+- Bump libxml2 from 2.15.1 to 2.15.2
+
+**Build & CI Improvements:**
+- Add SHA256 checksum verification for native dependency downloads
+- Reduce MSBuild message verbosity for native library copy
+- Direct sccache invocation for faster builds
+- Fix CI triggering for auto-created dependency PRs
+
+**Tooling Updates:**
+- Bump MinVer from 6.0.0 to 7.0.0
+- Bump NUnit from 4.4.0 to 4.5.1
+- Bump NUnit3TestAdapter from 6.0.1 to 6.2.0
+- Bump NUnit.Analyzers from 4.11.2 to 4.12.0
+- Bump Microsoft.NET.Test.Sdk from 18.0.1 to 18.4.0
+- Bump coverlet.collector from 6.0.4 to 8.0.1
+
 v0.3.0 - December 22, 2025
 
 **Archive Write Support:**
