@@ -40,7 +40,7 @@ public partial class LibArchiveWriter
         if (data == null)
             throw new ArgumentNullException(nameof(data));
 
-        WriteEntry(archivePath, data.Length, modificationTime ?? DateTime.UtcNow, 0644, stream =>
+        WriteEntry(archivePath, data.Length, modificationTime ?? DateTime.UtcNow, 420, stream =>
         {
             unsafe
             {
@@ -82,7 +82,7 @@ public partial class LibArchiveWriter
             using var pathBuffer = new SafeStringBuffer(archivePath);
             archive_entry_set_pathname(entry, pathBuffer.Ptr);
             archive_entry_set_filetype(entry, AE_IFDIR);
-            archive_entry_set_perm(entry, 0755); // rwxr-xr-x
+            archive_entry_set_perm(entry, 493); // rwxr-xr-x
             archive_entry_set_size(entry, 0);
 
             var (seconds, nanoseconds) = ToUnixTime(DateTime.UtcNow);
@@ -496,7 +496,9 @@ public partial class LibArchiveWriter
         // TODO: On Unix platforms, could use Mono.Unix or P/Invoke to get actual permissions
         // For now, use sensible defaults
 #if NET7_0_OR_GREATER
-        permissions = (int)fileInfo.UnixFileMode;
+        int uperm = (int)fileInfo.UnixFileMode;
+        if(uperm != -1 && uperm != 0)
+            permissions = uperm;
 #endif
 
         return permissions;
