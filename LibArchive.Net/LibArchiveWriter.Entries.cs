@@ -483,14 +483,21 @@ public partial class LibArchiveWriter
     private static int GetUnixPermissions(FileInfo fileInfo)
     {
         // Default: rw-r--r-- (0644) for files
-        int permissions = 0644;
+        // This is a bitwise OR of the following:
+        // S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH
+        int permissions = 420;
 
         // If read-only, remove write permissions
         if (fileInfo.Attributes.HasFlag(FileAttributes.ReadOnly))
-            permissions = 0444;
+            // This is a bitwise OR of the following:
+            // S_IRUSR | S_IRGRP | S_IROTH
+            permissions = 292;
 
         // TODO: On Unix platforms, could use Mono.Unix or P/Invoke to get actual permissions
         // For now, use sensible defaults
+#if NET7_0_OR_GREATER
+        permissions = (int)fileInfo.UnixFileMode;
+#endif
 
         return permissions;
     }
