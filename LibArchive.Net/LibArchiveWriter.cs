@@ -556,6 +556,9 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     [LibraryImport("archive")]
     private static partial void archive_entry_set_perm(IntPtr entry, int perm);
 
+    private static void archive_entry_set_perm(IntPtr entry, UnixFileMode perm)
+        => archive_entry_set_perm(entry, (int)perm);
+
     [LibraryImport("archive")]
     private static partial void archive_entry_set_mtime(IntPtr entry, long sec, long nsec);
 #else
@@ -576,6 +579,9 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
 
     [DllImport("archive")]
     private static extern void archive_entry_set_perm(IntPtr entry, int perm);
+
+    private static void archive_entry_set_perm(IntPtr entry, UnixFileMode perm)
+        => archive_entry_set_perm(entry, (int)perm);
 
     [DllImport("archive")]
     private static extern void archive_entry_set_mtime(IntPtr entry, long sec, long nsec);
