@@ -40,7 +40,7 @@ public partial class LibArchiveWriter
         if (data == null)
             throw new ArgumentNullException(nameof(data));
 
-        WriteEntry(archivePath, data.Length, modificationTime ?? DateTime.UtcNow, 0644, stream =>
+        WriteEntry(archivePath, data.Length, modificationTime ?? DateTime.UtcNow, DefaultFileMode, stream =>
         {
             unsafe
             {
@@ -82,7 +82,7 @@ public partial class LibArchiveWriter
             using var pathBuffer = new SafeStringBuffer(archivePath);
             archive_entry_set_pathname(entry, pathBuffer.Ptr);
             archive_entry_set_filetype(entry, AE_IFDIR);
-            archive_entry_set_perm(entry, 0755); // rwxr-xr-x
+            archive_entry_set_perm(entry, DefaultDirectoryMode);
             archive_entry_set_size(entry, 0);
 
             var (seconds, nanoseconds) = ToUnixTime(DateTime.UtcNow);
@@ -452,7 +452,7 @@ public partial class LibArchiveWriter
         archive_entry_set_mtime(entry, seconds, nanoseconds);
     }
 
-    private void WriteEntry(string archivePath, long size, DateTime modificationTime, int permissions, Action<Stream> writeData)
+    private void WriteEntry(string archivePath, long size, DateTime modificationTime, UnixFileMode permissions, Action<Stream> writeData)
     {
         var entry = archive_entry_new();
         try
@@ -480,19 +480,33 @@ public partial class LibArchiveWriter
         }
     }
 
-    private static int GetUnixPermissions(FileInfo fileInfo)
+    // rw-r--r--
+    private const UnixFileMode DefaultFileMode =
+        UnixFileMode.UserRead | UnixFileMode.UserWrite |
+        UnixFileMode.GroupRead | UnixFileMode.OtherRead;
+
+    // r--r--r--
+    private const UnixFileMode ReadOnlyFileMode =
+        UnixFileMode.UserRead | UnixFileMode.GroupRead | UnixFileMode.OtherRead;
+
+    // rwxr-xr-x
+    private const UnixFileMode DefaultDirectoryMode =
+        UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+        UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+        UnixFileMode.OtherRead | UnixFileMode.OtherExecute;
+
+    private static UnixFileMode GetUnixPermissions(FileInfo fileInfo)
     {
-        // Default: rw-r--r-- (0644) for files
-        int permissions = 0644;
-
-        // If read-only, remove write permissions
-        if (fileInfo.Attributes.HasFlag(FileAttributes.ReadOnly))
-            permissions = 0444;
-
-        // TODO: On Unix platforms, could use Mono.Unix or P/Invoke to get actual permissions
-        // For now, use sensible defaults
-
-        return permissions;
+#if NET7_0_OR_GREATER
+        // FileInfo.UnixFileMode returns 0 on non-Unix systems and (UnixFileMode)(-1)
+        // when the file does not exist; fall back to defaults in either case.
+        var mode = fileInfo.UnixFileMode;
+        if (mode != 0 && mode != (UnixFileMode)(-1))
+            return mode;
+#endif
+        return fileInfo.Attributes.HasFlag(FileAttributes.ReadOnly)
+            ? ReadOnlyFileMode
+            : DefaultFileMode;
     }
 
     private static (long seconds, long nanoseconds) ToUnixTime(DateTime dateTime)
