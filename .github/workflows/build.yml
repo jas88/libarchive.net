@@ -3,6 +3,7 @@ name: Build
 # Run this workflow every time a new commit pushed to your repository
 
 on:
+  workflow_dispatch:
   pull_request:
     branches:
       - main
@@ -55,7 +56,7 @@ jobs:
           echo "=== ccache stats after build ==="
           ccache -s
       - name: Archive MacOS library
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: maclib
           path: ~/libarchive-native/libarchive.dylib
@@ -111,7 +112,7 @@ jobs:
           version: 1.0
           execute_install_scripts: true
       - name: Retrieve MacOS library
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: maclib
       - name: Install LLVM-MinGW for ARM64
@@ -119,7 +120,7 @@ jobs:
           curl -sL https://github.com/mstorsjo/llvm-mingw/releases/download/20240619/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64.tar.xz | tar xJ
           echo "$(pwd)/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64/bin" >> $GITHUB_PATH
       - name: Setup .NET Core
-        uses: actions/setup-dotnet@v5.0.1
+        uses: actions/setup-dotnet@v5.2.0
         with:
           cache: true
           cache-dependency-path: '**/*.csproj'
@@ -136,47 +137,23 @@ jobs:
         run: |
           which i686-w64-mingw32-gcc || echo "WARNING: i686-w64-mingw32-gcc not found"
           which x86_64-w64-mingw32-gcc || echo "WARNING: x86_64-w64-mingw32-gcc not found"
-      - name: Setup sccache wrappers for all compilers
-        run: |
-          mkdir -p $HOME/.ccache-bin
-
-          # Wrap native gcc/g++ for autoconf/automake builds
-          for tool in gcc g++ cc c++; do
-            REAL_PATH=$(which $tool 2>/dev/null || true)
-            if [ -n "$REAL_PATH" ]; then
-              echo '#!/bin/sh' > $HOME/.ccache-bin/$tool
-              echo "exec sccache $REAL_PATH \"\$@\"" >> $HOME/.ccache-bin/$tool
-              chmod +x $HOME/.ccache-bin/$tool
-            fi
-          done
-
-          # Use LLVM-MinGW for all Windows architectures (x86, x64, arm64)
-          # This provides a consistent, modern toolchain across all targets
-          LLVM_MINGW_BIN="$(pwd)/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64/bin"
-
-          for arch in i686 x86_64 aarch64; do
-            for tool in gcc g++; do
-              echo '#!/bin/sh' > $HOME/.ccache-bin/${arch}-w64-mingw32-$tool
-              echo "exec sccache $LLVM_MINGW_BIN/${arch}-w64-mingw32-${tool} \"\$@\"" >> $HOME/.ccache-bin/${arch}-w64-mingw32-$tool
-              chmod +x $HOME/.ccache-bin/${arch}-w64-mingw32-$tool
-            done
-          done
-
-          echo "$HOME/.ccache-bin" >> $GITHUB_PATH
       - name: Install autoconf and automake
         run: |
           # xz 5.8.2 was built with automake 1.18.1 and autoconf 2.72
-          # Use ftpmirror.gnu.org to auto-select nearest mirror (more reliable than ftp.gnu.org)
-          # --proto =https ensures redirects stay on HTTPS (security requirement)
+          # Download to files and verify checksums (allows HTTP mirror redirects)
           # Install autoconf 2.72
-          curl -sSL --proto =https --retry 3 --retry-delay 5 https://ftpmirror.gnu.org/gnu/autoconf/autoconf-2.72.tar.xz | tar xJ
+          curl -sSL --retry 3 --retry-delay 5 https://ftpmirror.gnu.org/gnu/autoconf/autoconf-2.72.tar.xz -o autoconf-2.72.tar.xz
+          echo "ba885c1319578d6c94d46e9b0dceb4014caafe2490e437a0dbca3f270a223f5a  autoconf-2.72.tar.xz" | sha256sum -c
+          tar xJf autoconf-2.72.tar.xz
           cd autoconf-2.72
           ./configure --prefix=$HOME/.local
           make -j$(nproc)
           make install
           cd ..
           # Install automake 1.18.1 (exact version used to build xz 5.8.2)
-          curl -sSL --proto =https --retry 3 --retry-delay 5 https://ftpmirror.gnu.org/gnu/automake/automake-1.18.1.tar.xz | tar xJ
+          curl -sSL --retry 3 --retry-delay 5 https://ftpmirror.gnu.org/gnu/automake/automake-1.18.1.tar.xz -o automake-1.18.1.tar.xz
+          echo "168aa363278351b89af56684448f525a5bce5079d0b6842bd910fdd3f1646887  automake-1.18.1.tar.xz" | sha256sum -c
+          tar xJf automake-1.18.1.tar.xz
           cd automake-1.18.1
           ./configure --prefix=$HOME/.local
           make -j$(nproc)
@@ -305,11 +282,11 @@ jobs:
           # Restore and test using the local NuGet package
           dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --source . --source https://api.nuget.org/v3/index.json /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
-          # Build and run tests for net10.0
+          # Build and run tests for net10.0 with Microsoft Testing Platform
           dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net10.0 --configuration Release --no-restore /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
           dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net10.0 --configuration Release --no-build --nologo /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
-          # Build and test net462 with Mono
+          # Build and test net462 with Mono via Microsoft Testing Platform
           dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net462 --configuration Release --nologo /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
 
       - name: Cleanup build artifacts
@@ -322,7 +299,7 @@ jobs:
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
       - name: Upload built packages
-        uses: svenstaro/upload-release-action@2.11.3
+        uses: svenstaro/upload-release-action@2.11.5
         if: contains(github.ref, 'refs/tags/v')
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
@@ -331,13 +308,13 @@ jobs:
           overwrite: true
           file_glob: true
       - name: Archive production artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: dist
           path: |
             *.nupkg
       - name: Upload built packages
-        uses: svenstaro/upload-release-action@2.11.3
+        uses: svenstaro/upload-release-action@2.11.5
         if: contains(github.ref, 'refs/tags/v')
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}

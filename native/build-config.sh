@@ -3,14 +3,24 @@
 # Source this file in platform-specific build scripts
 
 # Library versions
-LIBARCHIVE_VERSION="3.8.4"
+LIBARCHIVE_VERSION="3.8.7"
 LZ4_VERSION="1.10.0"
 ZSTD_VERSION="1.5.7"
 LZO_VERSION="2.10"
-LIBXML2_VERSION="2.15.1"
-ZLIB_VERSION="1.3.1"
-XZ_VERSION="5.8.2"
+LIBXML2_VERSION="2.15.3"
+ZLIB_VERSION="1.3.2"
+XZ_VERSION="5.8.3"
 BZIP2_VERSION="1.0.8"
+
+# SHA256 checksums for download verification
+LIBARCHIVE_SHA256="d3a8ba457ae25c27c84fd2830a2efdcc5b1d40bf585d4eb0d35f47e99e5d4774"
+LZ4_SHA256="537512904744b35e232912055ccf8ec66d768639ff3abe5788d90d792ec5f48b"
+ZSTD_SHA256="eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3"
+LZO_SHA256="c0f892943208266f9b6543b3ae308fab6284c5c90e627931446fb49b4221a072"
+LIBXML2_SHA256="78262a6e7ac170d6528ebfe2efccdf220191a5af6a6cd61ea4a9a9a5042c7a07"
+ZLIB_SHA256="d7a0654783a4da529d1bb793b7ad9c3318020af77667bcae35f95d0e42a792f3"
+XZ_SHA256="fff1ffcf2b0da84d308a14de513a1aa23d4e9aa3464d17e64b9714bfdd0bbfb6"
+BZIP2_SHA256="ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269"
 
 # Bootlin toolchain versions (Linux only)
 # Bootlin stable 2025.08-1: GCC 14.3.0, musl latest, binutils 2.43.1
@@ -38,6 +48,28 @@ BZIP2_URL="https://www.sourceware.org/pub/bzip2/bzip2-${BZIP2_VERSION}.tar.gz"
 ZLIB_URL="https://zlib.net/zlib-${ZLIB_VERSION}.tar.xz"
 XZ_URL="https://github.com/tukaani-project/xz/releases/download/v${XZ_VERSION}/xz-${XZ_VERSION}.tar.xz"
 
+# Portable SHA256 helper (computes hash and compares directly;
+# avoids --check flag which differs between GNU and BSD sha256sum)
+sha256_compute() {
+    local file="$1"
+    if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$file" | cut -d' ' -f1
+    elif command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$file" | cut -d' ' -f1
+    else
+        echo "ERROR: No SHA256 tool found (need shasum or sha256sum)" >&2
+        return 1
+    fi
+}
+
+sha256_check() {
+    local expected="$1"
+    local file="$2"
+    local actual
+    actual=$(sha256_compute "$file") || return 1
+    [ "$expected" = "$actual" ]
+}
+
 # Common build settings
 export PREFIX="${PREFIX:-$(pwd)/local}"
 
@@ -62,6 +94,7 @@ download_library() {
     local url="$1"
     local name="$2"
     local dir_name="$3"
+    local expected_sha256="${4:-}"
 
     # Extract archive filename from URL
     local archive_name="${url##*/}"
@@ -99,6 +132,20 @@ download_library() {
         fi
     else
         echo "Using cached ${name}..."
+    fi
+
+    # Verify SHA256 checksum if provided
+    if [ -n "$expected_sha256" ]; then
+        echo "Verifying ${name} checksum..."
+        if ! sha256_check "$expected_sha256" "$cache_file"; then
+            local actual
+            actual=$(sha256_compute "$cache_file") || actual="(unable to compute)"
+            echo "ERROR: SHA256 checksum mismatch for ${name}"
+            echo "Expected: $expected_sha256"
+            echo "Got:      $actual"
+            rm -f "$cache_file"
+            return 1
+        fi
     fi
 
     # Delete any existing unpacked directory to ensure clean start
@@ -162,14 +209,14 @@ download_toolchain() {
 # Function to download all libraries
 # Always unpacks fresh copies from cache
 download_all_libraries() {
-    download_library "$LIBARCHIVE_URL" "libarchive" "libarchive-${LIBARCHIVE_VERSION}"
-    download_library "$LZ4_URL" "lz4" "lz4-${LZ4_VERSION}"
-    download_library "$ZSTD_URL" "zstd" "zstd-${ZSTD_VERSION}"
-    download_library "$LZO_URL" "lzo" "lzo-${LZO_VERSION}"
-    download_library "$LIBXML2_URL" "libxml2" "libxml2-${LIBXML2_VERSION}"
-    download_library "$BZIP2_URL" "bzip2" "bzip2-${BZIP2_VERSION}"
-    download_library "$ZLIB_URL" "zlib" "zlib-${ZLIB_VERSION}"
-    download_library "$XZ_URL" "xz" "xz-${XZ_VERSION}"
+    download_library "$LIBARCHIVE_URL" "libarchive" "libarchive-${LIBARCHIVE_VERSION}" "$LIBARCHIVE_SHA256"
+    download_library "$LZ4_URL" "lz4" "lz4-${LZ4_VERSION}" "$LZ4_SHA256"
+    download_library "$ZSTD_URL" "zstd" "zstd-${ZSTD_VERSION}" "$ZSTD_SHA256"
+    download_library "$LZO_URL" "lzo" "lzo-${LZO_VERSION}" "$LZO_SHA256"
+    download_library "$LIBXML2_URL" "libxml2" "libxml2-${LIBXML2_VERSION}" "$LIBXML2_SHA256"
+    download_library "$BZIP2_URL" "bzip2" "bzip2-${BZIP2_VERSION}" "$BZIP2_SHA256"
+    download_library "$ZLIB_URL" "zlib" "zlib-${ZLIB_VERSION}" "$ZLIB_SHA256"
+    download_library "$XZ_URL" "xz" "xz-${XZ_VERSION}" "$XZ_SHA256"
 
     # Fix xz automake timestamp issue - touch generated files to prevent regeneration
     # xz 5.8.2 was built with automake 1.18.1 which may not be available on build systems

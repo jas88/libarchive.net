@@ -107,17 +107,58 @@ update_version() {
 
     local config_script="$REPO_ROOT/native/build-config.sh"
     local var_name=$(echo "$dep_name" | tr '[:lower:]-' '[:upper:]_')_VERSION
+    local sha_var_name=$(echo "$dep_name" | tr '[:lower:]-' '[:upper:]_')_SHA256
 
     if [ "$DRY_RUN" = "1" ]; then
         echo "  Would update $var_name in build-config.sh: $old_ver -> $new_ver"
+        echo "  Would update $sha_var_name checksum"
     else
-        # Use sed to update the version variable
+        # Update version variable
         if [[ "$OSTYPE" == "darwin"* ]]; then
-            # macOS requires empty string after -i for in-place edit
             sed -i '' "s/^${var_name}=\"${old_ver}\"$/${var_name}=\"${new_ver}\"/" "$config_script"
         else
-            # Linux GNU sed
             sed -i "s/^${var_name}=\"${old_ver}\"$/${var_name}=\"${new_ver}\"/" "$config_script"
+        fi
+
+        # Re-source config in current shell to get updated URL and sha256_compute
+        . "$config_script" >/dev/null 2>&1 || true
+
+        local url_var_name
+        url_var_name="$(echo "$dep_name" | tr '[:lower:]-' '[:upper:]_')_URL"
+        local new_url
+        eval "new_url=\$$url_var_name"
+
+        if [ -n "$new_url" ]; then
+            echo "  Downloading new version to compute SHA256..."
+            local tmpfile
+            tmpfile=$(mktemp)
+            if curl -fsSL "$new_url" -o "$tmpfile" 2>/dev/null; then
+                local new_sha256
+                new_sha256=$(sha256_compute "$tmpfile") || true
+                rm -f "$tmpfile"
+
+                # Validate we got a 64-char hex string before writing
+                if [[ "$new_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+                    # Update SHA256 in config
+                    local old_sha256
+                    old_sha256=$(grep "^${sha_var_name}=" "$config_script" | sed 's/^[^=]*="\([^"]*\)"/\1/')
+                    if [ -n "$old_sha256" ]; then
+                        if [[ "$OSTYPE" == "darwin"* ]]; then
+                            sed -i '' "s/^${sha_var_name}=\"${old_sha256}\"$/${sha_var_name}=\"${new_sha256}\"/" "$config_script"
+                        else
+                            sed -i "s/^${sha_var_name}=\"${old_sha256}\"$/${sha_var_name}=\"${new_sha256}\"/" "$config_script"
+                        fi
+                        echo "  Updated $sha_var_name: $new_sha256"
+                    fi
+                else
+                    echo -e "  ${RED}ERROR: SHA256 computation failed (got: '$new_sha256')${NC}"
+                    echo -e "  ${RED}Please manually update $sha_var_name in build-config.sh${NC}"
+                fi
+            else
+                rm -f "$tmpfile"
+                echo -e "  ${YELLOW}Warning: Could not download new version to compute SHA256${NC}"
+                echo -e "  ${YELLOW}Please manually update $sha_var_name in build-config.sh${NC}"
+            fi
         fi
     fi
 }
