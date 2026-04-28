@@ -168,7 +168,9 @@ echo "Compiling Win32 CRT wrapper..."
 # Compile Win32 CRT replacements with -fno-builtin to prevent compiler intrinsics
 # These provide Win32 implementations of heap, memory, string, environment functions
 # to reduce UCRT DLL dependencies
-${CC} -c -fno-builtin "${CFLAGS}" -o win32-crt.o "${SCRIPT_DIR}/win32-crt.c"
+# CC and CFLAGS are flag lists that require word-splitting at the call site.
+# shellcheck disable=SC2086
+${CC} -c -fno-builtin ${CFLAGS} -o win32-crt.o "${SCRIPT_DIR}/win32-crt.c"
 # shellcheck disable=SC2012  # ls -lh used to display human-readable size; output is informational only
 echo "win32-crt.o: $(ls -lh win32-crt.o | awk '{print $5}')"
 
