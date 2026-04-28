@@ -231,12 +231,13 @@ download_all_libraries() {
 
 # Detect number of CPU cores
 if command -v nproc >/dev/null 2>&1; then
-    export NCPU=$(nproc)
+    NCPU=$(nproc)
 elif command -v sysctl >/dev/null 2>&1; then
-    export NCPU=$(sysctl -n hw.ncpu)
+    NCPU=$(sysctl -n hw.ncpu)
 else
-    export NCPU=4
+    NCPU=4
 fi
+export NCPU
 
 echo "Build configuration loaded:"
 echo "  libarchive: ${LIBARCHIVE_VERSION}"
@@ -264,11 +265,15 @@ verify_static_lib() {
     local lib_name
     lib_name="$(basename "$lib")"
 
-    echo "=== Verifying $lib_name ===" >> "$STATIC_LIBS_FILE"
+    {
+        echo "=== Verifying $lib_name ==="
+    } >> "$STATIC_LIBS_FILE"
 
     if [ ! -f "$lib" ]; then
-        echo "ERROR: Library not found: $lib" >> "$STATIC_LIBS_FILE"
-        echo "" >> "$STATIC_LIBS_FILE"
+        {
+            echo "ERROR: Library not found: $lib"
+            echo ""
+        } >> "$STATIC_LIBS_FILE"
         return 1
     fi
 
@@ -278,11 +283,13 @@ verify_static_lib() {
     defined=$($nm_cmd "$lib" 2>/dev/null | grep -c " [TtDdBbRr] " || echo 0)
     undefined=$($nm_cmd -u "$lib" 2>/dev/null | wc -l | tr -d ' ')
 
-    echo "Defined symbols: $defined" >> "$STATIC_LIBS_FILE"
-    echo "Undefined symbols: $undefined" >> "$STATIC_LIBS_FILE"
+    {
+        echo "Defined symbols: $defined"
+        echo "Undefined symbols: $undefined"
 
-    # List undefined symbols (these get resolved at link time)
-    echo "Undefined symbol sample:" >> "$STATIC_LIBS_FILE"
-    $nm_cmd -u "$lib" 2>/dev/null | head -30 >> "$STATIC_LIBS_FILE"
-    echo "" >> "$STATIC_LIBS_FILE"
+        # List undefined symbols (these get resolved at link time)
+        echo "Undefined symbol sample:"
+        $nm_cmd -u "$lib" 2>/dev/null | head -30
+        echo ""
+    } >> "$STATIC_LIBS_FILE"
 }

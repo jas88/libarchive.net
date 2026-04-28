@@ -11,6 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ARCH="${ARCH:-x86_64}"
 
 # Load shared configuration
+# shellcheck source=build-config.sh
 . "${SCRIPT_DIR}/build-config.sh"
 
 case "$ARCH" in
@@ -77,86 +78,89 @@ else
 fi
 
 # Initialize static library verification file
-export STATIC_LIBS_FILE="$(pwd)/static-libs-${ARCH}.txt"
+STATIC_LIBS_FILE="$(pwd)/static-libs-${ARCH}.txt"
+export STATIC_LIBS_FILE
 echo "Static Library Verification Report" > "$STATIC_LIBS_FILE"
-echo "Platform: Windows ${ARCH} (MinGW)" >> "$STATIC_LIBS_FILE"
-echo "Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$STATIC_LIBS_FILE"
-echo "" >> "$STATIC_LIBS_FILE"
+{
+    echo "Platform: Windows ${ARCH} (MinGW)"
+    echo "Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo ""
+} >> "$STATIC_LIBS_FILE"
 
 # Build compression libraries
 echo "Building lz4 ${LZ4_VERSION}..."
-cd lz4-${LZ4_VERSION}/lib
-make -j$NCPU liblz4.a "CC=$CC" "AR=$AR"
-mkdir -p $PREFIX/lib $PREFIX/include
-cp liblz4.a $PREFIX/lib/
-cp lz4.h lz4hc.h lz4frame.h $PREFIX/include/
+cd lz4-"${LZ4_VERSION}"/lib
+make -j"$NCPU" liblz4.a "CC=$CC" "AR=$AR"
+mkdir -p "$PREFIX"/lib "$PREFIX"/include
+cp liblz4.a "$PREFIX"/lib/
+cp lz4.h lz4hc.h lz4frame.h "$PREFIX"/include/
 cd ../..
 verify_static_lib "$PREFIX/lib/liblz4.a" "${MINGW_PREFIX}-nm"
 
 echo "Building bzip2 ${BZIP2_VERSION}..."
-cd bzip2-${BZIP2_VERSION}
-make -sj$NCPU libbz2.a "CC=$CC" "AR=$AR" "RANLIB=$RANLIB" CFLAGS="$CFLAGS -w -D_FILE_OFFSET_BITS=64"
+cd bzip2-"${BZIP2_VERSION}"
+make -sj"$NCPU" libbz2.a "CC=$CC" "AR=$AR" "RANLIB=$RANLIB" CFLAGS="$CFLAGS -w -D_FILE_OFFSET_BITS=64"
 # Verify library was built and has symbols
 ls -lh libbz2.a
 ${MINGW_PREFIX}-nm -g libbz2.a | grep BZ2_bzCompressInit || echo "WARNING: BZ2_bzCompressInit not found in libbz2.a"
-mkdir -p $PREFIX/lib $PREFIX/include
-cp libbz2.a $PREFIX/lib/
-cp bzlib.h $PREFIX/include/
+mkdir -p "$PREFIX"/lib "$PREFIX"/include
+cp libbz2.a "$PREFIX"/lib/
+cp bzlib.h "$PREFIX"/include/
 cd ..
 verify_static_lib "$PREFIX/lib/libbz2.a" "${MINGW_PREFIX}-nm"
 
 echo "Building zlib ${ZLIB_VERSION}..."
-cd zlib-${ZLIB_VERSION}
-CHOST=${MINGW_PREFIX} ./configure --static --prefix=$PREFIX
-make -j$NCPU install
+cd zlib-"${ZLIB_VERSION}"
+CHOST=${MINGW_PREFIX} ./configure --static --prefix="$PREFIX"
+make -j"$NCPU" install
 cd ..
 verify_static_lib "$PREFIX/lib/libz.a" "${MINGW_PREFIX}-nm"
 
 echo "Building xz ${XZ_VERSION}..."
-cd xz-${XZ_VERSION}
-./configure --quiet --cache-file=$(get_config_cache ${MINGW_PREFIX}) --host=${MINGW_PREFIX} --with-pic --disable-shared --prefix=$PREFIX --disable-scripts --disable-doc
-make -sj$NCPU install
+cd xz-"${XZ_VERSION}"
+./configure --quiet --cache-file="$(get_config_cache "${MINGW_PREFIX}")" --host="${MINGW_PREFIX}" --with-pic --disable-shared --prefix="$PREFIX" --disable-scripts --disable-doc
+make -sj"$NCPU" install
 cd ..
 verify_static_lib "$PREFIX/lib/liblzma.a" "${MINGW_PREFIX}-nm"
 
 echo "Building lzo ${LZO_VERSION}..."
-cd lzo-${LZO_VERSION}
-./configure --quiet --cache-file=$(get_config_cache ${MINGW_PREFIX}) --host=${MINGW_PREFIX} --prefix=$PREFIX --disable-shared
-make -sj$NCPU install
+cd lzo-"${LZO_VERSION}"
+./configure --quiet --cache-file="$(get_config_cache "${MINGW_PREFIX}")" --host="${MINGW_PREFIX}" --prefix="$PREFIX" --disable-shared
+make -sj"$NCPU" install
 cd ..
 verify_static_lib "$PREFIX/lib/liblzo2.a" "${MINGW_PREFIX}-nm"
 
 echo "Building zstd ${ZSTD_VERSION}..."
-cd zstd-${ZSTD_VERSION}/lib
-make -j$NCPU libzstd.a "CC=$CC" "AR=$AR"
-mkdir -p $PREFIX/lib $PREFIX/include
-cp libzstd.a $PREFIX/lib/
-cp zstd.h zstd_errors.h zdict.h $PREFIX/include/
+cd zstd-"${ZSTD_VERSION}"/lib
+make -j"$NCPU" libzstd.a "CC=$CC" "AR=$AR"
+mkdir -p "$PREFIX"/lib "$PREFIX"/include
+cp libzstd.a "$PREFIX"/lib/
+cp zstd.h zstd_errors.h zdict.h "$PREFIX"/include/
 cd ../..
 verify_static_lib "$PREFIX/lib/libzstd.a" "${MINGW_PREFIX}-nm"
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
-cd libxml2-${LIBXML2_VERSION}
+cd libxml2-"${LIBXML2_VERSION}"
 # --without-iconv: Windows has native encoding support, avoids needing libiconv
-./configure --cache-file=$(get_config_cache ${MINGW_PREFIX}) --host=${MINGW_PREFIX} --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --without-iconv --with-zlib=$PREFIX --with-lzma=$PREFIX
-make -j$NCPU install
+./configure --cache-file="$(get_config_cache "${MINGW_PREFIX}")" --host="${MINGW_PREFIX}" --enable-silent-rules --disable-shared --enable-static --prefix="$PREFIX" --without-python --without-iconv --with-zlib="$PREFIX" --with-lzma="$PREFIX"
+make -j"$NCPU" install
 cd ..
 verify_static_lib "$PREFIX/lib/libxml2.a" "${MINGW_PREFIX}-nm"
 
 echo "Building libarchive ${LIBARCHIVE_VERSION}..."
-cd libarchive-${LIBARCHIVE_VERSION}
+cd libarchive-"${LIBARCHIVE_VERSION}"
 # Set PKG_CONFIG_LIBDIR so pkg-config only looks at our prefix
 export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig"
 # For static linking tests, autoconf needs all dependencies in LDFLAGS
 export LDFLAGS="$LDFLAGS -L$PREFIX/lib -lz -llzma"
 # Use libarchive-specific cache to avoid conflicts from modified LDFLAGS/PKG_CONFIG_LIBDIR
-./configure --cache-file=$(get_config_cache ${MINGW_PREFIX}-libarchive) --host=${MINGW_PREFIX} --prefix=$PREFIX \
+./configure --cache-file="$(get_config_cache "${MINGW_PREFIX}-libarchive")" --host="${MINGW_PREFIX}" --prefix="$PREFIX" \
     --enable-silent-rules --disable-dependency-tracking \
     --enable-static --disable-shared \
     --disable-bsdtar --disable-bsdcat --disable-bsdcpio \
     --enable-posix-regex-lib=libc \
     --with-pic --with-zlib --with-bz2lib --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-xml2
-make -j$NCPU install
+make -j"$NCPU" install
 cd ..
 verify_static_lib "$PREFIX/lib/libarchive.a" "${MINGW_PREFIX}-nm"
 
@@ -164,7 +168,8 @@ echo "Compiling Win32 CRT wrapper..."
 # Compile Win32 CRT replacements with -fno-builtin to prevent compiler intrinsics
 # These provide Win32 implementations of heap, memory, string, environment functions
 # to reduce UCRT DLL dependencies
-${CC} -c -fno-builtin ${CFLAGS} -o win32-crt.o "${SCRIPT_DIR}/win32-crt.c"
+${CC} -c -fno-builtin "${CFLAGS}" -o win32-crt.o "${SCRIPT_DIR}/win32-crt.c"
+# shellcheck disable=SC2012  # ls -lh used to display human-readable size; output is informational only
 echo "win32-crt.o: $(ls -lh win32-crt.o | awk '{print $5}')"
 
 echo "Creating Windows DLL..."
@@ -174,7 +179,8 @@ for lib in libarchive libxml2 libz liblzma liblzo2 libzstd liblz4 libbz2; do
         echo "ERROR: $PREFIX/lib/${lib}.a not found!"
         exit 1
     fi
-    echo "$PREFIX/lib/${lib}.a: $(ls -lh $PREFIX/lib/${lib}.a | awk '{print $5}')"
+    # shellcheck disable=SC2012  # ls -lh used to display human-readable size; output is informational only
+    echo "$PREFIX/lib/${lib}.a: $(ls -lh "$PREFIX"/lib/"${lib}".a | awk '{print $5}')"
 done
 # Use --start-group for all dependency libraries to allow multi-pass symbol resolution
 # This is needed because libxml2 depends on libz and liblzma
@@ -190,16 +196,16 @@ ${CC} -shared -o ${OUTPUT_NAME} \
     "${SCRIPT_DIR}/libarchive.def" \
     win32-crt.o \
     -Wl,--whole-archive \
-    $PREFIX/lib/libarchive.a \
+    "$PREFIX"/lib/libarchive.a \
     -Wl,--no-whole-archive \
     -Wl,--start-group \
-    $PREFIX/lib/libxml2.a \
-    $PREFIX/lib/libz.a \
-    $PREFIX/lib/liblzma.a \
-    $PREFIX/lib/liblzo2.a \
-    $PREFIX/lib/libzstd.a \
-    $PREFIX/lib/liblz4.a \
-    $PREFIX/lib/libbz2.a \
+    "$PREFIX"/lib/libxml2.a \
+    "$PREFIX"/lib/libz.a \
+    "$PREFIX"/lib/liblzma.a \
+    "$PREFIX"/lib/liblzo2.a \
+    "$PREFIX"/lib/libzstd.a \
+    "$PREFIX"/lib/liblz4.a \
+    "$PREFIX"/lib/libbz2.a \
     -Wl,--end-group \
     -static -static-libgcc -static-libstdc++ \
     -lws2_32 -lbcrypt -lkernel32
@@ -211,37 +217,39 @@ file ${OUTPUT_NAME}
 DEPS_FILE="$(pwd)/dependencies-${ARCH}.txt"
 
 echo "=== Dependency Verification ===" > "$DEPS_FILE"
-echo "Platform: Windows ${ARCH} (MinGW)" >> "$DEPS_FILE"
-echo "Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$DEPS_FILE"
-echo "" >> "$DEPS_FILE"
+{
+    echo "Platform: Windows ${ARCH} (MinGW)"
+    echo "Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo ""
 
-echo "=== DLL Dependencies ===" >> "$DEPS_FILE"
-${MINGW_PREFIX}-objdump -p ${OUTPUT_NAME} | grep "DLL Name:" >> "$DEPS_FILE" || echo "No external DLL dependencies" >> "$DEPS_FILE"
+    echo "=== DLL Dependencies ==="
+    "${MINGW_PREFIX}-objdump" -p "${OUTPUT_NAME}" | grep "DLL Name:" || echo "No external DLL dependencies"
 
-echo "" >> "$DEPS_FILE"
-echo "=== Exported Symbols (API) ===" >> "$DEPS_FILE"
-${MINGW_PREFIX}-nm ${OUTPUT_NAME} | grep " T " | awk '{print $3}' | sort >> "$DEPS_FILE"
+    echo ""
+    echo "=== Exported Symbols (API) ==="
+    "${MINGW_PREFIX}-nm" "${OUTPUT_NAME}" | grep " T " | awk '{print $3}' | sort
 
-echo "" >> "$DEPS_FILE"
-echo "=== Imported Symbols (by DLL) ===" >> "$DEPS_FILE"
-# Parse PE import table from objdump -p
-# Format: after "DLL Name: x.dll" + "Hint/Ord  Name" header, imports are "  <num>  <name>"
-${MINGW_PREFIX}-objdump -p ${OUTPUT_NAME} | awk '
-    /DLL Name:/ { current_dll = $3; getline; next }
-    /^[[:space:]]*lookup/ || /^$/ || /^The / { current_dll = ""; next }
-    current_dll && /^[[:space:]]+[0-9]+[[:space:]]+[A-Za-z_]/ {
-        print current_dll ": " $2
-    }
-' | sort >> "$DEPS_FILE"
+    echo ""
+    echo "=== Imported Symbols (by DLL) ==="
+    # Parse PE import table from objdump -p
+    # Format: after "DLL Name: x.dll" + "Hint/Ord  Name" header, imports are "  <num>  <name>"
+    "${MINGW_PREFIX}-objdump" -p "${OUTPUT_NAME}" | awk '
+        /DLL Name:/ { current_dll = $3; getline; next }
+        /^[[:space:]]*lookup/ || /^$/ || /^The / { current_dll = ""; next }
+        current_dll && /^[[:space:]]+[0-9]+[[:space:]]+[A-Za-z_]/ {
+            print current_dll ": " $2
+        }
+    ' | sort
 
-echo "" >> "$DEPS_FILE"
-echo "=== Import Summary by DLL ===" >> "$DEPS_FILE"
-${MINGW_PREFIX}-objdump -p ${OUTPUT_NAME} | awk '
-    /DLL Name:/ { current_dll = $3; getline; next }
-    /^[[:space:]]*lookup/ || /^$/ || /^The / { current_dll = ""; next }
-    current_dll && /^[[:space:]]+[0-9]+[[:space:]]+[A-Za-z_]/ { count[current_dll]++ }
-    END { for (dll in count) printf "%s: %d functions\n", dll, count[dll] }
-' | sort >> "$DEPS_FILE"
+    echo ""
+    echo "=== Import Summary by DLL ==="
+    "${MINGW_PREFIX}-objdump" -p "${OUTPUT_NAME}" | awk '
+        /DLL Name:/ { current_dll = $3; getline; next }
+        /^[[:space:]]*lookup/ || /^$/ || /^The / { current_dll = ""; next }
+        current_dll && /^[[:space:]]+[0-9]+[[:space:]]+[A-Za-z_]/ { count[current_dll]++ }
+        END { for (dll in count) printf "%s: %d functions\n", dll, count[dll] }
+    ' | sort
+} >> "$DEPS_FILE"
 
 echo "=== Checking DLL dependencies ==="
 ${MINGW_PREFIX}-objdump -p ${OUTPUT_NAME} | grep "DLL Name:" || echo "No external DLL dependencies"

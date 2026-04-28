@@ -66,6 +66,7 @@ mkdir -p "$OUTPUT_DIR"
 cd "$BUILD_DIR"
 
 # Load shared configuration
+# shellcheck source=build-config.sh
 . "${SCRIPT_DIR}/build-config.sh"
 
 # Get the toolchain URL from the variable name
@@ -84,7 +85,8 @@ echo "Unpacking toolchain in build directory..."
 tar xJf "$TOOLCHAIN_ARCHIVE"
 
 # Set up toolchain paths
-export TOOLCHAIN_PREFIX="$(pwd)/${TOOLCHAIN_DIR}"
+TOOLCHAIN_PREFIX="$(pwd)/${TOOLCHAIN_DIR}"
+export TOOLCHAIN_PREFIX
 export TOOLCHAIN_SYSROOT="$TOOLCHAIN_PREFIX/${SYSROOT_TRIPLE}/sysroot"
 
 # Verify toolchain was unpacked correctly
@@ -125,74 +127,77 @@ echo "Setting up library sources..."
 download_all_libraries
 
 # Initialize static library verification file
-export STATIC_LIBS_FILE="$(pwd)/static-libs.txt"
+STATIC_LIBS_FILE="$(pwd)/static-libs.txt"
+export STATIC_LIBS_FILE
 echo "Static Library Verification Report" > "$STATIC_LIBS_FILE"
-echo "Platform: ${PLATFORM_DESC}" >> "$STATIC_LIBS_FILE"
-echo "Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$STATIC_LIBS_FILE"
-echo "" >> "$STATIC_LIBS_FILE"
+{
+    echo "Platform: ${PLATFORM_DESC}"
+    echo "Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo ""
+} >> "$STATIC_LIBS_FILE"
 
 # Build compression libraries (static only to avoid conflicts with -static LDFLAGS)
 echo "Building lz4 ${LZ4_VERSION}..."
-cd lz4-${LZ4_VERSION}/lib
-make -j$NCPU liblz4.a "CC=$CC" "AR=$AR"
-mkdir -p $PREFIX/lib $PREFIX/include
-cp liblz4.a $PREFIX/lib/
-cp lz4.h lz4hc.h lz4frame.h $PREFIX/include/
+cd lz4-"${LZ4_VERSION}"/lib
+make -j"$NCPU" liblz4.a "CC=$CC" "AR=$AR"
+mkdir -p "$PREFIX"/lib "$PREFIX"/include
+cp liblz4.a "$PREFIX"/lib/
+cp lz4.h lz4hc.h lz4frame.h "$PREFIX"/include/
 cd ../..
 verify_static_lib "$PREFIX/lib/liblz4.a" "$NM"
 
 echo "Building zstd ${ZSTD_VERSION}..."
-cd zstd-${ZSTD_VERSION}/lib
-make -j$NCPU libzstd.a "CC=$CC" "AR=$AR"
-mkdir -p $PREFIX/lib $PREFIX/include
-cp libzstd.a $PREFIX/lib/
-cp zstd.h zstd_errors.h zdict.h $PREFIX/include/
+cd zstd-"${ZSTD_VERSION}"/lib
+make -j"$NCPU" libzstd.a "CC=$CC" "AR=$AR"
+mkdir -p "$PREFIX"/lib "$PREFIX"/include
+cp libzstd.a "$PREFIX"/lib/
+cp zstd.h zstd_errors.h zdict.h "$PREFIX"/include/
 cd ../..
 verify_static_lib "$PREFIX/lib/libzstd.a" "$NM"
 
 echo "Building bzip2 ${BZIP2_VERSION}..."
-cd bzip2-${BZIP2_VERSION}
-make -sj$NCPU libbz2.a "CC=$CC" "AR=$AR" "RANLIB=$RANLIB" CFLAGS="-fPIC -O2 -w -D_FILE_OFFSET_BITS=64"
-mkdir -p $PREFIX/lib $PREFIX/include
-cp libbz2.a $PREFIX/lib/
-cp bzlib.h $PREFIX/include/
+cd bzip2-"${BZIP2_VERSION}"
+make -sj"$NCPU" libbz2.a "CC=$CC" "AR=$AR" "RANLIB=$RANLIB" CFLAGS="-fPIC -O2 -w -D_FILE_OFFSET_BITS=64"
+mkdir -p "$PREFIX"/lib "$PREFIX"/include
+cp libbz2.a "$PREFIX"/lib/
+cp bzlib.h "$PREFIX"/include/
 cd ..
 verify_static_lib "$PREFIX/lib/libbz2.a" "$NM"
 
 echo "Building lzo ${LZO_VERSION}..."
-cd lzo-${LZO_VERSION}
-./configure --quiet --cache-file="$(get_config_cache ${COMPILER_PREFIX})" $CONFIGURE_HOST --prefix=$PREFIX --disable-shared --enable-static
-make -sj$NCPU install
+cd lzo-"${LZO_VERSION}"
+./configure --quiet --cache-file="$(get_config_cache ${COMPILER_PREFIX})" "$CONFIGURE_HOST" --prefix="$PREFIX" --disable-shared --enable-static
+make -sj"$NCPU" install
 cd ..
 verify_static_lib "$PREFIX/lib/liblzo2.a" "$NM"
 
 echo "Building zlib ${ZLIB_VERSION}..."
-cd zlib-${ZLIB_VERSION}
-CHOST=${COMPILER_PREFIX} ./configure --static --prefix=$PREFIX
-make -sj$NCPU install
+cd zlib-"${ZLIB_VERSION}"
+CHOST=${COMPILER_PREFIX} ./configure --static --prefix="$PREFIX"
+make -sj"$NCPU" install
 cd ..
 verify_static_lib "$PREFIX/lib/libz.a" "$NM"
 
 echo "Building xz ${XZ_VERSION}..."
-cd xz-${XZ_VERSION}
-./configure --quiet --cache-file="$(get_config_cache ${COMPILER_PREFIX})" $CONFIGURE_HOST --with-pic --disable-shared --prefix=$PREFIX
-make -sj$NCPU install
+cd xz-"${XZ_VERSION}"
+./configure --quiet --cache-file="$(get_config_cache ${COMPILER_PREFIX})" "$CONFIGURE_HOST" --with-pic --disable-shared --prefix="$PREFIX"
+make -sj"$NCPU" install
 cd ..
 verify_static_lib "$PREFIX/lib/liblzma.a" "$NM"
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
-cd libxml2-${LIBXML2_VERSION}
-./autogen.sh --cache-file="$(get_config_cache ${COMPILER_PREFIX})" $CONFIGURE_HOST --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX --with-lzma=$PREFIX
-make -sj$NCPU install
+cd libxml2-"${LIBXML2_VERSION}"
+./autogen.sh --cache-file="$(get_config_cache ${COMPILER_PREFIX})" "$CONFIGURE_HOST" --enable-silent-rules --disable-shared --enable-static --prefix="$PREFIX" --without-python --with-zlib="$PREFIX" --with-lzma="$PREFIX"
+make -sj"$NCPU" install
 cd ..
 verify_static_lib "$PREFIX/lib/libxml2.a" "$NM"
 
 echo "Building libarchive ${LIBARCHIVE_VERSION}..."
-cd libarchive-${LIBARCHIVE_VERSION}
+cd libarchive-"${LIBARCHIVE_VERSION}"
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
 export LIBXML2_PC_LIBS=-L$PREFIX
-./configure --cache-file="$(get_config_cache ${COMPILER_PREFIX})" $CONFIGURE_HOST --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2 --disable-shared --enable-static
-make -sj$NCPU install
+./configure --cache-file="$(get_config_cache ${COMPILER_PREFIX})" "$CONFIGURE_HOST" --prefix="$PREFIX" --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2 --disable-shared --enable-static
+make -sj"$NCPU" install
 cd ..
 verify_static_lib "$PREFIX/lib/libarchive.a" "$NM"
 
@@ -215,7 +220,7 @@ $CC -shared -o libarchive.so \
     -Wl,--start-group \
     local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a \
     local/lib/liblzo2.a local/lib/libzstd.a local/lib/liblz4.a \
-    $LIBGCC_PATH ${TOOLCHAIN_SYSROOT}/lib/libc.a \
+    "$LIBGCC_PATH" "${TOOLCHAIN_SYSROOT}"/lib/libc.a \
     -Wl,--end-group \
     -nostdlib
 
@@ -225,7 +230,7 @@ echo "Localizing internal symbols in shared library..."
 OBJCOPY=${COMPILER_PREFIX}-objcopy
 $OBJCOPY --keep-global-symbols="${SCRIPT_DIR}/libarchive-exports.txt" libarchive.so
 echo "Exported symbols after localization:"
-$NM -D --defined-only libarchive.so | grep " T " | wc -l | xargs echo "  Count:"
+$NM -D --defined-only libarchive.so | grep -c " T " | xargs echo "  Count:"
 
 echo "Creating static library (fat archive with all dependencies, internal symbols localized)..."
 # Create a combined static archive with all dependencies
@@ -243,7 +248,7 @@ for lib in $PREFIX/lib/libarchive.a $PREFIX/lib/libbz2.a $PREFIX/lib/libz.a \
     cd ..
 done
 # Combine all object files into one archive
-$AR rcs ../libarchive-static.a */*.o
+$AR rcs ../libarchive-static.a ./*/*.o
 cd ..
 rm -rf _ar_combine
 # Localize all symbols except the public API (prevents namespace pollution)
@@ -270,20 +275,22 @@ file libarchive.so
 DEPS_FILE="$(pwd)/dependencies.txt"
 
 echo "=== Dependency Verification ===" > "$DEPS_FILE"
-echo "Platform: ${PLATFORM_DESC}" >> "$DEPS_FILE"
-echo "Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$DEPS_FILE"
-echo "" >> "$DEPS_FILE"
+{
+    echo "Platform: ${PLATFORM_DESC}"
+    echo "Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo ""
 
-echo "=== Library Dependencies ===" >> "$DEPS_FILE"
-ldd libarchive.so >> "$DEPS_FILE" 2>&1 || echo "Statically linked (no dynamic dependencies)" >> "$DEPS_FILE"
+    echo "=== Library Dependencies ==="
+    ldd libarchive.so 2>&1 || echo "Statically linked (no dynamic dependencies)"
 
-echo "" >> "$DEPS_FILE"
-echo "=== Exported Symbols (API) ===" >> "$DEPS_FILE"
-$NM -D --defined-only libarchive.so 2>/dev/null | grep " T " | awk '{print $3}' | sort >> "$DEPS_FILE"
+    echo ""
+    echo "=== Exported Symbols (API) ==="
+    $NM -D --defined-only libarchive.so 2>/dev/null | grep " T " | awk '{print $3}' | sort
 
-echo "" >> "$DEPS_FILE"
-echo "=== Imported Symbols (from libc/system) ===" >> "$DEPS_FILE"
-$NM -D --undefined-only libarchive.so 2>/dev/null | awk '{print $2}' | sort >> "$DEPS_FILE"
+    echo ""
+    echo "=== Imported Symbols (from libc/system) ==="
+    $NM -D --undefined-only libarchive.so 2>/dev/null | awk '{print $2}' | sort
+} >> "$DEPS_FILE"
 
 echo "=== Checking dynamic library dependencies ==="
 ldd libarchive.so || echo "Statically linked (no dynamic dependencies)"
