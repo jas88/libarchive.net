@@ -19,23 +19,23 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.0.2
       - name: Cache library downloads
-        uses: actions/cache@v5
+        uses: actions/cache@v5.0.5
         with:
           path: ~/downloads
           key: library-downloads-${{ hashFiles('native/build-config.sh') }}
           restore-keys: |
             library-downloads-
       - name: Cache configure results
-        uses: actions/cache@v5
+        uses: actions/cache@v5.0.5
         with:
           path: ~/config-cache
           key: config-cache-macos-${{ hashFiles('native/build-*.sh') }}
           restore-keys: |
             config-cache-macos-
       - name: ccache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@v1.2.23
         with:
           key: macos-build-v2
         env:
@@ -54,7 +54,7 @@ jobs:
           echo "=== ccache stats after build ==="
           ccache -s
       - name: Archive MacOS library
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: maclib
           path: ~/libarchive-native/libarchive.dylib
@@ -66,18 +66,18 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.0.2
         with:
           fetch-depth: 0
       - name: Cache library downloads
-        uses: actions/cache@v5
+        uses: actions/cache@v5.0.5
         with:
           path: ~/downloads
           key: library-downloads-${{ hashFiles('native/build-config.sh') }}
           restore-keys: |
             library-downloads-
       - name: Cache configure results
-        uses: actions/cache@v5
+        uses: actions/cache@v5.0.5
         with:
           path: ~/config-cache
           key: config-cache-linux-${{ hashFiles('native/build-*.sh') }}
@@ -103,7 +103,7 @@ jobs:
           version: 1.0
           execute_install_scripts: true
       - name: Retrieve MacOS library
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.1
         with:
           name: maclib
       - name: Install LLVM-MinGW for ARM64
@@ -118,7 +118,7 @@ jobs:
       - name: Update Directory.Build.props for SDK version
         run: ./scripts/generate-build-props.sh
       - name: ccache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@v1.2.23
         with:
           key: all-native-builds-v2
           variant: sccache
@@ -212,7 +212,7 @@ jobs:
           echo "=== sccache stats after Linux builds ==="
           sccache --show-stats
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@v4.35.2
         with:
           languages: 'csharp'
           build-mode: manual
@@ -270,7 +270,7 @@ jobs:
       - name: Cleanup build artifacts
         run: rm -rf local {bzip2,libarchive,libxml2,lz4,lzo,xz,zlib,zstd}-* x86-64--musl--stable-*
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@v4.35.2
       - name: Upload built packages
         uses: svenstaro/upload-release-action@2.11.5
         if: contains(github.ref, 'refs/tags/v')
@@ -281,7 +281,7 @@ jobs:
           overwrite: true
           file_glob: true
       - name: Archive production artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: dist
           path: |
