@@ -18,15 +18,15 @@ cd "$BUILD_DIR"
 # Load shared configuration
 . "${SCRIPT_DIR}/build-config.sh"
 
-# Ensure build tools are available
+# Ensure build tools are available (libxml2's autogen.sh runs autoreconf)
 echo "Installing required build tools..."
 brew install autoconf automake libtool 2>/dev/null || true
 
-# Create symlinks for automake-1.17 (xz 5.8+ was built with this version)
-# Homebrew installs automake 1.18+ but xz's build system looks for version-specific commands
-BREW_PREFIX="$(brew --prefix)"
-ln -sf "${BREW_PREFIX}/bin/automake" "${BREW_PREFIX}/bin/automake-1.17"
-ln -sf "${BREW_PREFIX}/bin/aclocal" "${BREW_PREFIX}/bin/aclocal-1.17"
+# No automake-1.17/aclocal-1.17 symlinks: nothing invokes a version-specific
+# automake now that the tarballs' generated files are left in place. Such a
+# symlink would also be actively harmful, letting an aclocal.m4 rebuild rule
+# silently regenerate aclocal.m4 from the host libtool.m4 and reintroduce the
+# "libtool: Version mismatch error" this stamping is meant to prevent.
 
 # macOS-specific build settings
 export CPPFLAGS="-I$PREFIX/include"
