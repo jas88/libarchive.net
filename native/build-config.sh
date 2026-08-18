@@ -206,6 +206,40 @@ download_toolchain() {
     echo "$cache_file"
 }
 
+# Normalise autotools timestamps for a freshly unpacked release tarball.
+#
+# Release tarballs ship a complete, self-consistent set of generated files
+# (aclocal.m4, configure, config.h.in, Makefile.in, build-aux/ltmain.sh). If their
+# mtimes are out of dependency order, make fires the autotools rebuild rules and
+# demands the exact tool versions the tarball was built with - e.g.
+# "automake-1.17: command not found".
+#
+# Rewriting the files instead (aclocal && automake && autoconf) is worse: it
+# regenerates aclocal.m4 from the *host* libtool.m4 while leaving the tarball's
+# ltmain.sh in place, so a host libtool newer than the tarball's fails with
+# "libtool: Version mismatch error ... definition of this LT_INIT comes from".
+#
+# Stamping the files in dependency order keeps the tarball's own generated files
+# and stops any rebuild rule from firing, so neither the host automake version
+# nor the host libtool version can affect the build.
+normalize_autotools_timestamps() {
+    local dir="$1"
+    [ -d "$dir" ] || return 0
+    [ -f "$dir/configure" ] || return 0
+
+    echo "Normalising autotools timestamps in ${dir}..."
+
+    # Oldest -> newest, matching the autotools dependency graph:
+    #   configure.ac/Makefile.am/m4 -> aclocal.m4 -> configure -> config.h.in -> Makefile.in
+    find "$dir" \( -name 'configure.ac' -o -name 'configure.in' -o -name 'Makefile.am' \
+        -o \( -name '*.m4' -a ! -name 'aclocal.m4' \) \) -exec touch -t 202001010000 {} +
+    find "$dir" -name 'aclocal.m4'  -exec touch -t 202001010001 {} +
+    find "$dir" -name 'configure'   -exec touch -t 202001010002 {} +
+    find "$dir" \( -name 'config.h.in' -o -name 'config.hin' -o -name '*.h.in' \) \
+        -exec touch -t 202001010003 {} +
+    find "$dir" -name 'Makefile.in'  -exec touch -t 202001010004 {} +
+}
+
 # Function to download all libraries
 # Always unpacks fresh copies from cache
 download_all_libraries() {
@@ -218,15 +252,14 @@ download_all_libraries() {
     download_library "$ZLIB_URL" "zlib" "zlib-${ZLIB_VERSION}" "$ZLIB_SHA256"
     download_library "$XZ_URL" "xz" "xz-${XZ_VERSION}" "$XZ_SHA256"
 
-    # Fix xz automake timestamp issue - touch generated files to prevent regeneration
-    # xz 5.8.2 was built with automake 1.18.1 which may not be available on build systems
-    if [ -d "xz-${XZ_VERSION}" ]; then
-        echo "Fixing xz automake timestamps..."
-        find "xz-${XZ_VERSION}" -name "configure" -exec touch {} \;
-        find "xz-${XZ_VERSION}" -name "Makefile.in" -exec touch {} \;
-        find "xz-${XZ_VERSION}" -name "aclocal.m4" -exec touch {} \;
-        find "xz-${XZ_VERSION}" -name "config.h.in" -exec touch {} \;
-    fi
+    # Stop autotools rebuild rules firing in any unpacked tarball. Without this the
+    # build depends on the host's automake/libtool versions matching the ones each
+    # tarball was released with, which breaks whenever a runner image updates them.
+    # libxml2 is excluded: it is built via its own autogen.sh, which deliberately
+    # runs a full, self-consistent autoreconf (libtoolize included).
+    normalize_autotools_timestamps "libarchive-${LIBARCHIVE_VERSION}"
+    normalize_autotools_timestamps "xz-${XZ_VERSION}"
+    normalize_autotools_timestamps "lzo-${LZO_VERSION}"
 }
 
 # Detect number of CPU cores

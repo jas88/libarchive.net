@@ -58,8 +58,8 @@ cd ..
 
 echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
-# Regenerate autotools files for local automake version
-aclocal && automake && autoconf
+# No autotools regeneration here: the tarball ships consistent generated files and
+# download_all_libraries has already stamped them in dependency order.
 ./configure --cache-file=$(get_config_cache darwin-universal) --with-pic --disable-shared --prefix=$PREFIX
 make -sj$NCPU install
 cd ..
@@ -75,8 +75,9 @@ make -j$NCPU -sC zstd-${ZSTD_VERSION} install
 
 echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
-# Regenerate autotools files for local automake version
-aclocal && automake && autoconf
+# No autotools regeneration here: running aclocal would rebuild aclocal.m4 from the
+# host's libtool.m4 while leaving the tarball's older ltmain.sh in place, which fails
+# with "libtool: Version mismatch error" once the runner's libtool outpaces it.
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
 export LIBXML2_PC_LIBS="-L$PREFIX -lxml2"
 ./configure --cache-file=$(get_config_cache darwin-universal) --prefix=$PREFIX --enable-silent-rules --disable-dependency-tracking --enable-static --disable-shared --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-rpath --enable-posix-regex-lib=libc --enable-xattr --enable-acl --enable-largefile --with-pic --with-zlib --with-bz2lib --with-libb2 --with-iconv --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-cng
