@@ -241,14 +241,20 @@ normalize_autotools_timestamps() {
     # mirror the autotools dependency graph, so a new file class must be inserted
     # at the tier its dependencies require, not appended.
     #
-    #   0 sources (configure.ac/Makefile.am/m4)
-    #   1 aclocal.m4      depends on tier 0
-    #   2 configure       depends on tiers 0-1
-    #   3 config.h.in     depends on tiers 0-1, and must not predate configure
-    #   4 Makefile.in     depends on tiers 0-1
-    find "$dir" \( -name 'configure.ac' -o -name 'configure.in' -o -name 'Makefile.am' \
-        -o \( -name '*.m4' -a ! -name 'aclocal.m4' \) \) \
-        -exec touch -t "$(autotools_stamp_tier 0)" {} +
+    #   0 every input       the whole tree, see below
+    #   1 aclocal.m4        depends on tier 0
+    #   2 configure         depends on tiers 0-1
+    #   3 config.h.in       depends on tiers 0-1, and must not predate configure
+    #   4 Makefile.in       depends on tiers 0-1
+    #
+    # Tier 0 deliberately backdates the entire tree rather than an enumerated list of
+    # source patterns. automake makes Makefile.in depend on every fragment that
+    # Makefile.am includes, and those are not named predictably - xz's
+    # src/liblzma/Makefile.am pulls in seven */Makefile.inc files, none of which match
+    # a configure.ac/Makefile.am/*.m4 pattern. Missing one silently lets the rebuild
+    # rule fire and reintroduces the host-automake dependency. Backdating everything
+    # first means no input can outrank a generated file, whatever the package includes.
+    find "$dir" -exec touch -t "$(autotools_stamp_tier 0)" {} +
     find "$dir" -name 'aclocal.m4' -exec touch -t "$(autotools_stamp_tier 1)" {} +
     find "$dir" -name 'configure'  -exec touch -t "$(autotools_stamp_tier 2)" {} +
     find "$dir" \( -name 'config.h.in' -o -name 'config.hin' -o -name '*.h.in' \) \
