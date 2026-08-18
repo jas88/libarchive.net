@@ -206,6 +206,62 @@ download_toolchain() {
     echo "$cache_file"
 }
 
+# Normalise autotools timestamps for a freshly unpacked release tarball.
+#
+# Release tarballs ship a complete, self-consistent set of generated files
+# (aclocal.m4, configure, config.h.in, Makefile.in, build-aux/ltmain.sh). If their
+# mtimes are out of dependency order, make fires the autotools rebuild rules and
+# demands the exact tool versions the tarball was built with - e.g.
+# "automake-1.17: command not found".
+#
+# Rewriting the files instead (aclocal && automake && autoconf) is worse: it
+# regenerates aclocal.m4 from the *host* libtool.m4 while leaving the tarball's
+# ltmain.sh in place, so a host libtool newer than the tarball's fails with
+# "libtool: Version mismatch error ... definition of this LT_INIT comes from".
+#
+# Stamping the files in dependency order keeps the tarball's own generated files
+# and stops any rebuild rule from firing, so neither the host automake version
+# nor the host libtool version can affect the build.
+# Timestamp for stamping tier N, as a touch -t argument. Tiers are one minute
+# apart: make compares mtimes at second granularity, so a whole minute between
+# tiers leaves no room for two tiers to be seen as equal. The day itself is
+# arbitrary - only the relative order matters - and is overridable for testing.
+autotools_stamp_tier() {
+    printf '%s%02d%02d' "${AUTOTOOLS_STAMP_DAY:-20200101}" "$(($1 / 60))" "$(($1 % 60))"
+}
+
+normalize_autotools_timestamps() {
+    local dir="$1"
+    [ -d "$dir" ] || return 0
+    [ -f "$dir/configure" ] || return 0
+
+    echo "Normalising autotools timestamps in ${dir}..."
+
+    # Applied oldest -> newest. The ascending tier numbers are the contract: they
+    # mirror the autotools dependency graph, so a new file class must be inserted
+    # at the tier its dependencies require, not appended.
+    #
+    #   0 every input       the whole tree, see below
+    #   1 aclocal.m4        depends on tier 0
+    #   2 configure         depends on tiers 0-1
+    #   3 config.h.in       depends on tiers 0-1, and must not predate configure
+    #   4 Makefile.in       depends on tiers 0-1
+    #
+    # Tier 0 deliberately backdates the entire tree rather than an enumerated list of
+    # source patterns. automake makes Makefile.in depend on every fragment that
+    # Makefile.am includes, and those are not named predictably - xz's
+    # src/liblzma/Makefile.am pulls in seven */Makefile.inc files, none of which match
+    # a configure.ac/Makefile.am/*.m4 pattern. Missing one silently lets the rebuild
+    # rule fire and reintroduces the host-automake dependency. Backdating everything
+    # first means no input can outrank a generated file, whatever the package includes.
+    find "$dir" -exec touch -t "$(autotools_stamp_tier 0)" {} +
+    find "$dir" -name 'aclocal.m4' -exec touch -t "$(autotools_stamp_tier 1)" {} +
+    find "$dir" -name 'configure'  -exec touch -t "$(autotools_stamp_tier 2)" {} +
+    find "$dir" \( -name 'config.h.in' -o -name 'config.hin' -o -name '*.h.in' \) \
+        -exec touch -t "$(autotools_stamp_tier 3)" {} +
+    find "$dir" -name 'Makefile.in' -exec touch -t "$(autotools_stamp_tier 4)" {} +
+}
+
 # Function to download all libraries
 # Always unpacks fresh copies from cache
 download_all_libraries() {
@@ -218,15 +274,14 @@ download_all_libraries() {
     download_library "$ZLIB_URL" "zlib" "zlib-${ZLIB_VERSION}" "$ZLIB_SHA256"
     download_library "$XZ_URL" "xz" "xz-${XZ_VERSION}" "$XZ_SHA256"
 
-    # Fix xz automake timestamp issue - touch generated files to prevent regeneration
-    # xz 5.8.2 was built with automake 1.18.1 which may not be available on build systems
-    if [ -d "xz-${XZ_VERSION}" ]; then
-        echo "Fixing xz automake timestamps..."
-        find "xz-${XZ_VERSION}" -name "configure" -exec touch {} \;
-        find "xz-${XZ_VERSION}" -name "Makefile.in" -exec touch {} \;
-        find "xz-${XZ_VERSION}" -name "aclocal.m4" -exec touch {} \;
-        find "xz-${XZ_VERSION}" -name "config.h.in" -exec touch {} \;
-    fi
+    # Stop autotools rebuild rules firing in any unpacked tarball. Without this the
+    # build depends on the host's automake/libtool versions matching the ones each
+    # tarball was released with, which breaks whenever a runner image updates them.
+    # libxml2 is excluded: it is built via its own autogen.sh, which deliberately
+    # runs a full, self-consistent autoreconf (libtoolize included).
+    normalize_autotools_timestamps "libarchive-${LIBARCHIVE_VERSION}"
+    normalize_autotools_timestamps "xz-${XZ_VERSION}"
+    normalize_autotools_timestamps "lzo-${LZO_VERSION}"
 }
 
 # Detect number of CPU cores

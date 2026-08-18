@@ -18,15 +18,15 @@ cd "$BUILD_DIR"
 # Load shared configuration
 . "${SCRIPT_DIR}/build-config.sh"
 
-# Ensure build tools are available
+# Ensure build tools are available (libxml2's autogen.sh runs autoreconf)
 echo "Installing required build tools..."
 brew install autoconf automake libtool 2>/dev/null || true
 
-# Create symlinks for automake-1.17 (xz 5.8+ was built with this version)
-# Homebrew installs automake 1.18+ but xz's build system looks for version-specific commands
-BREW_PREFIX="$(brew --prefix)"
-ln -sf "${BREW_PREFIX}/bin/automake" "${BREW_PREFIX}/bin/automake-1.17"
-ln -sf "${BREW_PREFIX}/bin/aclocal" "${BREW_PREFIX}/bin/aclocal-1.17"
+# No automake-1.17/aclocal-1.17 symlinks: nothing invokes a version-specific
+# automake now that the tarballs' generated files are left in place. Such a
+# symlink would also be actively harmful, letting an aclocal.m4 rebuild rule
+# silently regenerate aclocal.m4 from the host libtool.m4 and reintroduce the
+# "libtool: Version mismatch error" this stamping is meant to prevent.
 
 # macOS-specific build settings
 export CPPFLAGS="-I$PREFIX/include"
@@ -58,8 +58,8 @@ cd ..
 
 echo "Building xz ${XZ_VERSION}..."
 cd xz-${XZ_VERSION}
-# Regenerate autotools files for local automake version
-aclocal && automake && autoconf
+# No autotools regeneration here: the tarball ships consistent generated files and
+# download_all_libraries has already stamped them in dependency order.
 ./configure --cache-file=$(get_config_cache darwin-universal) --with-pic --disable-shared --prefix=$PREFIX
 make -sj$NCPU install
 cd ..
@@ -75,8 +75,9 @@ make -j$NCPU -sC zstd-${ZSTD_VERSION} install
 
 echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
-# Regenerate autotools files for local automake version
-aclocal && automake && autoconf
+# No autotools regeneration here: running aclocal would rebuild aclocal.m4 from the
+# host's libtool.m4 while leaving the tarball's older ltmain.sh in place, which fails
+# with "libtool: Version mismatch error" once the runner's libtool outpaces it.
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
 export LIBXML2_PC_LIBS="-L$PREFIX -lxml2"
 ./configure --cache-file=$(get_config_cache darwin-universal) --prefix=$PREFIX --enable-silent-rules --disable-dependency-tracking --enable-static --disable-shared --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-rpath --enable-posix-regex-lib=libc --enable-xattr --enable-acl --enable-largefile --with-pic --with-zlib --with-bz2lib --with-libb2 --with-iconv --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-cng
