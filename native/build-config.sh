@@ -222,6 +222,14 @@ download_toolchain() {
 # Stamping the files in dependency order keeps the tarball's own generated files
 # and stops any rebuild rule from firing, so neither the host automake version
 # nor the host libtool version can affect the build.
+# Timestamp for stamping tier N, as a touch -t argument. Tiers are one minute
+# apart: make compares mtimes at second granularity, so a whole minute between
+# tiers leaves no room for two tiers to be seen as equal. The day itself is
+# arbitrary - only the relative order matters - and is overridable for testing.
+autotools_stamp_tier() {
+    printf '%s%02d%02d' "${AUTOTOOLS_STAMP_DAY:-20200101}" "$(($1 / 60))" "$(($1 % 60))"
+}
+
 normalize_autotools_timestamps() {
     local dir="$1"
     [ -d "$dir" ] || return 0
@@ -229,15 +237,23 @@ normalize_autotools_timestamps() {
 
     echo "Normalising autotools timestamps in ${dir}..."
 
-    # Oldest -> newest, matching the autotools dependency graph:
-    #   configure.ac/Makefile.am/m4 -> aclocal.m4 -> configure -> config.h.in -> Makefile.in
+    # Applied oldest -> newest. The ascending tier numbers are the contract: they
+    # mirror the autotools dependency graph, so a new file class must be inserted
+    # at the tier its dependencies require, not appended.
+    #
+    #   0 sources (configure.ac/Makefile.am/m4)
+    #   1 aclocal.m4      depends on tier 0
+    #   2 configure       depends on tiers 0-1
+    #   3 config.h.in     depends on tiers 0-1, and must not predate configure
+    #   4 Makefile.in     depends on tiers 0-1
     find "$dir" \( -name 'configure.ac' -o -name 'configure.in' -o -name 'Makefile.am' \
-        -o \( -name '*.m4' -a ! -name 'aclocal.m4' \) \) -exec touch -t 202001010000 {} +
-    find "$dir" -name 'aclocal.m4'  -exec touch -t 202001010001 {} +
-    find "$dir" -name 'configure'   -exec touch -t 202001010002 {} +
+        -o \( -name '*.m4' -a ! -name 'aclocal.m4' \) \) \
+        -exec touch -t "$(autotools_stamp_tier 0)" {} +
+    find "$dir" -name 'aclocal.m4' -exec touch -t "$(autotools_stamp_tier 1)" {} +
+    find "$dir" -name 'configure'  -exec touch -t "$(autotools_stamp_tier 2)" {} +
     find "$dir" \( -name 'config.h.in' -o -name 'config.hin' -o -name '*.h.in' \) \
-        -exec touch -t 202001010003 {} +
-    find "$dir" -name 'Makefile.in'  -exec touch -t 202001010004 {} +
+        -exec touch -t "$(autotools_stamp_tier 3)" {} +
+    find "$dir" -name 'Makefile.in' -exec touch -t "$(autotools_stamp_tier 4)" {} +
 }
 
 # Function to download all libraries
