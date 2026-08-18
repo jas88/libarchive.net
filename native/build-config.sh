@@ -254,12 +254,18 @@ normalize_autotools_timestamps() {
     # a configure.ac/Makefile.am/*.m4 pattern. Missing one silently lets the rebuild
     # rule fire and reintroduces the host-automake dependency. Backdating everything
     # first means no input can outrank a generated file, whatever the package includes.
-    find "$dir" -exec touch -t "$(autotools_stamp_tier 0)" {} +
-    find "$dir" -name 'aclocal.m4' -exec touch -t "$(autotools_stamp_tier 1)" {} +
-    find "$dir" -name 'configure'  -exec touch -t "$(autotools_stamp_tier 2)" {} +
+    #
+    # touch -h stamps a symlink itself rather than its target. find does not follow
+    # symlinks while walking, but touch dereferences by default, so without -h a
+    # symlink pointing out of the tree would silently backdate a file elsewhere on the
+    # system. None of the tarballs currently ship symlinks; -h keeps that from becoming
+    # a problem if one ever does.
+    find "$dir" -exec touch -h -t "$(autotools_stamp_tier 0)" {} +
+    find "$dir" -name 'aclocal.m4' -exec touch -h -t "$(autotools_stamp_tier 1)" {} +
+    find "$dir" -name 'configure'  -exec touch -h -t "$(autotools_stamp_tier 2)" {} +
     find "$dir" \( -name 'config.h.in' -o -name 'config.hin' -o -name '*.h.in' \) \
-        -exec touch -t "$(autotools_stamp_tier 3)" {} +
-    find "$dir" -name 'Makefile.in' -exec touch -t "$(autotools_stamp_tier 4)" {} +
+        -exec touch -h -t "$(autotools_stamp_tier 3)" {} +
+    find "$dir" -name 'Makefile.in' -exec touch -h -t "$(autotools_stamp_tier 4)" {} +
 }
 
 # Function to download all libraries
