@@ -277,7 +277,7 @@ public class WriterTests
         var archivePath = Path.Combine(testDirectory, "progress.zip");
         var progressReports = new List<FileProgress>();
 
-        var progress = new Progress<FileProgress>(p => progressReports.Add(p));
+        var progress = new SynchronousProgress<FileProgress>(p => progressReports.Add(p));
 
         using (var writer = new LibArchiveWriter(archivePath, ArchiveFormat.Zip))
         {
@@ -288,6 +288,26 @@ public class WriterTests
         Assert.That(progressReports, Is.Not.Empty);
         Assert.That(progressReports.Last().IsComplete, Is.True);
         Assert.That(progressReports.Last().PercentComplete, Is.EqualTo(100).Within(0.1));
+    }
+
+    /// <summary>
+    /// Invokes the handler inline on the reporting thread.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Progress{T}"/> is deliberately asynchronous: it marshals callbacks to the
+    /// captured <see cref="System.Threading.SynchronizationContext"/>, or posts them to the
+    /// ThreadPool when there is none, as is the case under NUnit. Reports therefore arrive
+    /// after the assertions have already run, and the handler would be mutating a
+    /// non-thread-safe <see cref="List{T}"/> from pool threads. Reporting inline keeps the
+    /// assertions deterministic while still exercising the library's IProgress contract.
+    /// </remarks>
+    private sealed class SynchronousProgress<T> : IProgress<T>
+    {
+        private readonly Action<T> handler;
+
+        public SynchronousProgress(Action<T> handler) => this.handler = handler;
+
+        public void Report(T value) => handler(value);
     }
 
     #endregion
