@@ -35,7 +35,7 @@ jobs:
           restore-keys: |
             config-cache-macos-
       - name: ccache
-        uses: hendrikmuhs/ccache-action@v1.2.23
+        uses: hendrikmuhs/ccache-action@v1.2.24
         with:
           key: macos-build-v2
         env:
@@ -118,7 +118,7 @@ jobs:
       - name: Update Directory.Build.props for SDK version
         run: ./scripts/generate-build-props.sh
       - name: ccache
-        uses: hendrikmuhs/ccache-action@v1.2.23
+        uses: hendrikmuhs/ccache-action@v1.2.24
         with:
           key: all-native-builds-v2
           variant: sccache
