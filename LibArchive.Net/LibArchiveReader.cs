@@ -198,6 +198,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     /// <remarks>
     /// For file-based archives, this closes and reopens the file.
     /// For stream-based archives, the stream must be seekable (CanSeek = true).
+    /// Reset returns to the stream position captured when the reader was constructed.
     /// </remarks>
     /// <exception cref="NotSupportedException">Thrown when the archive source does not support reset (e.g., non-seekable stream).</exception>
     /// <exception cref="ObjectDisposedException">Thrown when the reader has been disposed.</exception>
@@ -270,7 +271,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         if (!_inputStream.CanSeek)
             throw new NotSupportedException("Cannot reset: the underlying stream is not seekable. Use a seekable stream or reopen from file.");
 
-        _inputStream.Seek(0, SeekOrigin.Begin);
+        _inputStream.Seek(_streamOrigin, SeekOrigin.Begin);
         InitializeFromStream();
     }
 
