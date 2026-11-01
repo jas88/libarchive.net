@@ -9,6 +9,7 @@ public partial class LibArchiveReader
     #region Stream-based Reading
 
     private Stream? _inputStream;
+    private readonly long _streamOrigin;
     private GCHandle? _callbackHandle;
     private byte[]? _readBuffer;
     private GCHandle? _bufferHandle;
@@ -17,11 +18,13 @@ public partial class LibArchiveReader
     private delegate int ArchiveOpenCallback(IntPtr archive, IntPtr clientData);
     private delegate int ArchiveCloseCallback(IntPtr archive, IntPtr clientData);
     private delegate IntPtr ArchiveReadCallback(IntPtr archive, IntPtr clientData, out IntPtr buffer);
+    private delegate long ArchiveSeekCallback(IntPtr archive, IntPtr clientData, long offset, int whence);
 
     // Delegate instances must be kept alive to prevent GC while native code holds references
     private ArchiveOpenCallback? _openCallback;
     private ArchiveCloseCallback? _closeCallback;
     private ArchiveReadCallback? _readCallback;
+    private ArchiveSeekCallback? _seekCallback;
 
     /// <summary>
     /// Creates a new archive reader that reads from a stream.
@@ -31,7 +34,8 @@ public partial class LibArchiveReader
     /// <param name="blockSize">Block size in bytes for reading (default: 1 MiB).</param>
     /// <remarks>
     /// The stream should be positioned at the start of the archive data.
-    /// For Reset() support, the stream must be seekable (CanSeek = true).
+    /// Its initial position is treated as archive offset zero, including after Reset().
+    /// Seeking within formats such as 7z, and Reset(), require a seekable stream (CanSeek = true).
     /// </remarks>
     public LibArchiveReader(Stream inputStream, string? password = null, uint blockSize = 1 << 20)
         : base(true)
@@ -42,6 +46,7 @@ public partial class LibArchiveReader
             throw new ArgumentException("Stream must be readable", nameof(inputStream));
 
         _inputStream = inputStream;
+        _streamOrigin = inputStream.CanSeek ? inputStream.Position : 0;
         _password = password;
         _blockSize = blockSize;
         _sourceType = SourceType.Stream;
@@ -51,9 +56,6 @@ public partial class LibArchiveReader
 
     private void InitializeFromStream()
     {
-        if (_inputStream == null)
-            throw new InvalidOperationException("No input stream available");
-
         handle = archive_read_new();
         if (handle == IntPtr.Zero)
             throw new ApplicationException("Failed to create archive reader");
@@ -83,6 +85,9 @@ public partial class LibArchiveReader
 
     private void OpenWithCallbacks()
     {
+        if (_inputStream == null)
+            throw new InvalidOperationException("No input stream available");
+
         // Allocate read buffer
         _readBuffer = new byte[_blockSize];
         _bufferHandle = GCHandle.Alloc(_readBuffer, GCHandleType.Pinned);
@@ -94,6 +99,13 @@ public partial class LibArchiveReader
 
         // Keep the stream reference alive
         _callbackHandle = GCHandle.Alloc(_inputStream);
+
+        if (_inputStream.CanSeek)
+        {
+            _seekCallback = OnSeek;
+            if (archive_read_set_seek_callback(handle, _seekCallback) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+                Throw();
+        }
 
         var result = archive_read_open(
             handle,
@@ -145,6 +157,55 @@ public partial class LibArchiveReader
         }
     }
 
+    private long OnSeek(IntPtr archive, IntPtr clientData, long offset, int whence)
+    {
+        try
+        {
+            var stream = GCHandle.FromIntPtr(clientData).Target as Stream;
+            if (stream == null || !stream.CanSeek)
+                return (long)ARCHIVE_RESULT.ARCHIVE_FAILED;
+
+            long basis;
+            switch (whence)
+            {
+                case 0: // SEEK_SET
+                    basis = _streamOrigin;
+                    break;
+                case 1: // SEEK_CUR
+                    basis = stream.Position;
+                    break;
+                case 2: // SEEK_END
+                    basis = stream.Length;
+                    break;
+                default:
+                    return (long)ARCHIVE_RESULT.ARCHIVE_FAILED;
+            }
+
+            long target;
+            try
+            {
+                target = checked(basis + offset);
+            }
+            catch (OverflowException)
+            {
+                return (long)ARCHIVE_RESULT.ARCHIVE_FAILED;
+            }
+
+            if (target < _streamOrigin || target > stream.Length)
+                return (long)ARCHIVE_RESULT.ARCHIVE_FAILED;
+
+            stream.Seek(target, SeekOrigin.Begin);
+
+            // Use Position instead of the value returned by Seek.
+            // https://learn.microsoft.com/en-us/dotnet/api/system.io.memorystream.seek?view=netframework-4.8.1#remarks
+            return checked(stream.Position - _streamOrigin);
+        }
+        catch
+        {
+            return (long)ARCHIVE_RESULT.ARCHIVE_FATAL;
+        }
+    }
+
     partial void CleanupCallbacks()
     {
         if (_bufferHandle.HasValue)
@@ -163,6 +224,7 @@ public partial class LibArchiveReader
         _openCallback = null;
         _closeCallback = null;
         _readCallback = null;
+        _seekCallback = null;
     }
 
     #endregion
@@ -171,6 +233,11 @@ public partial class LibArchiveReader
 
 #if NET7_0_OR_GREATER
     [LibraryImport("archive")]
+    private static partial int archive_read_set_seek_callback(
+        IntPtr archive,
+        [MarshalAs(UnmanagedType.FunctionPtr)] ArchiveSeekCallback seekCallback);
+
+    [LibraryImport("archive")]
     private static partial int archive_read_open(
         IntPtr archive,
         IntPtr clientData,
@@ -178,6 +245,11 @@ public partial class LibArchiveReader
         [MarshalAs(UnmanagedType.FunctionPtr)] ArchiveReadCallback? readCallback,
         [MarshalAs(UnmanagedType.FunctionPtr)] ArchiveCloseCallback? closeCallback);
 #else
+    [DllImport("archive")]
+    private static extern int archive_read_set_seek_callback(
+        IntPtr archive,
+        [MarshalAs(UnmanagedType.FunctionPtr)] ArchiveSeekCallback seekCallback);
+
     [DllImport("archive")]
     private static extern int archive_read_open(
         IntPtr archive,
