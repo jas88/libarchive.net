@@ -68,7 +68,7 @@ check_github_release() {
     local repo=$1
     local url="https://api.github.com/repos/$repo/releases/latest"
 
-    local version=$(curl -sf -H "Accept: application/vnd.github.v3+json" "$url" | \
+    local version=$(curl -sfL -H "Accept: application/vnd.github.v3+json" "$url" | \
                     jq -r '.tag_name // empty' | sed 's/^v//')
 
     echo "$version"
@@ -79,7 +79,7 @@ check_web_version() {
     local url=$1
     local pattern=$2
 
-    local content=$(curl -sf "$url" || echo "")
+    local content=$(curl -sfL "$url" || echo "")
     if [ -z "$content" ]; then
         echo ""
         return
@@ -252,7 +252,7 @@ check_dependency "xz" "$CURRENT_XZ" "github" "tukaani-project/xz" || true
 # zlib
 check_dependency "zlib" "$CURRENT_ZLIB" "web" \
     "https://zlib.net/" \
-    'zlib-([0-9]+\.[0-9]+\.[0-9]+)\.tar\.xz' || true
+    'zlib-([0-9]+\.[0-9]+(\.[0-9]+)?)\.tar\.xz' || true
 
 # libxml2
 check_dependency "libxml2" "$CURRENT_LIBXML2" "gnome" \

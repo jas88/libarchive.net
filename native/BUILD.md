@@ -22,7 +22,7 @@ All library versions are managed in `build-config.sh`:
 | zstd | 1.5.6 |
 | lzo | 2.10 |
 | libxml2 | 2.12.6 |
-| zlib | 1.3.1 |
+| zlib | 1.4 |
 | xz (liblzma) | 5.4.6 |
 | bzip2 | 1.0.8 |
 
