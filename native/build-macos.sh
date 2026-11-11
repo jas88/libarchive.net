@@ -71,7 +71,9 @@ make -sj$NCPU install
 cd ..
 
 echo "Building zstd ${ZSTD_VERSION}..."
-make -j$NCPU -sC zstd-${ZSTD_VERSION} install
+# Library only: the top-level install also builds the zstd CLI, whose lz4 support
+# uses the unprefixed lz4frame enums removed in lz4 1.11.0. Matches the other platforms.
+make -j$NCPU -sC zstd-${ZSTD_VERSION}/lib install-static install-includes
 
 echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
