@@ -644,18 +644,23 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     private static void PreloadWindowsLibrary()
     {
-        // [assembly: DefaultDllImportSearchPaths(DllImportSearchPath.AssemblyDirectory)] makes
-        // .NET Framework probe for archive.dll next to this assembly, then fall back to the
-        // standard Windows search. A RID-specific build or publish puts the DLL there, and
-        // needs no help.
-        var assemblyDirectory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+        // A RID-specific build or publish puts archive.dll next to this assembly, where the
+        // assembly-wide DefaultDllImportSearchPaths(AssemblyDirectory) already finds it. An
+        // assembly with no file location (single-file, Native AOT) has the application
+        // directory treated as its assembly directory by the runtime, so do the same here.
+        var assemblyDirectory = GetAssemblyDirectoryOrNull(Assembly.GetExecutingAssembly())
+                                ?? AppDomain.CurrentDomain.BaseDirectory;
         if (!string.IsNullOrEmpty(assemblyDirectory) && File.Exists(Path.Combine(assemblyDirectory, "archive.dll")))
             return;
 
-        // Otherwise the package's .targets file has deployed it to runtimes\{rid}\native\,
-        // which is never probed. Load it from there by full path: Windows then resolves the
-        // [DllImport("archive")] calls to the module of that name which is already loaded.
-        // If it is not there either, leave it to the standard search (e.g. a copy on PATH).
+        // Otherwise the package's .targets file has deployed it to runtimes\{rid}\native\.
+        // .NET (Core) finds it there through the application's deps.json, but .NET Framework
+        // never probes that folder. Load it by full path: when .NET Framework falls back from
+        // the assembly directory to loading "archive" by name, Windows binds that to the
+        // module which is already loaded.
+        // If it is not there either, there is nothing to preload, and the imports resolve or
+        // fail through the runtime's own probing exactly as they would without this method.
+        // (Since .NET 10 that probing no longer includes the OS search, e.g. PATH.)
         if (TryGetNativeLibraryPath(out var libraryPath, out _))
             LoadWindowsLibrary(libraryPath);
     }
@@ -666,6 +671,16 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
             return libraryPath;
 
         throw new DllNotFoundException(notFoundMessage);
+    }
+
+    // The directory an assembly was loaded from, or null if it has no file location.
+    // Assembly.Location is an empty string when the assembly was not loaded from a file:
+    // single-file and Native AOT apps, and Assembly.Load(byte[]). Path.GetDirectoryName must
+    // never be given that empty string, because on .NET Framework it throws ArgumentException.
+    private static string? GetAssemblyDirectoryOrNull(Assembly? assembly)
+    {
+        var location = assembly?.Location;
+        return string.IsNullOrEmpty(location) ? null : Path.GetDirectoryName(location);
     }
 
     private static bool TryGetNativeLibraryPath(out string libraryPath, out string notFoundMessage)
@@ -680,8 +695,8 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         var searchLocations = new[]
         {
             ("AppDomain.BaseDirectory", AppDomain.CurrentDomain.BaseDirectory),
-            ("LibArchive.Net Assembly", Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)),
-            ("Entry Assembly", Path.GetDirectoryName(Assembly.GetEntryAssembly()?.Location))
+            ("LibArchive.Net Assembly", GetAssemblyDirectoryOrNull(Assembly.GetExecutingAssembly())),
+            ("Entry Assembly", GetAssemblyDirectoryOrNull(Assembly.GetEntryAssembly()))
         }.Where(loc => !string.IsNullOrEmpty(loc.Item2)).ToArray();
 
         // Determine RID and filename based on platform
