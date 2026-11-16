@@ -409,6 +409,7 @@ libarchive-*/
 libiconv-*/
 libxml2-*/
 lz4-*/
+lzokay-*/
 xz-*/
 zlib-*/
 zstd-*/

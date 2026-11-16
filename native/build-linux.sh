@@ -91,6 +91,11 @@ cp libbz2.a $PREFIX/lib/
 cp bzlib.h $PREFIX/include/
 cd ..
 
+# lzop (LZO1X) support: lzokay behind the liblzo2 API, in place of the GPL-licensed liblzo2
+# shellcheck source-path=SCRIPTDIR disable=SC1091
+. "${SCRIPT_DIR}/build-lzo-shim.sh"
+build_lzo_shim "${SCRIPT_DIR}/lzo-shim" "lzokay-${LZOKAY_COMMIT}" "$CXXFLAGS"
+
 echo "Building zlib ${ZLIB_VERSION}..."
 cd zlib-${ZLIB_VERSION}
 ./configure --static --prefix=$PREFIX
@@ -113,12 +118,12 @@ echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
 export LIBXML2_PC_LIBS=-L$PREFIX
-./configure --cache-file="$(get_config_cache x86_64-linux)" --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-sysroot --without-lzo2 --disable-shared --enable-static
+./configure --cache-file="$(get_config_cache x86_64-linux)" --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2 --disable-shared --enable-static
 make -sj$NCPU install
 cd ..
 
 echo "Creating final shared library..."
-$CC -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/libzstd.a local/lib/liblz4.a ${TOOLCHAIN_SYSROOT}/lib/libc.a -nostdlib
+$CC -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/liblzo2.a local/lib/libzstd.a local/lib/liblz4.a ${TOOLCHAIN_SYSROOT}/lib/libc.a -nostdlib
 
 echo "Testing library..."
 cat > test.c <<EOT
@@ -145,6 +150,10 @@ ${AR/ar/nm} libarchive.so | grep -c " U " | xargs echo "Undefined symbols:"
 # which aren't available when linking with host gcc. The dlopen test above
 # validates the shared library works correctly.
 echo "Skipping native test (library validated via dlopen test above)"
+
+# Fail the build unless lzop support was linked in and needs nothing the library lacks (see build-lzo-shim.sh)
+verify_lzo_support libarchive.so
+verify_lzo_shim_resolved libarchive.so
 
 echo "Copying output to ${OUTPUT_DIR}..."
 cp libarchive.so "${OUTPUT_DIR}/libarchive-linux-x64.so"

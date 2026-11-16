@@ -10,6 +10,10 @@ ARCH="${ARCH:-x86_64}"
 # Load shared configuration
 . "$(dirname "$0")/build-config.sh"
 
+# Absolute path of this script's directory: the lzop shim sources are found relative to
+# it after the build has changed directory
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 case "$ARCH" in
     x86_64|x64)
         MINGW_PREFIX="x86_64-w64-mingw32"
@@ -41,6 +45,14 @@ if ! command -v ${MINGW_PREFIX}-gcc >/dev/null 2>&1; then
     echo "Please install MinGW cross-compiler for ${ARCH}"
     echo "  Ubuntu/Debian: sudo apt-get install mingw-w64"
     echo "  Fedora: sudo dnf install mingw64-gcc mingw32-gcc"
+    exit 1
+fi
+# The lzop shim is C++: GCC's g++ for x86 and x64, LLVM-MinGW's Clang wrapper for arm64
+if ! command -v "${MINGW_PREFIX}-g++" >/dev/null 2>&1; then
+    echo "Error: ${MINGW_PREFIX}-g++ not found"
+    echo "Please install the MinGW C++ cross-compiler for ${ARCH}"
+    echo "  Ubuntu/Debian: sudo apt-get install mingw-w64"
+    echo "  Fedora: sudo dnf install mingw64-gcc-c++ mingw32-gcc-c++"
     exit 1
 fi
 
@@ -103,6 +115,11 @@ cd xz-${XZ_VERSION}
 make -j$NCPU install
 cd ..
 
+# lzop (LZO1X) support: lzokay behind the liblzo2 API, in place of the GPL-licensed liblzo2
+# shellcheck source-path=SCRIPTDIR disable=SC1091
+. "${SCRIPT_DIR}/build-lzo-shim.sh"
+build_lzo_shim "${SCRIPT_DIR}/lzo-shim" "lzokay-${LZOKAY_COMMIT}" "$CXXFLAGS"
+
 echo "Building zstd ${ZSTD_VERSION}..."
 cd zstd-${ZSTD_VERSION}/lib
 make -j$NCPU libzstd.a "CC=$CC" "AR=$AR"
@@ -130,13 +147,13 @@ export LDFLAGS="$LDFLAGS -L$PREFIX/lib -lz -llzma"
     --enable-static --disable-shared \
     --disable-bsdtar --disable-bsdcat --disable-bsdcpio \
     --enable-posix-regex-lib=libc \
-    --with-pic --with-zlib --with-bz2lib --with-lz4 --with-zstd --with-lzma --without-lzo2 --with-xml2
+    --with-pic --with-zlib --with-bz2lib --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-xml2
 make -j$NCPU install
 cd ..
 
 echo "Creating Windows DLL..."
 # Verify all libraries exist before linking
-for lib in libarchive libxml2 libz liblzma libzstd liblz4 libbz2; do
+for lib in libarchive libxml2 libz liblzma liblzo2 libzstd liblz4 libbz2; do
     if [ ! -f "$PREFIX/lib/${lib}.a" ]; then
         echo "ERROR: $PREFIX/lib/${lib}.a not found!"
         exit 1
@@ -153,6 +170,7 @@ ${CC} -shared -o ${OUTPUT_NAME} \
     $PREFIX/lib/libxml2.a \
     $PREFIX/lib/libz.a \
     $PREFIX/lib/liblzma.a \
+    "$PREFIX/lib/liblzo2.a" \
     $PREFIX/lib/libzstd.a \
     $PREFIX/lib/liblz4.a \
     $PREFIX/lib/libbz2.a \
@@ -170,6 +188,10 @@ echo "=== Inspecting symbols (before stripping) ==="
 ${MINGW_PREFIX}-nm ${OUTPUT_NAME} | grep -c " T " | xargs echo "Defined symbols:"
 ${MINGW_PREFIX}-nm ${OUTPUT_NAME} | grep -c " U " | xargs echo "Undefined symbols:"
 ${MINGW_PREFIX}-nm ${OUTPUT_NAME} | grep -E "(__udivdi3|__umoddi3|__divdi3|__moddi3)" || echo "No 64-bit division intrinsics found"
+
+# Fail the build unless lzop support was linked in. This has to run before the DLL is
+# stripped (see build-lzo-shim.sh).
+verify_lzo_support "${OUTPUT_NAME}"
 
 echo "Stripping debug symbols..."
 ${STRIP} ${OUTPUT_NAME} || echo "WARNING: strip failed, continuing with unstripped DLL"
