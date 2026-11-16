@@ -113,7 +113,7 @@ download_library() {
     while :; do
         if [ ! -f "$cache_file" ]; then
             echo "Downloading ${name} to cache (attempt ${attempt}/${max_retries})..."
-            if ! curl -fsSL --retry 3 --retry-delay 2 "$url" -o "$cache_file"; then
+            if ! curl -fsSL "$url" -o "$cache_file"; then
                 rm -f "$cache_file"
                 if [ $attempt -ge $max_retries ]; then
                     echo "ERROR: Failed to download ${name} after $max_retries attempts"
