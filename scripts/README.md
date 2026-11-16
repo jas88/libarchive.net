@@ -4,7 +4,7 @@ Automated tool for checking and updating native library dependencies in libarchi
 
 ## Overview
 
-This script monitors 8 native C/C++ libraries that are statically linked into libarchive.net:
+This script monitors 7 native C/C++ libraries that are statically linked into libarchive.net:
 
 | Library | Current | Check Method | Update Frequency |
 |---------|---------|--------------|------------------|
