@@ -1,11 +1,17 @@
-v0.3.2 - unreleased
+v0.3.2 - November 16, 2026
 
 **Bug Fixes:**
 - Fix `DllNotFoundException: Unable to load DLL 'archive'` on Windows under .NET Framework (the .NET Standard 2.0 build). The package deploys `archive.dll` to `runtimes\win-{arch}\native\`, which .NET Framework does not probe, and the library only loaded it explicitly on Linux and macOS. It now does the same on Windows.
 - Fix the .NET Standard 2.0 build failing to initialise on Linux and macOS when running on .NET 10 or later. That happens when an app targeting a framework this package has no dedicated build for (such as `net6.0`) is rolled forward to a newer runtime. Since .NET 10, the assembly-wide `DllImportSearchPath.AssemblyDirectory` no longer falls back to the OS library search, so the `libdl` imports used to load the native library could not be resolved.
+- Fix the Linux ARMv7 and ARM64 native libraries failing to load in processes that do not already provide libgcc's helper routines: in v0.3.1 they left integer division helpers (ARMv7) and 128-bit floating point helpers (ARM64) undefined. Every Linux library is now self-contained.
+- Fix reading archives from seekable streams. The reader now registers a seek callback, so formats that must seek to read their headers, such as 7-Zip, can be read from a `Stream`. The stream's position when the reader is created is treated as the start of the archive, and `Reset()` returns to it. Contributed by @paoloambrosio in #293.
 - Fix the .NET Standard 2.0 build on Linux and macOS keeping a stale copy of the native library in the application's base directory, where it copies the library for Mono: a copy left there by an earlier version of the package, or made in a process of the other C library, was never replaced. A copy that differs from the library loaded is now replaced, with a new copy renamed over it, so that a process which has the old one loaded is not disturbed; as before, a copy that cannot be made is no error.
 - Fix every XAR archive ending with 20 bytes too many: the first 20 bytes of its compressed table of contents, as many as its SHA-1 checksum has. libarchive's XAR writer copied the heap out of its temporary file with the room for that checksum counted twice. Readers ignored the bytes. The native libraries now carry a patch to libarchive (`native/libarchive-xar-heap-length.patch`), so that an archive ends where its heap ends.
 - Fix incorrect Unix permission defaults in `LibArchiveWriter` — bare `0644`/`0755`/`0444` literals were being interpreted as decimal in C# (no octal literal syntax), producing nonsensical permission bits. Files now correctly default to `rw-r--r--` (and `r--r--r--` for read-only attributes), directories to `rwxr-xr-x`. Reported and initial fix contributed by @JuanCalle1606 in #220.
+- Fix creating AES-encrypted ZIP archives, the default encryption, on Linux. The Linux native libraries were built without a cryptography backend; they now statically link a minimal mbedTLS.
+- Fix a password with the 7-Zip format silently producing an unencrypted archive, which read back in full without the password. libarchive can only encrypt ZIP, so 7-Zip now throws `NotSupportedException` before the output is created, as the other formats besides ZIP already did. With `EncryptionType.None` the password is ignored, for every format.
+- `EncryptionType.AES192` now throws `NotSupportedException`, as libarchive's ZIP writer supports only AES-128 and AES-256, instead of an `ApplicationException` reading ``Undefined option: `encryption'``. `EncryptionType.None` with a password, which failed the same way for ZIP, now writes an unencrypted archive.
+- `WithPassword` now throws `InvalidOperationException`, pointing to the constructor and `CreateMemoryWriter`, instead of failing and leaving the writer unusable. libarchive accepts encryption settings only before an archive is opened, and the writer opens it when it is created, so encryption cannot be enabled, changed or removed afterwards. With `EncryptionType.None` on a writer that is not encrypting, `WithPassword` does nothing.
 
 **API Improvements:**
 - `LibArchiveWriter.GetUnixPermissions` now returns `System.IO.UnixFileMode` and uses `FileInfo.UnixFileMode` directly on .NET 7+, falling back to defaults when the platform reports `0` (Windows) or `-1` (file missing). On .NET Standard 2.0 an internal `UnixFileMode` polyfill mirrors the BCL flags enum so the same code paths and constants are used everywhere.
@@ -14,14 +20,48 @@ v0.3.2 - unreleased
 - Add a `net11.0` build. The package is now built with the .NET 11 SDK.
 - Drop the `net8.0` and `net9.0` builds, as .NET 8 and .NET 9 have reached end of support. The package now ships `netstandard2.0`, `net10.0` and `net11.0` builds, so apps targeting .NET 8 or .NET 9 get the .NET Standard 2.0 build. That build is not marked as trimming or Native AOT compatible: target .NET 10 or later for those.
 
-**Linux Native Libraries:**
+**Native Library Updates:**
+- Bump libarchive from 3.8.6 to 3.8.11
+- Bump xz from 5.8.3 to 5.8.4
+- Bump zlib from 1.3.2 to 1.4
+- Bump libxml2 from 2.15.2 to 2.15.4
+- Bump lz4 from 1.10.0 to 1.11.1
+- Bump the Bootlin musl toolchains used for the Linux builds from 2025.08-1 to 2026.08-1
+- Replace the GPL-licensed liblzo2 2.10 with lzokay (MIT), pinned to commit `db2df1f`, behind a small shim that provides the part of the liblzo2 API libarchive uses, so lzop-compressed data is still read in-process
+- Add mbedTLS 3.6.8, statically linked into the Linux libraries only, for AES-encrypted ZIP archives
+- Add `THIRD-PARTY-NOTICES.txt` at the root of the package, with the licence notices for the third-party code linked into the native libraries
+- Stop building and shipping the Linux x86 library, which the loader never supported and for which .NET has no official runtime; a .NET 10+ app on an unofficial Linux x86 runtime, which could previously load the packaged library, now gets a `DllNotFoundException`
 - Ship a native library of its own for each Linux runtime, linked dynamically against that runtime's C library, in place of one library per architecture with musl linked into it, which the glibc and musl runtimes shared. The libraries need:
   - glibc 2.28 or later for `linux-x64` and `linux-arm64` (RHEL 8 and later);
   - glibc 2.34 or later for `linux-arm`, which is built with a 64-bit `time_t` and `off_t`. On an older glibc the dynamic loader refuses to load it, where the previous library crashed or misbehaved;
   - musl 1.2.5 or later (Alpine 3.21 and later) for `linux-musl-x64`, `linux-musl-arm64` and `linux-musl-arm`.
-- The .NET Standard 2.0 build loads the `linux-musl-<arch>` library in a musl process, which it recognises from an executable mapping of musl's dynamic linker in `/proc/self/maps`, or, when that cannot be read, from `dlsym` not finding glibc's `gnu_get_libc_version`. .NET 6 and later choose between the two libraries from the runtime identifier.
 - The Linux libraries export libarchive's API (`archive_*`) alone, and no longer the functions of the libraries linked into them, such as zlib's and zstd's, which other code in the process could bind to or take the place of.
+- The .NET Standard 2.0 build loads the `linux-musl-<arch>` library in a musl process, which it recognises from an executable mapping of musl's dynamic linker in `/proc/self/maps`, or, when that cannot be read, from `dlsym` not finding glibc's `gnu_get_libc_version`. .NET 6 and later choose between the two libraries from the runtime identifier.
+
+**Build & CI Improvements:**
+- Build the native libraries in parallel, one job per target, and reuse the previous binaries when nothing under `native/` has changed
+- Run the .NET Framework tests on Windows instead of under Mono on Linux, and test only the package that was just built
+- Publish to nuget.org with Trusted Publishing instead of a stored API key
+- Retry native source downloads that fail their checksum, fetch zlib from its GitHub release, and fall back to ftp.gnu.org when a GNU mirror serves a bad file
+- Fix the macOS build failing on a libtool version mismatch
+- Pin all GitHub Actions to exact versions
+- Fail CI with instructions when `Directory.Build.props` is out of date for the SDK, instead of trying to push the fix
+- Restrict Renovate to the Bootlin musl toolchains, which no other updater covers
+- Fail the Linux builds if a library is not self-contained or does not load in a process that contains only musl, using QEMU for the ARMv7 and ARM64 load tests, and also load the x64 library from a glibc program
+- Select the win32 MinGW compilers by name in the Windows build, which failed on the x86 and x64 targets when the apt package cache was restored
+- Harden the native dependency update checker: apply an update only once its new tarball's SHA-256 is recorded and checked, replace `native/build-config.sh` atomically, accept only plain dotted version numbers from upstream, and send the GitHub token only to `api.github.com`, without following redirects; its workflow gives the default token no permissions
+- Fix `native/build-all.sh` for local builds: copy the libraries from `~/libarchive-native`, where the platform scripts leave them, and version `--package` from `PACKAGE_VERSION`
+- Remove the unused Perl update checker, `scripts/check-native-updates.pl`
 - The Linux libraries are built with zig. CI load-tests each of them in containers of old and current distributions, and runs the package's tests on .NET in Alpine x64 as well as on Ubuntu.
+
+**Tooling Updates:**
+- Bump .NET SDK from 10.0.201 to 11.0.100
+- Bump MinVer from 7.0.0 to 8.0.0
+- Bump NUnit from 4.5.1 to 5.0.0
+- Bump NUnit3TestAdapter from 6.2.0 to 6.3.1
+- Bump NUnit.Analyzers from 4.12.0 to 4.15.0
+- Bump Microsoft.NET.Test.Sdk from 18.4.0 to 18.12.0
+- Bump coverlet.collector from 8.0.1 to 10.1.1
 
 v0.3.1 - April 7, 2026
 
