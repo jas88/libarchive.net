@@ -28,12 +28,13 @@ This file is written and updated by hand. Nothing generates it.
   verbatim, except that whitespace at the ends of lines has been removed. Do
   not edit or re-wrap it.
 
-* Version numbers are deliberately left out, so that routine dependency
-  updates do not make this file stale. native/build-config.sh and
-  .github/workflows/build.yml are the record of what is built. When a pinned
-  version changes, compare the files named in that component's section
-  between the old and the new source release, and update the copied text here
-  if they differ.
+* Version numbers are deliberately left out of the sections below, so that
+  routine dependency updates do not make this file stale. The one exception
+  is the record of inspected binaries at the end of this list.
+  native/build-config.sh and .github/workflows/build.yml are the record of
+  what is built. When a pinned version changes, compare the files named in
+  that component's section between the old and the new source release, and
+  update the copied text here if they differ.
 
 * Where a licence is given a short name or an SPDX identifier, that is a
   label for convenience only. The reproduced text is what applies.
@@ -51,12 +52,30 @@ This file is written and updated by hand. Nothing generates it.
   system DLLs named on the link command, such as kernel32, ws2_32 and bcrypt,
   and the system C runtime).
 
-* The toolchain sections (8 to 11) were written without inspecting a built
-  binary. They cover what each toolchain is expected to link in, on the
-  evidence each section gives, and they say "Not verified" wherever something
-  could not be established. The compilers that build the Windows x86 and x64
-  DLLs come from the build machine's package repository and are not pinned by
-  this repository, so check sections 9 and 10 again when the build image in
+* The toolchain sections (8 to 11) were checked against the native binaries
+  of a package built by .github/workflows/build.yml. Each section says what
+  was found in those binaries and how, and says so plainly where something
+  could not be established. The copied licence texts in those sections were
+  compared with the upstream source releases named below. The binaries
+  inspected were built with:
+
+    Linux    Bootlin release stable-2026.08-1, whose manifest names GCC
+             15.3.0 and musl 1.2.6
+    Windows  x86 and x64: the Ubuntu 24.04 packages gcc-mingw-w64
+             13.2.0-6ubuntu1+26.1 (GCC 13.2.0; the default compilers, which
+             use the "win32" thread model) and mingw-w64 11.0.1-3build1
+             (MinGW-w64 11.0.1)
+             arm64: LLVM-MinGW 20240619, which is built from LLVM 18.1.8 and
+             MinGW-w64 commit 7c9cfe6708cafc83c14a2654308b2db62b126eae
+    macOS    Apple's toolchain: linker version 1267.0 with the macOS 26.5
+             SDK, as recorded in the library itself
+
+  This records what was inspected, not what is built today. When
+  native/build-config.sh or .github/workflows/build.yml names a different
+  toolchain, repeat the checks that sections 8 to 11 describe and update this
+  record. The compilers that build the Windows x86 and x64 DLLs come from the
+  build machine's package repository and are not pinned by this repository,
+  so check sections 9 and 10 again when the build image in
   .github/workflows/build.yml changes.
 
 
@@ -75,8 +94,7 @@ Summary
    9  GCC runtime (libgcc)    GPLv3 with GCC Runtime Library    Linux x86;
                               Exception                         Windows x86, x64
   10  MinGW-w64 runtime       several; see its licensing file   Windows
-  11  LLVM compiler-rt        Apache 2.0 with LLVM Exceptions   Windows arm64;
-                                                                macOS not verified
+  11  LLVM compiler-rt        Apache 2.0 with LLVM Exceptions   Windows arm64
 
 
 ==============================================================================
@@ -654,6 +672,20 @@ records the musl version, the licence "MIT" and the licence file "COPYRIGHT".
 The text below is the COPYRIGHT file of the musl source release of the
 version that manifest names. Check it again whenever BOOTLIN_RELEASE changes.
 
+Verified on the binaries inspected (see "How this file is maintained"): musl
+code is inside all four libarchive.so files. None of them names a C library,
+or any other library, as a run-time dependency (they have no DT_NEEDED
+entry), and each defines more than 400 of musl's global symbols. Several
+hundred code sections of the toolchain's libc.a were found unchanged inside
+each library, apart from the address fields that the linker fills in; the
+comparison used the libc.a of the Bootlin toolchain for each architecture,
+downloaded and checked against Bootlin's published checksums. The compiler
+identification recorded in each library agrees with the manifest. musl's
+start-up objects (crti.o, crtn.o, Scrt1.o) are not linked in. The text below
+was compared with the COPYRIGHT file of the musl release tarball of the
+version the manifest names, whose signature was checked against the key the
+musl project publishes, and is identical to it.
+
 ----- BEGIN musl: COPYRIGHT -----
 musl as a whole is licensed under the following standard MIT license:
 
@@ -868,6 +900,19 @@ command (for the 64-bit division helpers). The Bootlin manifest described in
 section 8 records the GCC target runtime libraries as licensed under
 "GPL-3.0-with-GCC-exception", with the licence file "COPYING.RUNTIME".
 
+Verified on the binaries inspected (see "How this file is maintained"): the
+x86 libarchive.so defines five libgcc routines (__udivdi3, __umoddi3,
+__divdi3, __moddi3 and __udivmoddi4), and their code is identical to that of
+the corresponding members of the toolchain's libgcc.a. They are compiled from
+libgcc/libgcc2.c. The x64, arm and arm64 libraries contain no libgcc code:
+their symbol tables are intact and define no global symbol of libgcc.a, no
+code of libgcc.a was found in them, and the helper routines that the arm and
+arm64 code calls (__aeabi_* and __*tf* names) are left undefined, to be
+supplied by the process that loads the library. The x86 library likewise
+leaves one helper, __divmoddi4, undefined. None of the four libraries
+contains GCC's start-up objects (crtbeginS.o, crtendS.o) or code from any
+other GCC library (libgcc_eh, libatomic, libstdc++ and others were checked).
+
 The exception grants additional permission to combine libgcc with
 independently written code, on the conditions that it sets out. It is
 reproduced here from the COPYING.RUNTIME file of the GCC source release of
@@ -954,11 +999,83 @@ requirements of the license of GCC.
 
 Windows x86 and x64: these DLLs are linked by the GCC-based MinGW-w64
 cross-compilers of the build machine's "mingw-w64" package (Ubuntu), with
--static -static-libgcc, so that toolchain's libgcc is expected to be linked
-in. The package is not pinned by this repository. When this file was written,
-the Ubuntu release named in .github/workflows/build.yml built those compilers
-from a GCC release whose COPYING.RUNTIME file is identical to the text above.
-Not verified: that libgcc code is actually present in the two DLLs.
+-static -static-libgcc. The package is not pinned by this repository.
+
+Verified on the binaries inspected: libgcc code is inside both DLLs. The DLLs
+are stripped and have no symbol table, so this was established by searching
+each DLL for the code of every member of the libgcc.a in the Ubuntu compiler
+package (the package files were checked against Ubuntu's signed package
+index). The search was first confirmed to find runtime code known to be
+present and to find nothing from several GCC libraries that are not linked.
+
+* The x86 DLL contains seven libgcc.a members: the stack probe (_chkstk_ms)
+  and six 64-bit division routines (_divdi3, _moddi3, _divmoddi4, _udivdi3,
+  _umoddi3 and _udivmoddi4).
+* The x64 DLL contains one libgcc.a member, the stack probe (_chkstk_ms).
+* GCC's start-up objects crtbegin.o and crtend.o are linked into both DLLs.
+  crtbegin.o was found by its code in the x86 DLL. The others are too short
+  for that and were located by the constructor list that they enclose.
+* No member of libgcc_eh.a (exception handling support) is inside either DLL.
+* 36 members of the x86 libgcc.a and 40 of the x64 one are too short to be
+  recognised by their code. None was found by a looser search, but they
+  cannot be ruled out. If present, they are libgcc code under the same terms.
+
+The source files of the members found (libgcc/libgcc2.c,
+libgcc/config/i386/cygwin.S, and cygming-crtbegin.c and cygming-crtend.c in
+the same directory) carry the licence named at the head of this section. The
+text above was compared with the COPYING.RUNTIME file at the release tag of
+each of the two GCC releases concerned (the one the Bootlin manifest names
+and the one behind the Ubuntu compilers) and is identical to both. Ubuntu's
+packaging does not change that file.
+
+Two further notices in the GCC sources bear on this code:
+
+* crtbegin.o holds one string constant, the name of a libgcc DLL that it
+  looks for at start-up, which comes from a macro in
+  gcc/config/i386/mingw32.h. That header configures the compiler, and its own
+  notice is the GNU General Public License, version 3 or later, without the
+  exception. This file relies on the exception for libgcc and the start-up
+  objects as GCC builds them, and records this point without resolving it.
+
+* libgcc2.c takes its multi-word arithmetic macros from include/longlong.h,
+  which carries the notice below: the GNU Lesser General Public License,
+  version 2.1 or later, with unlimited permission to link the compiled file
+  into combinations with other programs and to distribute those
+  combinations. That concerns the division routines in the Linux x86 library
+  and in the Windows x86 DLL. How much of their code derives from those
+  macros was not established. The notice is copied from the GCC release that
+  the Bootlin manifest names; in the release behind the Ubuntu compilers it
+  differs only in its second line, where the years are 1991-2023.
+
+----- BEGIN gcc: include/longlong.h (notice) -----
+/* longlong.h -- definitions for mixed size 32/64 bit arithmetic.
+   Copyright (C) 1991-2025 Free Software Foundation, Inc.
+
+   This file is part of the GNU C Library.
+
+   The GNU C Library is free software; you can redistribute it and/or
+   modify it under the terms of the GNU Lesser General Public
+   License as published by the Free Software Foundation; either
+   version 2.1 of the License, or (at your option) any later version.
+
+   In addition to the permissions in the GNU Lesser General Public
+   License, the Free Software Foundation gives you unlimited
+   permission to link the compiled version of this file into
+   combinations with other programs, and to distribute those
+   combinations without any restriction coming from the use of this
+   file.  (The Lesser General Public License restrictions do apply in
+   other respects; for example, they cover modification of the file,
+   and distribution when not linked into a combine executable.)
+
+   The GNU C Library is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+   Lesser General Public License for more details.
+
+   You should have received a copy of the GNU Lesser General Public
+   License along with the GNU C Library; if not, see
+   <http://www.gnu.org/licenses/>.  */
+----- END gcc: include/longlong.h (notice) -----
 
 
 ==============================================================================
@@ -981,11 +1098,39 @@ it. Two toolchains are used (see .github/workflows/build.yml):
 
 The MinGW-w64 project provides the file
 COPYING.MinGW-w64-runtime/COPYING.MinGW-w64-runtime.txt for programs and
-libraries that are statically linked against its runtime. When this file was
-written, that file was identical in the MinGW-w64 release packaged by the
-Ubuntu release named in the workflow and in the MinGW-w64 revision pinned by
-the LLVM-MinGW release, so one copy is reproduced here for all three DLLs.
-Check it again when either toolchain changes.
+libraries that are statically linked against its runtime. That file is
+identical in the MinGW-w64 release packaged by the Ubuntu release named in
+the workflow and in the MinGW-w64 revision pinned by the LLVM-MinGW release,
+so one copy is reproduced here for all three DLLs. Check it again when either
+toolchain changes.
+
+Verified on the binaries inspected (see "How this file is maintained"):
+MinGW-w64 runtime code is inside all three DLLs. They are stripped, so this
+was established by searching each DLL for the code of every member of its
+toolchain's own runtime libraries. Each DLL contains the DLL start-up object
+(dllcrt2.o); start-up and support members of libmingw32.a, among them the
+pseudo-relocation code, whose "Mingw-w64 runtime failure:" messages are in
+each DLL; members of libmingwex.a, among them the gdtoa number conversion
+code and the formatted input and output code; and several small C runtime
+wrappers from libmsvcrt.a (x86 and x64) or libucrt.a (arm64). The gdtoa
+notices are part of the text below. Members too short to be recognised by
+their code could be neither found nor ruled out; the same file covers them.
+
+The text below was compared with the file in the MinGW-w64 release behind the
+x86 and x64 compilers and in the MinGW-w64 commit behind LLVM-MinGW. The two
+are identical to each other and, once whitespace at the ends of lines is
+removed, to the text below. Ubuntu's packaging does not change the file. The
+MinGW-w64 project's COPYING.MinGW-w64/COPYING.MinGW-w64.txt says of it that
+"you can simply copy COPYING.MinGW-w64-runtime.txt into your package to
+fulfill the license requirements of the MinGW runtime." This file follows
+that instruction and does not reproduce the notices of individual source
+files. In the release behind the x86 and x64 DLLs, some source files of the
+members found (the gdtoa sources, mingw_pformat.c, mingw_vfscanf.c, pow.def.h
+and powi.def.h) give copyright years that differ from the corresponding lines
+of the licensing file, under the same terms, and a few (pseudo-reloc.c,
+mingw_pformat.c, mingw_vfprintf.c, mingw_vsnprintf.c and imaxdiv.c) carry
+public domain or no-restriction statements that the licensing file does not
+repeat. The source files behind the arm64 DLL were not read for this.
 
 ----- BEGIN mingw-w64: COPYING.MinGW-w64-runtime/COPYING.MinGW-w64-runtime.txt -----
 MinGW-w64 runtime licensing
@@ -1230,10 +1375,23 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 Lesser General Public License for more details.
 ----- END mingw-w64: COPYING.MinGW-w64-runtime/COPYING.MinGW-w64-runtime.txt -----
 
-Not verified: whether either toolchain also links in winpthreads, the POSIX
-threads library in the MinGW-w64 sources (mingw-w64-libraries/winpthreads).
-In case it does, this is the COPYING file of winpthreads. It was likewise
-identical in the two MinGW-w64 revisions.
+winpthreads, the POSIX threads library in the MinGW-w64 sources
+(mingw-w64-libraries/winpthreads), is not inside any of the three DLLs.
+Verified on the binaries inspected: the code search described above found no
+member of the toolchains' libwinpthread.a in any DLL (libpthread.a is the
+same archive), every member of that archive that holds code is long enough
+for the search to be conclusive, and the DLLs contain no winpthreads message
+strings. The x86 and x64 DLLs were built by the "win32" thread model
+compilers.
+
+The COPYING file of winpthreads is kept below all the same. The Ubuntu
+package also installs "posix" thread model compilers and is not pinned by
+this repository, and the bundled libraries' configure scripts find
+pthread.h, so a change of the build image or of a library's configuration
+could link winpthreads in without any change to the link command. It is not
+in the binaries inspected; it may be included in a later build. The text was
+compared with the file in the same two MinGW-w64 revisions and is identical
+to both.
 
 ----- BEGIN mingw-w64: mingw-w64-libraries/winpthreads/COPYING -----
 Copyright (c) 2011 mingw-w64 project
@@ -1301,7 +1459,7 @@ DEALINGS IN THE SOFTWARE.
 ==============================================================================
 
 Applies to:  Windows arm64 native binary
-             macOS native binary: not verified, see below
+             (not the macOS native binary; see the end of this section)
 Source:      https://llvm.org/
 Licence:     Apache License v2.0 with LLVM Exceptions (SPDX identifier:
              Apache-2.0 WITH LLVM-exception)
@@ -1312,8 +1470,29 @@ support library. The LLVM-MinGW release is pinned by LLVM_MINGW_VERSION in
 .github/workflows/build.yml, and the LLVM-MinGW build scripts for that
 release pin the LLVM release it is built from. The text below is the file
 compiler-rt/LICENSE.TXT of that LLVM release. Check it again whenever
-LLVM_MINGW_VERSION changes. Not verified: that compiler-rt code is actually
-present in the DLL.
+LLVM_MINGW_VERSION changes.
+
+Verified on the binaries inspected (see "How this file is maintained"): one
+compiler-rt routine is inside the arm64 archive.dll. It is the stack probe
+__chkstk (compiler-rt/lib/builtins/aarch64/chkstk.S), which the code in the
+DLL calls from 39 places. Its code is identical to that of the member
+chkstk.S.obj of libclang_rt.builtins-aarch64.a in the LLVM-MinGW release, and
+its source file is marked "Apache-2.0 WITH LLVM-exception". No other member
+of that archive is inside the DLL. Two of its members are too short to be
+recognised by their code (int_util.c and the aarch64 cpu_model), but nothing
+that refers to them is inside the DLL either. The DLL contains no libunwind,
+libc++ or libc++abi code.
+
+The DLL is stripped and has no symbol table, so this was established by
+searching it for the code of every member of the release's libraries, after
+confirming that the search finds members known to be present. The LLVM-MinGW
+download is not pinned by a checksum, in this repository or upstream; the
+comparison used the file at the address the workflow downloads from.
+
+The text below was compared with compiler-rt/LICENSE.TXT of the LLVM release
+that LLVM-MinGW is built from and is identical to it. That file holds both
+the Apache licence with LLVM Exceptions and the older "Legacy LLVM License"
+texts. It is reproduced whole.
 
 ----- BEGIN llvm: compiler-rt/LICENSE.TXT -----
 ==============================================================================
@@ -1629,7 +1808,27 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ----- END llvm: compiler-rt/LICENSE.TXT -----
 
-macOS (not verified): libarchive.dylib is linked by Apple's Clang on the
-build machine. Whether that links any compiler-rt code into the library, and
-on which terms Apple distributes that code, was not established when this
-file was written. Inspecting a built libarchive.dylib would settle it.
+macOS: this section does not apply. libarchive.dylib is linked by Apple's
+Clang on the build machine, and no compiler-rt code is linked into it.
+Verified on the libarchive.dylib of a package built by the CI workflow, for
+both the x86-64 and the arm64 half:
+
+* The library keeps its symbol table, local symbols included, so code linked
+  in from a static archive would show up by name. No symbol defined in the
+  library has the name of a routine defined by libclang_rt.osx.a, the static
+  compiler-rt archive that is installed with Apple's Clang. The names
+  were taken from the libclang_rt.osx.a of an Apple Command Line Tools
+  installation, which is not necessarily the Xcode release that built the
+  library.
+* The compiler support routines that the library does use (the stack probe
+  __chkstk_darwin in the arm64 half and ___chkstk_darwin in the x86-64 half,
+  and the stack protector's __stack_chk_fail and __stack_chk_guard) are
+  undefined in it and bound to /usr/lib/libSystem.B.dylib. That is a system
+  library of macOS and is not part of the package.
+
+The terms on which Apple distributes its compiler-rt were therefore not
+looked into. To repeat the check, compare the output of
+"nm -arch <arch> -U libarchive.dylib" (what the library defines) with
+"nm -arch <arch> -g -U libclang_rt.osx.a", and read
+"nm -arch <arch> -m -u libarchive.dylib" (what is left to system libraries).
+Check again if native/build-macos.sh or the macOS build image changes.
