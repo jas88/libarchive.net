@@ -18,6 +18,10 @@ cd "$BUILD_DIR"
 # Load shared configuration
 . "${SCRIPT_DIR}/build-config.sh"
 
+# Load the mbedTLS build and verification helpers shared by the Linux builds
+# shellcheck source-path=SCRIPTDIR
+. "${SCRIPT_DIR}/build-linux-common.sh"
+
 echo "Setting up armv7-eabihf musl cross-compiler toolchain from Bootlin..."
 # Download toolchain to cache (does not unpack)
 TOOLCHAIN_ARCHIVE=$(download_toolchain "$TOOLCHAIN_ARM_URL" "armv7-musl")
@@ -109,16 +113,26 @@ cd libxml2-${LIBXML2_VERSION}
 make -sj$NCPU install
 cd ..
 
+# Download, build and install the static mbedTLS crypto library (see build-linux-common.sh)
+build_mbedtls
+
 echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
 export LIBXML2_PC_LIBS=-L$PREFIX
-./configure --cache-file=$(get_config_cache arm-linux) --build=x86_64-pc-linux-gnu --host=arm-linux --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-sysroot --without-lzo2 --disable-shared --enable-static
+# --with-mbedtls --without-openssl: use the static mbedTLS built above for ZIP AES.
+# --without-xml2 --without-expat: keep XAR disabled, as it was while no MD5/SHA-1
+# implementation was available. With digests present it would otherwise be enabled
+# and need libxml2 and its dependencies resolved in the final link.
+./configure --cache-file=$(get_config_cache arm-linux) --build=x86_64-pc-linux-gnu --host=arm-linux --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-sysroot --without-lzo2 --disable-shared --enable-static --with-mbedtls --without-openssl --without-xml2 --without-expat
 make -sj$NCPU install
 cd ..
 
 echo "Creating final shared library..."
-$CC -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/libzstd.a local/lib/liblz4.a ${TOOLCHAIN_SYSROOT}/lib/libc.a -nostdlib
+$CC -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/libzstd.a local/lib/liblz4.a local/lib/libmbedcrypto.a ${TOOLCHAIN_SYSROOT}/lib/libc.a -nostdlib
+
+# Fail the build unless the mbedTLS crypto backend was linked in (see build-linux-common.sh)
+verify_crypto_backend libarchive.so
 
 echo "Testing library..."
 cat > test.c <<EOT
@@ -137,9 +151,11 @@ echo "=== Checking dynamic library dependencies ==="
 ldd libarchive.so || echo "Statically linked (no dynamic dependencies)"
 
 echo "=== Inspecting symbols ==="
-${AR/ar/nm} -D libarchive.so | head -20 || true
-${AR/ar/nm} libarchive.so | grep -c " T " | xargs echo "Defined symbols:"
-${AR/ar/nm} libarchive.so | grep -c " U " | xargs echo "Undefined symbols:"
+# The toolchain's nm: only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
+NM="${AR%ar}nm"
+"$NM" -D libarchive.so | head -20 || true
+"$NM" libarchive.so | grep -c " T " | xargs echo "Defined symbols:"
+"$NM" libarchive.so | grep -c " U " | xargs echo "Undefined symbols:"
 
 echo "Skipping native test (cross-compilation - cannot run ARMv7 binary on x86_64 host)"
 

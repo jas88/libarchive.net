@@ -24,6 +24,13 @@ All library versions are managed in `build-config.sh`:
 | zlib | 1.4 |
 | xz (liblzma) | 5.4.6 |
 | bzip2 | 1.0.8 |
+| mbedTLS (Linux only) | 3.6.8 |
+
+mbedTLS is built and statically linked by the Linux scripts only, as a minimal
+`libmbedcrypto.a` (see `mbedtls-config.h`) that gives libarchive its ZIP AES
+encryption and digest support. Windows (CNG) and macOS (CommonCrypto) use the
+operating system's crypto instead. It is pinned to the 3.6 LTS line because
+libarchive cannot build against mbedTLS 4.
 
 ## Quick Start
 
@@ -219,7 +226,7 @@ unzip -l LibArchive.Net.*.nupkg | grep runtimes
 
 ```bash
 # Clean downloaded sources and build artifacts
-rm -rf local* {bzip2,libarchive,libxml2,lz4,musl-cross-make,xz,zlib,zstd}-*
+rm -rf local* {bzip2,libarchive,libxml2,lz4,mbedtls,musl-cross-make,xz,zlib,zstd}-*
 rm -rf musl-cross-make-master configcache
 rm -f *.so *.dylib *.dll test nativetest
 ```
@@ -249,3 +256,4 @@ The libraries being built have their own licenses:
 - zstd: BSD + GPLv2
 - xz (liblzma): Public Domain
 - libxml2: MIT
+- mbedTLS (Linux only): Apache-2.0 (upstream offers Apache-2.0 OR GPL-2.0-or-later)

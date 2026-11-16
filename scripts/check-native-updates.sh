@@ -235,6 +235,7 @@ CURRENT_XZ=$(read_current_version "XZ_VERSION")
 CURRENT_ZLIB=$(read_current_version "ZLIB_VERSION")
 CURRENT_LIBXML2=$(read_current_version "LIBXML2_VERSION")
 CURRENT_BZIP2=$(read_current_version "BZIP2_VERSION")
+CURRENT_MBEDTLS=$(read_current_version "MBEDTLS_VERSION")
 
 # libarchive
 check_dependency "libarchive" "$CURRENT_LIBARCHIVE" "github" "libarchive/libarchive" || true
@@ -261,6 +262,14 @@ check_dependency "libxml2" "$CURRENT_LIBXML2" "gnome" \
 check_dependency "bzip2" "$CURRENT_BZIP2" "web" \
     "https://www.sourceware.org/pub/bzip2/" \
     'bzip2-([0-9]+\.[0-9]+\.[0-9]+)\.tar\.gz' || true
+
+# mbedTLS (Linux builds only). Deliberately not the "github" check: GitHub's latest
+# release is the 4.x line, which libarchive cannot build against. Only a published
+# release tarball of the 3.6 LTS line can match this pattern, so no other version
+# can ever be proposed.
+check_dependency "mbedtls" "$CURRENT_MBEDTLS" "web" \
+    "https://api.github.com/repos/Mbed-TLS/mbedtls/releases?per_page=100" \
+    'releases/download/mbedtls-(3\.6\.[0-9]+)/mbedtls-3\.6\.[0-9]+\.tar\.bz2' || true
 
 # musl toolchain versions are reference only (we use Bootlin prebuilt toolchains)
 # These checks are informational - actual toolchain versions come from Bootlin

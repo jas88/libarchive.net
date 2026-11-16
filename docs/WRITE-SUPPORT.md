@@ -9,7 +9,7 @@ LibArchive.Net now provides comprehensive write support for creating archives in
 ### ✅ Supported Archive Formats
 
 - **ZIP** - Widely compatible, supports AES encryption
-- **7-Zip (.7z)** - Excellent compression, AES-256 encryption
+- **7-Zip (.7z)** - Excellent compression (no encryption: libarchive cannot encrypt 7-Zip archives)
 - **TAR** - Unix standard, combine with compression filters
 - **Ustar** - TAR variant with extended metadata
 - **PAX** - Modern TAR with Unicode support
@@ -30,9 +30,13 @@ LibArchive.Net now provides comprehensive write support for creating archives in
 
 ### ✅ Encryption Support
 
-- **ZIP**: AES-128, AES-192, AES-256, Traditional PKWARE
-- **7-Zip**: AES-256
-- **TAR**: Not supported (use external encryption)
+- **ZIP**: AES-128, AES-256, Traditional PKWARE (reading also handles AES-192)
+- **7-Zip**: Not supported (libarchive can neither write nor read encrypted 7-Zip archives)
+- **TAR and every other format**: Not supported (use external encryption)
+
+libarchive can only encrypt ZIP archives. A password combined with any other format throws
+`NotSupportedException` instead of writing an archive that is not protected, unless the encryption
+type is `EncryptionType.None`, which ignores the password and writes an unencrypted archive.
 
 ### ✅ Zero-Copy I/O Optimization
 
@@ -84,17 +88,14 @@ using var writer = new LibArchiveWriter(
 writer.AddFile("sensitive-data.xlsx");
 ```
 
-```csharp
-// 7-Zip with AES-256 (always AES-256 for 7z)
-using var writer = new LibArchiveWriter(
-    "backup.7z",
-    ArchiveFormat.SevenZip,
-    compression: CompressionType.LZMA,
-    compressionLevel: 9,
-    password: "SecurePass456");
+Only ZIP archives can be encrypted:
 
-writer.AddDirectory(@"C:\Important", recursive: true);
-```
+- A password with any other format, 7-Zip included, throws `NotSupportedException` unless the encryption
+  type is `EncryptionType.None`.
+- `EncryptionType.AES192` throws `NotSupportedException`: libarchive's ZIP writer supports AES-128 and
+  AES-256 only.
+- `EncryptionType.None` ignores the password and writes an unencrypted archive.
+- `NotSupportedException` is also thrown when the native library was built without a cryptography backend.
 
 ## Advanced Usage
 
@@ -266,9 +267,9 @@ password: "password123"
 
 | Format | Encryption Support |
 |--------|-------------------|
-| ZIP | AES-128, AES-192, AES-256, Traditional |
-| 7-Zip | AES-256 only |
-| TAR | None (use external encryption) |
+| ZIP | Writing: AES-128, AES-256, Traditional. Reading: AES-128, AES-192, AES-256, Traditional |
+| 7-Zip | None (not supported by libarchive) |
+| TAR and every other format | None (use external encryption) |
 
 ## Examples
 
@@ -310,8 +311,7 @@ using var writer = new LibArchiveWriter(
     backupFile,
     ArchiveFormat.SevenZip,
     compression: CompressionType.LZMA,
-    compressionLevel: 9,
-    password: Environment.GetEnvironmentVariable("BACKUP_PASSWORD"));
+    compressionLevel: 9);
 
 writer.AddDirectory(
     @"C:\ImportantData",
@@ -381,7 +381,7 @@ public LibArchiveWriter(
     CompressionType compression = None,       // Compression algorithm
     int compressionLevel = 6,                 // Compression level (0-9)
     uint blockSize = 1048576,                 // Block size (1 MB default)
-    string? password = null,                  // Optional password
+    string? password = null,                  // Optional password (ZIP only)
     EncryptionType encryption = Default)      // Encryption type
 ```
 
