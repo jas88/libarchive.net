@@ -182,7 +182,9 @@ jobs:
         if: steps.native-cache.outputs.cache-hit != 'true'
         uses: awalsh128/cache-apt-pkgs-action@v1.6.3
         with:
-          packages: ${{ matrix.kind == 'windows' && 'mingw-w64 pkg-config' || 'pkg-config' }}
+          # The lzop shim is C++. mingw-w64 brings only the C compilers here, so add the
+          # C++ ones, in the "win32" thread model of the default C compilers.
+          packages: ${{ matrix.kind == 'windows' && 'mingw-w64 g++-mingw-w64-i686-win32 g++-mingw-w64-x86-64-win32 pkg-config' || 'pkg-config' }}
           version: 1.0
           execute_install_scripts: true
       - name: Install LLVM-MinGW for ARM64
@@ -199,7 +201,7 @@ jobs:
             x64)   CC=x86_64-w64-mingw32-gcc ;;
             arm64) CC=aarch64-w64-mingw32-gcc ;;
           esac
-          which "$CC"
+          which "$CC" "${CC%gcc}g++"
       - name: Cache autotools
         id: autotools-cache
         if: steps.native-cache.outputs.cache-hit != 'true'
