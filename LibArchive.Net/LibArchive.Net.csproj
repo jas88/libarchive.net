@@ -53,6 +53,13 @@
       <Pack>true</Pack>
       <PackagePath>build\$(PackageId).targets;buildTransitive\$(PackageId).targets;build\net462\$(PackageId).targets;buildTransitive\net462\$(PackageId).targets</PackagePath>
     </None>
+
+    <!-- Licence notices for the third-party code linked into the native libraries, at the package root -->
+    <None Include="..\THIRD-PARTY-NOTICES.txt">
+      <Pack>true</Pack>
+      <PackagePath>\</PackagePath>
+      <Visible>false</Visible>
+    </None>
   </ItemGroup>
 
   <!-- Expose native libraries as content that flows to consuming projects -->
