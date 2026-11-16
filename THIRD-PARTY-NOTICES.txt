@@ -51,12 +51,12 @@ This file is written and updated by hand. Nothing generates it.
   system DLLs named on the link command, such as kernel32, ws2_32 and bcrypt,
   and the system C runtime).
 
-* The toolchain sections (8 to 11) were written without inspecting a built
+* The toolchain sections (9 to 12) were written without inspecting a built
   binary. They cover what each toolchain is expected to link in, on the
   evidence each section gives, and they say "Not verified" wherever something
   could not be established. The compilers that build the Windows x86 and x64
   DLLs come from the build machine's package repository and are not pinned by
-  this repository, so check sections 9 and 10 again when the build image in
+  this repository, so check sections 10 and 11 again when the build image in
   .github/workflows/build.yml changes.
 
 
@@ -71,11 +71,12 @@ Summary
    5  Zstandard (libzstd)     BSD (chosen from BSD or GPLv2)    all
    6  LZ4 (liblz4)            BSD 2-Clause                      all
    7  libxml2                 MIT                               all
-   8  musl libc               MIT; parts as noted               Linux
-   9  GCC runtime (libgcc)    GPLv3 with GCC Runtime Library    Linux x86;
+   8  lzokay                  MIT                               all
+   9  musl libc               MIT; parts as noted               Linux
+  10  GCC runtime (libgcc)    GPLv3 with GCC Runtime Library    Linux x86;
                               Exception                         Windows x86, x64
-  10  MinGW-w64 runtime       several; see its licensing file   Windows
-  11  LLVM compiler-rt        Apache 2.0 with LLVM Exceptions   Windows arm64;
+  11  MinGW-w64 runtime       several; see its licensing file   Windows
+  12  LLVM compiler-rt        Apache 2.0 with LLVM Exceptions   Windows arm64;
                                                                 macOS not verified
 
 
@@ -637,7 +638,63 @@ with different Copyright notices". These are their notices:
 
 
 ==============================================================================
-8. musl libc
+8. lzokay
+==============================================================================
+
+Applies to:  all native binaries (Linux, macOS, Windows)
+Source:      https://github.com/AxioDL/lzokay (commit pinned in
+             native/build-config.sh)
+Licence:     MIT licence (SPDX identifier: MIT)
+
+lzokay implements the LZO1X compression format, which libarchive needs to
+read and write lzop data. It is what the liblzo2.a named on the link commands
+is built from: liblzo2 itself, which is under the GNU General Public License,
+is not part of the native binaries. libarchive reaches lzokay through
+interface code in native/lzo-shim, which belongs to this repository and is
+covered by LICENSE.md. lzokay is compiled with the changes in
+native/lzo-shim/lzokay-bounds-checks.patch applied.
+
+----- BEGIN lzokay: LICENSE -----
+The MIT License
+
+Copyright (c) 2018 Jack Andersen
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+----- END lzokay: LICENSE -----
+
+lzokay and the interface code are C++. The native binaries are not linked
+against a C++ runtime library, and every build script checks that the object
+files need none. They are, however, compiled with the C++ standard library
+headers of each build toolchain: GNU libstdc++ for the Linux binaries and the
+Windows x86 and x64 binaries, LLVM libc++ for the macOS binary and the Windows
+arm64 binary. Code that those headers define inline or as templates is
+compiled into the object files where lzokay uses it. The libstdc++ headers
+are distributed under the GNU General Public License version 3 with the GCC
+Runtime Library Exception, the exception reproduced in section 10. libc++ is
+part of the LLVM project, whose licence is reproduced in section 12. Not
+verified: which header code each compiler leaves in the object files, and
+that the copies of those two texts in sections 10 and 12 match the ones the
+toolchains' C++ libraries were released with.
+
+
+==============================================================================
+9. musl libc
 ==============================================================================
 
 Applies to:  Linux native binaries only (all four architectures, including
@@ -852,7 +909,7 @@ obstacle to adoption, that text has been removed.
 
 
 ==============================================================================
-9. GCC runtime library (libgcc)
+10. GCC runtime library (libgcc)
 ==============================================================================
 
 Applies to:  Linux x86 (32-bit) native binary
@@ -865,7 +922,7 @@ Licence:     GNU General Public License version 3 with the GCC Runtime
 Linux x86: all four Linux scripts link with -nostdlib, and only
 native/build-linux-x86.sh also names the toolchain's libgcc on the link
 command (for the 64-bit division helpers). The Bootlin manifest described in
-section 8 records the GCC target runtime libraries as licensed under
+section 9 records the GCC target runtime libraries as licensed under
 "GPL-3.0-with-GCC-exception", with the licence file "COPYING.RUNTIME".
 
 The exception grants additional permission to combine libgcc with
@@ -962,7 +1019,7 @@ Not verified: that libgcc code is actually present in the two DLLs.
 
 
 ==============================================================================
-10. MinGW-w64 runtime
+11. MinGW-w64 runtime
 ==============================================================================
 
 Applies to:  Windows native binaries (x86, x64, arm64)
@@ -1297,7 +1354,7 @@ DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-11. LLVM compiler-rt
+12. LLVM compiler-rt
 ==============================================================================
 
 Applies to:  Windows arm64 native binary

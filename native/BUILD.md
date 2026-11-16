@@ -6,6 +6,7 @@ This directory contains the unified build system for building libarchive native 
 
 The build system consists of:
 - **build-config.sh**: Central configuration file with all library versions and URLs
+- **build-lzo-shim.sh**: Builds and verifies lzop support from lzokay (see "lzop support" below)
 - **build-linux.sh**: Linux x86-64 build script (using musl-libc)
 - **build-macos.sh**: macOS universal binary build script (x86_64 + arm64)
 - **build-windows.sh**: Windows build script (x86, x64, arm64 via MinGW)
@@ -20,10 +21,28 @@ All library versions are managed in `build-config.sh`:
 | libarchive | 3.7.3 |
 | lz4 | 1.9.4 |
 | zstd | 1.5.6 |
+| lzokay (lzop support) | commit db2df1f |
 | libxml2 | 2.12.6 |
 | zlib | 1.4 |
 | xz (liblzma) | 5.4.6 |
 | bzip2 | 1.0.8 |
+
+### lzop support
+
+libarchive's lzop filters are written against liblzo2, which is GPL-licensed and is therefore not
+linked in. `build-lzo-shim.sh` builds a stand-in `liblzo2.a` instead, from
+[lzokay](https://github.com/AxioDL/lzokay) (MIT) and the sources in `lzo-shim/`, which implement the
+part of the liblzo2 API that libarchive uses. libarchive's own `--with-lzo2` configure checks find
+it, so libarchive itself is not patched.
+
+- lzokay has no releases, so `build-config.sh` pins a commit (`LZOKAY_COMMIT`) and the checksum of
+  GitHub's archive of it. `lzo-shim/lzokay-bounds-checks.patch` is applied to it, because its
+  decompressor does not check its input fully; re-check the patch whenever the pin moves.
+- The shim is C++, so every build needs a C++ compiler (`CXX`) and the `patch` program. It is
+  compiled so that it needs no C++ runtime, because the Linux libraries are linked without one.
+- Every build script fails if lzop support did not reach the library it linked
+  (`verify_lzo_support`). The Linux scripts also fail if the shim left a symbol unresolved
+  (`verify_lzo_shim_resolved`), since such a library would link but never load.
 
 ## Quick Start
 
@@ -91,7 +110,7 @@ This will automatically detect your platform and build the appropriate libraries
 - Linux build machine
 - MinGW-w64 cross-compiler toolchain
   - Ubuntu/Debian: `sudo apt-get install mingw-w64`
-  - Fedora: `sudo dnf install mingw64-gcc mingw32-gcc`
+  - Fedora: `sudo dnf install mingw64-gcc mingw32-gcc mingw64-gcc-c++ mingw32-gcc-c++`
 
 **Output:**
 - `archive-x86.dll` (32-bit x86)
@@ -185,7 +204,7 @@ Currently, Windows builds are pre-built and checked into the repository. To enab
 
 **Problem:** "x86_64-w64-mingw32-gcc: command not found"
 - Install MinGW: `sudo apt-get install mingw-w64` (Ubuntu/Debian)
-- Or: `sudo dnf install mingw64-gcc mingw32-gcc` (Fedora)
+- Or: `sudo dnf install mingw64-gcc mingw32-gcc mingw64-gcc-c++ mingw32-gcc-c++` (Fedora)
 
 **Problem:** "Cannot find -lws2_32"
 - Ensure MinGW runtime libraries are installed
@@ -219,7 +238,7 @@ unzip -l LibArchive.Net.*.nupkg | grep runtimes
 
 ```bash
 # Clean downloaded sources and build artifacts
-rm -rf local* {bzip2,libarchive,libxml2,lz4,musl-cross-make,xz,zlib,zstd}-*
+rm -rf local* {bzip2,libarchive,libxml2,lz4,lzokay,musl-cross-make,xz,zlib,zstd}-*
 rm -rf musl-cross-make-master configcache
 rm -f *.so *.dylib *.dll test nativetest
 ```
@@ -247,5 +266,6 @@ The libraries being built have their own licenses:
 - bzip2: BSD-like
 - lz4: BSD-2-Clause
 - zstd: BSD + GPLv2
+- lzokay: MIT
 - xz (liblzma): Public Domain
 - libxml2: MIT

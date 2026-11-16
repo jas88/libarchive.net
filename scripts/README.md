@@ -16,6 +16,11 @@ This script monitors 7 native C/C++ libraries that are statically linked into li
 | libxml2 | 2.12.6 | GNOME Releases | Medium |
 | bzip2 | 1.0.8 | Web Scrape (uses "latest") | Very Low |
 
+lzop support comes from [lzokay](https://github.com/AxioDL/lzokay), which is statically linked as
+well but is not monitored by this script: it publishes no releases, so `native/build-config.sh`
+pins it to a commit (`LZOKAY_COMMIT` and `LZOKAY_SHA256`). Check its commit history by hand, and
+re-check `native/lzo-shim/lzokay-bounds-checks.patch` whenever the pin moves.
+
 ## Usage
 
 ### Manual Check (Local)
