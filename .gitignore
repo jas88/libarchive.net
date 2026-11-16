@@ -413,6 +413,8 @@ lzokay-*/
 xz-*/
 zlib-*/
 zstd-*/
+# native/lzo-shim holds sources, not a download: keep it out of reach of any "lzo-*/" rule above
+!/native/lzo-shim/
 
 # Playwright MCP artifacts
 .playwright-mcp/
