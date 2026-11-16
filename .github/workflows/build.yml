@@ -32,24 +32,44 @@ env:
   AUTOMAKE_SHA256: 168aa363278351b89af56684448f525a5bce5079d0b6842bd910fdd3f1646887
 
 jobs:
-  macos:
-    name: Build macOS dylib (x86-64 and arm64)
-    runs-on: macos-latest
+  # Look up the cached macOS dylib on Ubuntu so a macOS runner is only requested when
+  # the dylib actually needs rebuilding (macOS runners are scarcer and less reliable).
+  macos-cache:
+    name: Check cached macOS dylib
+    runs-on: ubuntu-24.04
+    outputs:
+      hit: ${{ steps.native-cache.outputs.cache-hit }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
-      # Native binaries are reused while native/** is unchanged. Tag builds always
-      # rebuild from source so release binaries never come from a cache.
-      - name: Restore cached native binary
+      # Tag builds always rebuild from source so release binaries never come from a cache.
+      - name: Restore cached macOS dylib
         id: native-cache
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/cache/restore@v6.1.0
         with:
           path: native-out/libarchive.dylib
           key: native-osx-universal-${{ env.NATIVE_CACHE_VERSION }}-${{ hashFiles('native/**') }}
-      # (the save step below uses the identical key expression)
+          # Saved on macOS, restored on Ubuntu; the save step sets the same flag.
+          enableCrossOsArchive: true
+      - name: Archive macOS library
+        if: steps.native-cache.outputs.cache-hit == 'true'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: native-osx-universal
+          path: native-out/libarchive.dylib
+          if-no-files-found: error
+          retention-days: 1
+
+  macos:
+    name: Build macOS dylib (x86-64 and arm64)
+    needs: [macos-cache]
+    if: needs.macos-cache.outputs.hit != 'true'
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.1
       - name: Cache library downloads
-        if: steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache@v6.1.0
         with:
           path: ~/downloads
@@ -57,7 +77,6 @@ jobs:
           restore-keys: |
             library-downloads-
       - name: Cache configure results
-        if: steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache@v6.1.0
         with:
           path: ~/config-cache
@@ -65,14 +84,12 @@ jobs:
           restore-keys: |
             config-cache-macos-
       - name: ccache
-        if: steps.native-cache.outputs.cache-hit != 'true'
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
           key: macos-build-v2
         env:
           CCACHE_COMPILERCHECK: mtime
       - name: Build
-        if: steps.native-cache.outputs.cache-hit != 'true'
         run: |
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
           export CC="ccache clang"
@@ -89,11 +106,12 @@ jobs:
           mkdir -p native-out
           cp ~/libarchive-native/libarchive.dylib native-out/
       - name: Save native binary to cache
-        if: steps.native-cache.outputs.cache-hit != 'true' && !startsWith(github.ref, 'refs/tags/v')
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/cache/save@v6.1.0
         with:
           path: native-out/libarchive.dylib
           key: native-osx-universal-${{ env.NATIVE_CACHE_VERSION }}-${{ hashFiles('native/**') }}
+          enableCrossOsArchive: true
       - name: Archive macOS library
         uses: actions/upload-artifact@v7.0.2
         with:
@@ -263,7 +281,11 @@ jobs:
 
   package:
     name: Pack and test .NET package
-    needs: [macos, native]
+    needs: [macos-cache, macos, native]
+    # macos is skipped when its dylib was cached; macos-cache then supplies the artifact.
+    if: >-
+      ${{ !cancelled() && needs.native.result == 'success' &&
+      (needs.macos-cache.outputs.hit == 'true' || needs.macos.result == 'success') }}
     runs-on: ubuntu-24.04
     outputs:
       package-version: ${{ steps.pack.outputs.PACKAGE_VERSION }}
@@ -362,6 +384,9 @@ jobs:
   test-net462:
     name: Test package (.NET Framework 4.6.2 on Windows)
     needs: [package]
+    # Explicit condition: the implicit success() would skip this job whenever the
+    # (legitimately) skipped macos job is upstream.
+    if: ${{ !cancelled() && needs.package.result == 'success' }}
     runs-on: windows-latest
     steps:
       - name: Checkout code
@@ -384,7 +409,9 @@ jobs:
   release:
     name: Publish release
     needs: [package, test-net462]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: >-
+      ${{ startsWith(github.ref, 'refs/tags/v') && !cancelled() &&
+      needs.package.result == 'success' && needs.test-net462.result == 'success' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Retrieve package
