@@ -11,6 +11,11 @@ LIBXML2_VERSION="2.15.4"
 ZLIB_VERSION="1.4"
 XZ_VERSION="5.8.4"
 BZIP2_VERSION="1.0.8"
+# mbedTLS (Linux builds only): crypto backend for ZIP AES encryption.
+# Pinned to the 3.6 LTS line because libarchive cannot build against mbedTLS 4,
+# which removed the public headers it includes; its configure would then fall back
+# to the stub cryptor without an error. Upstream support for 3.6 ends 28 March 2027.
+MBEDTLS_VERSION="3.6.8"
 
 # SHA256 checksums for download verification
 LIBARCHIVE_SHA256="a3dc0872b1b39da34dc18ef1b944f0f11ffd37425d70ae04be679279f1cf43d2"
@@ -21,6 +26,7 @@ LIBXML2_SHA256="98087fd181d9070724f3fbc65c7377db03038eb92bd882374daff44940138821
 ZLIB_SHA256="4f11c512053d7bab8d9e9b89bde3575add3e4c50a383b42ef6cb837035fc5a7c"
 XZ_SHA256="4ce24038fd4221e0d13bc1a2de7a4db56e90b92b3bf75321f6c14be73f65de4b"
 BZIP2_SHA256="ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269"
+MBEDTLS_SHA256="bc54b818e87f49c0b3281dd85d24adaede0e63b4e822e3fbd49c005a38b9595b"
 
 # Bootlin toolchain versions (Linux only)
 # Bootlin stable 2025.08-1: GCC 14.3.0, musl latest, binutils 2.43.1
@@ -49,6 +55,12 @@ BZIP2_URL="https://www.sourceware.org/pub/bzip2/bzip2-${BZIP2_VERSION}.tar.gz"
 # release and intermittently serves bad content to CI runners under parallel load.
 ZLIB_URL="https://github.com/madler/zlib/releases/download/v${ZLIB_VERSION}/zlib-${ZLIB_VERSION}.tar.xz"
 XZ_URL="https://github.com/tukaani-project/xz/releases/download/v${XZ_VERSION}/xz-${XZ_VERSION}.tar.xz"
+# mbedTLS is downloaded by the Linux build scripts themselves, not by
+# download_all_libraries: macOS and Windows use their system crypto and must not
+# fetch it. Its URL and checksum are therefore exported for use in those scripts.
+# Only a .tar.bz2 release tarball is published.
+export MBEDTLS_URL="https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-${MBEDTLS_VERSION}/mbedtls-${MBEDTLS_VERSION}.tar.bz2"
+export MBEDTLS_SHA256
 
 # Portable SHA256 helper (computes hash and compares directly;
 # avoids --check flag which differs between GNU and BSD sha256sum)
@@ -157,11 +169,11 @@ download_library() {
 
     # Unpack from cache
     echo "Unpacking ${name}..."
-    if [ "${url##*.}" = "xz" ]; then
-        tar xJf "$cache_file"
-    else
-        tar xzf "$cache_file"
-    fi
+    case "${url##*.}" in
+        xz)  tar xJf "$cache_file" ;;
+        bz2) tar xjf "$cache_file" ;;
+        *)   tar xzf "$cache_file" ;;
+    esac
 }
 
 # Function to download toolchain to cache (does not unpack)

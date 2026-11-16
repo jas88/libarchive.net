@@ -410,6 +410,7 @@ libiconv-*/
 libxml2-*/
 lz4-*/
 lzo-*/
+mbedtls-*/
 xz-*/
 zlib-*/
 zstd-*/

@@ -28,9 +28,14 @@ public partial class LibArchiveWriter
     /// <param name="format">Archive format to use.</param>
     /// <param name="compression">Compression algorithm to apply (default: None).</param>
     /// <param name="compressionLevel">Compression level 0-9, where 9 is maximum compression (default: 6).</param>
-    /// <param name="password">Optional password for encryption (ZIP and 7-Zip only).</param>
-    /// <param name="encryption">Encryption type when password is provided (default: format-specific).</param>
+    /// <param name="password">Optional password for encryption. libarchive can only encrypt ZIP archives.</param>
+    /// <param name="encryption">Encryption type when a password is provided (default: AES-256).</param>
     /// <param name="blockSize">Block size in bytes for writing (default: 1 MiB).</param>
+    /// <exception cref="NotSupportedException">
+    /// A password was supplied for a format other than ZIP (unless the encryption type is
+    /// <see cref="EncryptionType.None"/>, which ignores the password), or with an encryption type that libarchive
+    /// or this native library build cannot write.
+    /// </exception>
     public LibArchiveWriter(
         Stream outputStream,
         ArchiveFormat format,
@@ -46,11 +51,13 @@ public partial class LibArchiveWriter
         if (!outputStream.CanWrite)
             throw new ArgumentException("Stream must be writable", nameof(outputStream));
 
+        // Reject encryption libarchive cannot provide before anything is written to the stream
+        var encryptionOption = GetEncryptionOption(format, password, encryption);
+
         this.outputStream = outputStream;
         this.format = format;
         this.blockSize = blockSize;
-        this.password = password;
-        this.encryptionType = encryption;
+        this.encrypted = encryptionOption != null;
 
         // Create and configure archive
         handle = archive_write_new();
@@ -62,8 +69,8 @@ public partial class LibArchiveWriter
             SetFormat(format);
             AddFilter(compression, compressionLevel);
 
-            if (!string.IsNullOrEmpty(password))
-                ConfigureEncryption();
+            if (encryptionOption != null)
+                ConfigureEncryption(encryptionOption, password!);
 
             // Open with callbacks for stream writing
             OpenWithCallbacks();
@@ -182,10 +189,15 @@ public partial class LibArchiveWriter
     /// <param name="format">Archive format to use.</param>
     /// <param name="compression">Compression algorithm to apply (default: None).</param>
     /// <param name="compressionLevel">Compression level 0-9, where 9 is maximum compression (default: 6).</param>
-    /// <param name="password">Optional password for encryption (ZIP and 7-Zip only).</param>
-    /// <param name="encryption">Encryption type when password is provided (default: format-specific).</param>
+    /// <param name="password">Optional password for encryption. libarchive can only encrypt ZIP archives.</param>
+    /// <param name="encryption">Encryption type when a password is provided (default: AES-256).</param>
     /// <param name="initialCapacity">Initial capacity of the memory buffer in bytes (default: 64 KB).</param>
     /// <returns>A LibArchiveWriter that writes to memory.</returns>
+    /// <exception cref="NotSupportedException">
+    /// A password was supplied for a format other than ZIP (unless the encryption type is
+    /// <see cref="EncryptionType.None"/>, which ignores the password), or with an encryption type that libarchive
+    /// or this native library build cannot write.
+    /// </exception>
     public static LibArchiveWriter CreateMemoryWriter(
         ArchiveFormat format,
         CompressionType compression = CompressionType.None,
