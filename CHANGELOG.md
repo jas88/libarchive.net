@@ -2,7 +2,7 @@ v0.3.2 - unreleased
 
 **Bug Fixes:**
 - Fix `DllNotFoundException: Unable to load DLL 'archive'` on Windows under .NET Framework (the .NET Standard 2.0 build). The package deploys `archive.dll` to `runtimes\win-{arch}\native\`, which .NET Framework does not probe, and the library only loaded it explicitly on Linux and macOS. It now does the same on Windows.
-- Fix the .NET Standard 2.0 build failing to initialise on Linux and macOS when running on .NET 10 or later (for example a `net8.0` app rolled forward to a newer runtime). Since .NET 10, the assembly-wide `DllImportSearchPath.AssemblyDirectory` no longer falls back to the OS library search, so the `libdl` imports used to load the native library could not be resolved.
+- Fix the .NET Standard 2.0 build failing to initialise on Linux and macOS when running on .NET 10 or later. That happens when an app targeting a framework this package has no dedicated build for (such as `net6.0`) is rolled forward to a newer runtime. Since .NET 10, the assembly-wide `DllImportSearchPath.AssemblyDirectory` no longer falls back to the OS library search, so the `libdl` imports used to load the native library could not be resolved.
 - Fix incorrect Unix permission defaults in `LibArchiveWriter` — bare `0644`/`0755`/`0444` literals were being interpreted as decimal in C# (no octal literal syntax), producing nonsensical permission bits. Files now correctly default to `rw-r--r--` (and `r--r--r--` for read-only attributes), directories to `rwxr-xr-x`. Reported and initial fix contributed by @JuanCalle1606 in #220.
 
 **API Improvements:**
