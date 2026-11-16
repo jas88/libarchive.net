@@ -1,6 +1,8 @@
 #!/bin/bash
 # Generate directory-specific Directory.Build.props files with dynamic target framework values
-# based on .NET SDK version. If any files differ from what's in git, commit and push, then exit with error.
+# based on .NET SDK version. Locally, out-of-date files are rewritten for you to commit. In CI they are
+# never committed or pushed (a pull request's checkout is a detached HEAD with a read-only token):
+# the step shows the required change and fails, so the update goes into the pull request itself.
 
 set -e
 
@@ -47,7 +49,7 @@ fi
 
 # Build list of supported frameworks (netstandard2.0 first for broad compatibility)
 FRAMEWORKS="netstandard2.0"
-for v in $(seq $MIN_MAJOR $MAX_MAJOR); do
+for v in $(seq "$MIN_MAJOR" "$MAX_MAJOR"); do
     FRAMEWORKS="${FRAMEWORKS};net${v}.0"
 done
 
@@ -104,16 +106,17 @@ else
     rm -f "$TEMP_TEST"
 fi
 
-# If changes were made and we're in CI, commit and push
+# If changes were made in CI, show what is needed and fail; locally, leave the rewritten files to commit
 if [ "$CHANGES_MADE" = true ]; then
-    if [ -d .git ] && [ -n "$CI" ]; then
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add "$LIB_PROPS" "$TEST_PROPS"
-        git commit -m "Update Directory.Build.props files for .NET SDK version"
-        git push
-        echo "ERROR: Directory.Build.props files were out of date and have been updated."
-        echo "The changes have been committed and pushed. Please retry the workflow."
+    if [ -n "$CI" ]; then
+        git --no-pager diff -- "$LIB_PROPS" "$TEST_PROPS"
+        for f in "$LIB_PROPS" "$TEST_PROPS"; do
+            if ! git diff --quiet -- "$f"; then
+                echo "::error file=$f::$f does not match the .NET $MAX_VERSION SDK. Run ./scripts/generate-build-props.sh locally and commit the result."
+            fi
+        done
+        echo "ERROR: Directory.Build.props files are out of date for the .NET $MAX_VERSION SDK (diff above)."
+        echo "Run ./scripts/generate-build-props.sh locally and commit the changes."
         exit 1
     else
         echo "Updated props files locally. Please commit the changes."
