@@ -81,7 +81,8 @@ bash scripts/check-native-updates.sh
 DRY_RUN=0 bash scripts/check-native-updates.sh
 ```
 
-- `curl`, `jq`, `gh` and `git` must be installed, even for a dry run.
+- `curl`, `jq`, `gh` and `git` must be installed, even for a dry run. Applying
+  updates also needs `shasum` or `sha256sum`, to compute the new checksums.
 - A dry run still queries GitHub and the upstream download sites. It does not edit
   files, create a branch or open a pull request.
 - Only `DRY_RUN=1`, or an unset or empty `DRY_RUN`, gives a dry run. Any other
