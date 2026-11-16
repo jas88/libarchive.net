@@ -153,54 +153,91 @@ public class StreamWriterTests
         Assert.That(archiveBytes.Length, Is.LessThan(1000));
     }
 
-    [Test]
-    public void TestMemoryWriterWithEncryption()
+    private const string Password = "TestPassword123";
+
+    /// <summary>
+    /// Writes a single entry archive to memory through the memory writer factory or the stream constructor.
+    /// </summary>
+    private static byte[] WriteSecret(bool useMemoryWriter, ArchiveFormat format, EncryptionType encryption)
     {
-        var password = "TestPassword123";
-        var testContent = "Secret data";
-        byte[] archiveBytes;
+        var content = Encoding.UTF8.GetBytes(EncryptionAssert.SecretText);
 
-        try
+        if (useMemoryWriter)
         {
-            using (var writer = LibArchiveWriter.CreateMemoryWriter(
-                ArchiveFormat.Zip,
-                password: password,
-                encryption: EncryptionType.AES256))
-            {
-                writer.AddEntry("secret.txt", Encoding.UTF8.GetBytes(testContent));
-                writer.Dispose();
+            using var writer = LibArchiveWriter.CreateMemoryWriter(format, password: Password, encryption: encryption);
+            writer.AddEntry(EncryptionAssert.EntryName, content);
+            writer.Dispose();
 
-                archiveBytes = writer.ToArray();
-            }
-        }
-        catch (ApplicationException ex) when (ex.Message.Contains("Undefined option"))
-        {
-            Assert.Ignore("Encryption not supported by this libarchive build");
-            return;
+            return writer.ToArray();
         }
 
-        Assert.That(archiveBytes, Is.Not.Empty);
-
-        // Verify encryption by reading back
-        var tempFile = Path.Combine(testDirectory, "encrypted-memory.zip");
-        File.WriteAllBytes(tempFile, archiveBytes);
-
-        // Should fail without password
-        Assert.Throws<ApplicationException>(() =>
+        using var stream = new MemoryStream();
+        using (var writer = new LibArchiveWriter(stream, format, password: Password, encryption: encryption))
         {
-            using var reader = new LibArchiveReader(tempFile);
-            var entry = reader.Entries().First();
-            entry.Stream.ReadByte();
-        });
-
-        // Should succeed with password
-        using (var reader = new LibArchiveReader(tempFile, password: password))
-        {
-            var entry = reader.Entries().First();
-            using var stream = entry.Stream;
-            using var streamReader = new StreamReader(stream);
-            Assert.That(streamReader.ReadToEnd(), Is.EqualTo(testContent));
+            writer.AddEntry(EncryptionAssert.EntryName, content);
         }
+
+        return stream.ToArray();
+    }
+
+    private string SaveArchive(byte[] archiveBytes)
+    {
+        var archivePath = Path.Combine(testDirectory, "archive.bin");
+        File.WriteAllBytes(archivePath, archiveBytes);
+        return archivePath;
+    }
+
+    [Test]
+    public void TestStreamAndMemoryWriterWithEncryption(
+        [Values] bool useMemoryWriter,
+        [Values(EncryptionType.Default, EncryptionType.AES256, EncryptionType.AES128, EncryptionType.Traditional)]
+        EncryptionType encryption)
+    {
+        var archiveBytes = WriteSecret(useMemoryWriter, ArchiveFormat.Zip, encryption);
+
+        EncryptionAssert.IsEncrypted(SaveArchive(archiveBytes), Password);
+    }
+
+    [Test]
+    public void TestStreamAndMemoryWriterPasswordWithNonZipFormatThrows(
+        [Values] bool useMemoryWriter,
+        [Values(ArchiveFormat.SevenZip, ArchiveFormat.Tar)] ArchiveFormat format)
+    {
+        // libarchive only encrypts ZIP archives, so anything else must be refused instead of written as plaintext
+        var ex = Assert.Throws<NotSupportedException>(() =>
+            WriteSecret(useMemoryWriter, format, EncryptionType.Default));
+
+        Assert.That(ex!.Message, Does.Contain("ZIP"));
+    }
+
+    [Test]
+    public void TestStreamWriterPasswordWithNonZipFormatWritesNothing()
+    {
+        using var stream = new MemoryStream();
+
+        Assert.Throws<NotSupportedException>(() =>
+            new LibArchiveWriter(stream, ArchiveFormat.SevenZip, password: Password).Dispose());
+
+        Assert.That(stream.Length, Is.Zero);
+    }
+
+    [Test]
+    public void TestStreamAndMemoryWriterAes192Throws([Values] bool useMemoryWriter)
+    {
+        var ex = Assert.Throws<NotSupportedException>(() =>
+            WriteSecret(useMemoryWriter, ArchiveFormat.Zip, EncryptionType.AES192));
+
+        Assert.That(ex!.Message, Does.Contain("AES-128").And.Contain("AES-256"));
+    }
+
+    [Test]
+    public void TestStreamAndMemoryWriterEncryptionNoneWithPasswordIsUnencrypted(
+        [Values] bool useMemoryWriter,
+        [Values(ArchiveFormat.Zip, ArchiveFormat.SevenZip, ArchiveFormat.Tar)] ArchiveFormat format)
+    {
+        var archiveBytes = WriteSecret(useMemoryWriter, format, EncryptionType.None);
+
+        EncryptionAssert.IsNotEncrypted(SaveArchive(archiveBytes));
     }
 
     [Test]

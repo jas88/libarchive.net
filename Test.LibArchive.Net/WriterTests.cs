@@ -183,79 +183,133 @@ public class WriterTests
 
     #region Encryption Tests
 
-    [Test]
-    public void TestPasswordProtectedZipAES256()
+    private const string Password = "TestPassword123!";
+
+    [TestCase(EncryptionType.Default)]
+    [TestCase(EncryptionType.AES256)]
+    [TestCase(EncryptionType.AES128)]
+    [TestCase(EncryptionType.Traditional)]
+    public void TestPasswordProtectedZip(EncryptionType encryption)
     {
         var archivePath = Path.Combine(testDirectory, "encrypted.zip");
-        var testData = "Secret data";
-        var password = "TestPassword123!";
 
-        // Create encrypted archive
-        try
+        using (var writer = new LibArchiveWriter(
+            archivePath,
+            ArchiveFormat.Zip,
+            password: Password,
+            encryption: encryption))
         {
-            using (var writer = new LibArchiveWriter(
-                archivePath,
-                ArchiveFormat.Zip,
-                password: password,
-                encryption: EncryptionType.AES256))
-            {
-                writer.AddEntry("secret.txt", Encoding.UTF8.GetBytes(testData));
-            }
-        }
-        catch (ApplicationException ex) when (ex.Message.Contains("Undefined option"))
-        {
-            Assert.Ignore("Encryption not supported by this libarchive build");
-            return;
+            writer.AddEntry(EncryptionAssert.EntryName, Encoding.UTF8.GetBytes(EncryptionAssert.SecretText));
         }
 
-        // Verify cannot read without password
-        Assert.Throws<ApplicationException>(() =>
-        {
-            using var reader = new LibArchiveReader(archivePath);
-            var entry = reader.Entries().First();
-            entry.Stream.ReadByte();
-        });
+        EncryptionAssert.IsEncrypted(archivePath, Password);
+    }
 
-        // Verify can read with correct password
-        using (var reader = new LibArchiveReader(archivePath, password: password))
-        {
-            var entry = reader.Entries().First();
-            using var stream = entry.Stream;
-            using var streamReader = new StreamReader(stream);
-            Assert.That(streamReader.ReadToEnd(), Is.EqualTo(testData));
-        }
+    [TestCase(ArchiveFormat.SevenZip)]
+    [TestCase(ArchiveFormat.Tar)]
+    [TestCase(ArchiveFormat.Ustar)]
+    [TestCase(ArchiveFormat.Pax)]
+    [TestCase(ArchiveFormat.Cpio)]
+    [TestCase(ArchiveFormat.Iso9660)]
+    [TestCase(ArchiveFormat.Xar)]
+    public void TestPasswordWithNonZipFormatThrows(ArchiveFormat format)
+    {
+        // libarchive only encrypts ZIP archives. Every other writer accepts a passphrase and ignores it,
+        // so the wrapper has to refuse instead of writing plaintext.
+        var archivePath = Path.Combine(testDirectory, "not-encrypted.bin");
+
+        var ex = Assert.Throws<NotSupportedException>(() =>
+            new LibArchiveWriter(archivePath, format, password: Password).Dispose());
+
+        Assert.That(ex!.Message, Does.Contain("ZIP"));
+        Assert.That(File.Exists(archivePath), Is.False, "The output file must not be created");
     }
 
     [Test]
-    public void TestPasswordProtected7z()
+    public void TestPasswordWithNonZipFormatDoesNotTruncateExistingFile()
     {
-        var archivePath = Path.Combine(testDirectory, "encrypted.7z");
-        var password = "7zPassword";
+        var archivePath = Path.Combine(testDirectory, "existing.7z");
+        var original = Encoding.UTF8.GetBytes("existing content");
+        File.WriteAllBytes(archivePath, original);
 
-        try
-        {
-            using (var writer = new LibArchiveWriter(
+        Assert.Throws<NotSupportedException>(() =>
+            new LibArchiveWriter(archivePath, ArchiveFormat.SevenZip, password: Password).Dispose());
+
+        Assert.That(File.ReadAllBytes(archivePath), Is.EqualTo(original));
+    }
+
+    [Test]
+    public void TestAes192ZipThrows()
+    {
+        // libarchive's ZIP writer implements AES-128 and AES-256 only
+        var archivePath = Path.Combine(testDirectory, "aes192.zip");
+
+        var ex = Assert.Throws<NotSupportedException>(() =>
+            new LibArchiveWriter(
                 archivePath,
-                ArchiveFormat.SevenZip,
-                password: password))
-            {
-                writer.AddEntry("data.bin", new byte[100]);
-            }
-        }
-        catch (ApplicationException ex) when (ex.Message.Contains("Undefined option") ||
-                                               ex.Message.Contains("encryption"))
+                ArchiveFormat.Zip,
+                password: Password,
+                encryption: EncryptionType.AES192).Dispose());
+
+        Assert.That(ex!.Message, Does.Contain("AES-128").And.Contain("AES-256"));
+        Assert.That(File.Exists(archivePath), Is.False, "The output file must not be created");
+    }
+
+    [TestCase(ArchiveFormat.Zip)]
+    [TestCase(ArchiveFormat.SevenZip)]
+    [TestCase(ArchiveFormat.Tar)]
+    public void TestEncryptionNoneWithPasswordWritesUnencryptedArchive(ArchiveFormat format)
+    {
+        var archivePath = Path.Combine(testDirectory, "plain.bin");
+
+        using (var writer = new LibArchiveWriter(
+            archivePath,
+            format,
+            password: Password,
+            encryption: EncryptionType.None))
         {
-            Assert.Ignore("7-Zip encryption not supported by this libarchive build");
-            return;
+            writer.AddEntry(EncryptionAssert.EntryName, Encoding.UTF8.GetBytes(EncryptionAssert.SecretText));
         }
 
-        // Verify encryption is applied (if supported)
-        using var reader = new LibArchiveReader(archivePath, password: password);
-        var hasEncrypted = reader.HasEncryptedEntries();
-        // hasEncrypted can be -1 if encryption detection isn't supported
-        if (hasEncrypted < 0)
-            Assert.Ignore("Encryption detection not supported by this libarchive build");
-        Assert.That(hasEncrypted, Is.GreaterThan(0));
+        EncryptionAssert.IsNotEncrypted(archivePath);
+    }
+
+    [Test]
+    public void TestWithPasswordRejectsWhatLibarchiveCannotEncrypt()
+    {
+        using var sevenZip = new LibArchiveWriter(Path.Combine(testDirectory, "with-password.7z"), ArchiveFormat.SevenZip);
+        Assert.Throws<NotSupportedException>(() => sevenZip.WithPassword(Password));
+
+        using var zip = new LibArchiveWriter(Path.Combine(testDirectory, "with-password.zip"), ArchiveFormat.Zip);
+        Assert.Throws<NotSupportedException>(() => zip.WithPassword(Password, EncryptionType.AES192));
+    }
+
+    [Test]
+    public void TestWithPasswordCannotChangeEncryptionOfOpenArchive()
+    {
+        // libarchive accepts a passphrase only before the archive is opened, and the constructor opens it
+        using var plain = new LibArchiveWriter(Path.Combine(testDirectory, "plain.zip"), ArchiveFormat.Zip);
+        Assert.Throws<InvalidOperationException>(() => plain.WithPassword(Password));
+
+        using var encrypted = new LibArchiveWriter(
+            Path.Combine(testDirectory, "encrypted.zip"),
+            ArchiveFormat.Zip,
+            password: Password);
+        Assert.Throws<InvalidOperationException>(() => encrypted.WithPassword(Password, EncryptionType.None));
+    }
+
+    [Test]
+    public void TestWithPasswordNoneLeavesArchiveUnencrypted()
+    {
+        var archivePath = Path.Combine(testDirectory, "plain.zip");
+
+        using (var writer = new LibArchiveWriter(archivePath, ArchiveFormat.Zip))
+        {
+            Assert.That(writer.WithPassword(Password, EncryptionType.None), Is.SameAs(writer));
+            writer.AddEntry(EncryptionAssert.EntryName, Encoding.UTF8.GetBytes(EncryptionAssert.SecretText));
+        }
+
+        EncryptionAssert.IsNotEncrypted(archivePath);
     }
 
     #endregion
@@ -448,4 +502,41 @@ public class WriterTests
     #endregion
 }
 
+/// <summary>
+/// Reads archives back to prove whether their content is really encrypted.
+/// </summary>
+internal static class EncryptionAssert
+{
+    internal const string EntryName = "secret.txt";
+
+    // Long and repetitive so the entry is deflated: data decrypted with the wrong key cannot be a valid stream
+    internal static readonly string SecretText =
+        string.Concat(Enumerable.Repeat("Secret data that must not be readable without the password. ", 64));
+
+    internal static void IsEncrypted(string archivePath, string password)
+    {
+        var noPassword = Assert.Throws<ApplicationException>(() => ReadFirstEntry(archivePath));
+        Assert.That(noPassword!.Message, Does.Contain("Passphrase required"));
+
+        // Only the exception type is asserted here. ZIP checks a password against a one or two byte verifier,
+        // so a wrong password occasionally gets past it and fails on the decrypted data with another message.
+        Assert.Throws<ApplicationException>(() => ReadFirstEntry(archivePath, "Wrong" + password));
+
+        Assert.That(ReadFirstEntry(archivePath, password), Is.EqualTo(SecretText));
+    }
+
+    internal static void IsNotEncrypted(string archivePath)
+    {
+        Assert.That(ReadFirstEntry(archivePath), Is.EqualTo(SecretText));
+    }
+
+    private static string ReadFirstEntry(string archivePath, string? password = null)
+    {
+        using var reader = new LibArchiveReader(archivePath, password: password);
+        var entry = reader.Entries().First();
+        using var stream = entry.Stream;
+        using var streamReader = new StreamReader(stream);
+        return streamReader.ReadToEnd();
+    }
+}
 }
