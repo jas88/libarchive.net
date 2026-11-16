@@ -275,14 +275,16 @@ normalize_autotools_timestamps() {
 # Function to download all libraries
 # Always unpacks fresh copies from cache
 download_all_libraries() {
-    download_library "$LIBARCHIVE_URL" "libarchive" "libarchive-${LIBARCHIVE_VERSION}" "$LIBARCHIVE_SHA256"
-    download_library "$LZ4_URL" "lz4" "lz4-${LZ4_VERSION}" "$LZ4_SHA256"
-    download_library "$ZSTD_URL" "zstd" "zstd-${ZSTD_VERSION}" "$ZSTD_SHA256"
-    download_library "$LZO_URL" "lzo" "lzo-${LZO_VERSION}" "$LZO_SHA256"
-    download_library "$LIBXML2_URL" "libxml2" "libxml2-${LIBXML2_VERSION}" "$LIBXML2_SHA256"
-    download_library "$BZIP2_URL" "bzip2" "bzip2-${BZIP2_VERSION}" "$BZIP2_SHA256"
-    download_library "$ZLIB_URL" "zlib" "zlib-${ZLIB_VERSION}" "$ZLIB_SHA256"
-    download_library "$XZ_URL" "xz" "xz-${XZ_VERSION}" "$XZ_SHA256"
+    # Explicit "|| return 1": callers may run this where set -e does not apply
+    # (e.g. after "&&"), and a failed download must never fall through to a build.
+    download_library "$LIBARCHIVE_URL" "libarchive" "libarchive-${LIBARCHIVE_VERSION}" "$LIBARCHIVE_SHA256" || return 1
+    download_library "$LZ4_URL" "lz4" "lz4-${LZ4_VERSION}" "$LZ4_SHA256" || return 1
+    download_library "$ZSTD_URL" "zstd" "zstd-${ZSTD_VERSION}" "$ZSTD_SHA256" || return 1
+    download_library "$LZO_URL" "lzo" "lzo-${LZO_VERSION}" "$LZO_SHA256" || return 1
+    download_library "$LIBXML2_URL" "libxml2" "libxml2-${LIBXML2_VERSION}" "$LIBXML2_SHA256" || return 1
+    download_library "$BZIP2_URL" "bzip2" "bzip2-${BZIP2_VERSION}" "$BZIP2_SHA256" || return 1
+    download_library "$ZLIB_URL" "zlib" "zlib-${ZLIB_VERSION}" "$ZLIB_SHA256" || return 1
+    download_library "$XZ_URL" "xz" "xz-${XZ_VERSION}" "$XZ_SHA256" || return 1
 
     # Stop autotools rebuild rules firing in any unpacked tarball. Without this the
     # build depends on the host's automake/libtool versions matching the ones each
