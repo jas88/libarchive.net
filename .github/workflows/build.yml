@@ -80,9 +80,9 @@ jobs:
         uses: actions/cache@v6.1.0
         with:
           path: ~/config-cache
+          # Exact match only: a configure cache from another toolchain or flag set makes
+          # autoconf abort ("`CC' has changed since the previous run").
           key: config-cache-macos-${{ hashFiles('native/build-*.sh') }}
-          restore-keys: |
-            config-cache-macos-
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
@@ -168,9 +168,9 @@ jobs:
         uses: actions/cache@v6.1.0
         with:
           path: ~/config-cache
+          # Exact match only: a configure cache from another toolchain or flag set makes
+          # autoconf abort ("`CC' has changed since the previous run").
           key: config-cache-${{ matrix.target }}-${{ hashFiles('native/build-*.sh') }}
-          restore-keys: |
-            config-cache-${{ matrix.target }}-
       - name: Install apt packages
         if: steps.native-cache.outputs.cache-hit != 'true'
         uses: awalsh128/cache-apt-pkgs-action@v1.6.3
