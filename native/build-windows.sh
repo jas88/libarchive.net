@@ -103,12 +103,6 @@ cd xz-${XZ_VERSION}
 make -j$NCPU install
 cd ..
 
-echo "Building lzo ${LZO_VERSION}..."
-cd lzo-${LZO_VERSION}
-./configure --cache-file=$(get_config_cache ${MINGW_PREFIX}) --host=${MINGW_PREFIX} --prefix=$PREFIX --disable-shared
-make -j$NCPU install
-cd ..
-
 echo "Building zstd ${ZSTD_VERSION}..."
 cd zstd-${ZSTD_VERSION}/lib
 make -j$NCPU libzstd.a "CC=$CC" "AR=$AR"
@@ -136,13 +130,13 @@ export LDFLAGS="$LDFLAGS -L$PREFIX/lib -lz -llzma"
     --enable-static --disable-shared \
     --disable-bsdtar --disable-bsdcat --disable-bsdcpio \
     --enable-posix-regex-lib=libc \
-    --with-pic --with-zlib --with-bz2lib --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-xml2
+    --with-pic --with-zlib --with-bz2lib --with-lz4 --with-zstd --with-lzma --without-lzo2 --with-xml2
 make -j$NCPU install
 cd ..
 
 echo "Creating Windows DLL..."
 # Verify all libraries exist before linking
-for lib in libarchive libxml2 libz liblzma liblzo2 libzstd liblz4 libbz2; do
+for lib in libarchive libxml2 libz liblzma libzstd liblz4 libbz2; do
     if [ ! -f "$PREFIX/lib/${lib}.a" ]; then
         echo "ERROR: $PREFIX/lib/${lib}.a not found!"
         exit 1
@@ -159,7 +153,6 @@ ${CC} -shared -o ${OUTPUT_NAME} \
     $PREFIX/lib/libxml2.a \
     $PREFIX/lib/libz.a \
     $PREFIX/lib/liblzma.a \
-    $PREFIX/lib/liblzo2.a \
     $PREFIX/lib/libzstd.a \
     $PREFIX/lib/liblz4.a \
     $PREFIX/lib/libbz2.a \

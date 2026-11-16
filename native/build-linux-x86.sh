@@ -91,12 +91,6 @@ cp libbz2.a $PREFIX/lib/
 cp bzlib.h $PREFIX/include/
 cd ..
 
-echo "Building lzo ${LZO_VERSION}..."
-cd lzo-${LZO_VERSION}
-./configure --cache-file=$(get_config_cache i686-linux) --build=x86_64-pc-linux-gnu --host=i686-linux --prefix=$PREFIX --disable-shared --enable-static
-make -sj$NCPU install
-cd ..
-
 echo "Building zlib ${ZLIB_VERSION}..."
 cd zlib-${ZLIB_VERSION}
 CHOST=i686-linux ./configure --static --prefix=$PREFIX
@@ -119,14 +113,14 @@ echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
 export LIBXML2_PC_LIBS=-L$PREFIX
-./configure --cache-file=$(get_config_cache i686-linux) --build=x86_64-pc-linux-gnu --host=i686-linux --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2 --disable-shared --enable-static
+./configure --cache-file=$(get_config_cache i686-linux) --build=x86_64-pc-linux-gnu --host=i686-linux --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-sysroot --without-lzo2 --disable-shared --enable-static
 make -sj$NCPU install
 cd ..
 
 echo "Creating final shared library..."
 # For 32-bit builds, we need libgcc for 64-bit division intrinsics (__udivdi3, etc.)
 LIBGCC_PATH=$($CC -print-libgcc-file-name)
-$CC -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/liblzo2.a local/lib/libzstd.a local/lib/liblz4.a "$LIBGCC_PATH" ${TOOLCHAIN_SYSROOT}/lib/libc.a -nostdlib
+$CC -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/libzstd.a local/lib/liblz4.a "$LIBGCC_PATH" ${TOOLCHAIN_SYSROOT}/lib/libc.a -nostdlib
 
 echo "Testing library..."
 cat > test.c <<EOT

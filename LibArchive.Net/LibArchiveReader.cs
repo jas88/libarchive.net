@@ -14,7 +14,7 @@ namespace LibArchive.Net;
 
 /// <summary>
 /// Provides read-only access to archive files using the libarchive library.
-/// Supports various formats including zip, rar, 7zip, tar, gzip, bzip2, lzo, and lzma.
+/// Supports various formats including zip, rar, 7zip, tar, gzip, bzip2, and lzma.
 /// </summary>
 public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 {

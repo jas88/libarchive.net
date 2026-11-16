@@ -14,7 +14,6 @@ This script monitors 8 native C/C++ libraries that are statically linked into li
 | xz/liblzma | 5.4.6 | GitHub Releases | Medium |
 | zlib | 1.3.1 | Web Scrape (zlib.net) | Low |
 | libxml2 | 2.12.6 | GNOME Releases | Medium |
-| lzo | 2.10 | Web Scrape | Very Low |
 | bzip2 | 1.0.8 | Web Scrape (uses "latest") | Very Low |
 
 ## Usage
@@ -54,7 +53,7 @@ When updates are found, the script:
 GET https://api.github.com/repos/{owner}/{repo}/releases/latest
 ```
 
-**Web Scraping** (zlib, lzo, bzip2):
+**Web Scraping** (zlib, bzip2):
 - Downloads HTML page
 - Extracts version from tarball filenames using regex
 - Returns highest version found
@@ -139,7 +138,6 @@ Checking bzip2 (current: 1.0.8)... latest: 1.0.8 ✓
 Checking libarchive (current: 3.7.3)... latest: 3.7.3 ✓
 Checking libxml2 (current: 2.12.6)... latest: 2.12.6 ✓
 Checking lz4 (current: 1.9.4)... latest: 1.9.4 ✓
-Checking lzo (current: 2.10)... latest: 2.10 ✓
 Checking xz (current: 5.4.6)... latest: 5.4.6 ✓
 Checking zlib (current: 1.3.1)... latest: 1.3.1 ✓
 Checking zstd (current: 1.5.6)... latest: 1.5.6 ✓

@@ -64,14 +64,6 @@ my %DEPS = (
         url_pattern_linux => 'https://download.gnome.org/sources/libxml2/%M/libxml2-%s.tar.xz',
         url_pattern_macos => 'https://download.gnome.org/sources/libxml2/%M/libxml2-%s.tar.xz',
     },
-    'lzo' => {
-        current => '2.10',
-        check_type => 'web_scrape',
-        check_url => 'https://www.oberhumer.com/opensource/lzo/download/',
-        version_regex => qr/lzo-(\d+\.\d+)\.tar\.gz/,
-        url_pattern_linux => 'https://www.oberhumer.com/opensource/lzo/download/lzo-%s.tar.gz',
-        url_pattern_macos => 'https://www.oberhumer.com/opensource/lzo/download/lzo-%s.tar.gz',
-    },
     'bzip2' => {
         current => '1.0.8',
         check_type => 'web_scrape',

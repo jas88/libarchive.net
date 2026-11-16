@@ -44,12 +44,6 @@ make -j$NCPU -sC lz4-${LZ4_VERSION} install PREFIX=$PREFIX CFLAGS="$CFLAGS"
 echo "Building bzip2 ${BZIP2_VERSION}..."
 make -j$NCPU -sC bzip2-${BZIP2_VERSION} install PREFIX=$PREFIX CFLAGS="$CFLAGS"
 
-echo "Building lzo ${LZO_VERSION}..."
-cd lzo-${LZO_VERSION}
-./configure --cache-file=$(get_config_cache darwin-universal) --prefix=$PREFIX
-make -sj$NCPU install
-cd ..
-
 echo "Building zlib ${ZLIB_VERSION}..."
 cd zlib-${ZLIB_VERSION}
 ./configure --static --prefix=$PREFIX
@@ -82,12 +76,12 @@ cd libarchive-${LIBARCHIVE_VERSION}
 # with "libtool: Version mismatch error" once the runner's libtool outpaces it.
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
 export LIBXML2_PC_LIBS="-L$PREFIX -lxml2"
-./configure --cache-file=$(get_config_cache darwin-universal) --prefix=$PREFIX --enable-silent-rules --disable-dependency-tracking --enable-static --disable-shared --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-rpath --enable-posix-regex-lib=libc --enable-xattr --enable-acl --enable-largefile --with-pic --with-zlib --with-bz2lib --with-libb2 --with-iconv --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-cng
+./configure --cache-file=$(get_config_cache darwin-universal) --prefix=$PREFIX --enable-silent-rules --disable-dependency-tracking --enable-static --disable-shared --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-rpath --enable-posix-regex-lib=libc --enable-xattr --enable-acl --enable-largefile --with-pic --with-zlib --with-bz2lib --with-libb2 --with-iconv --with-lz4 --with-zstd --with-lzma --without-lzo2 --with-cng
 make -sj$NCPU install
 cd ..
 
 echo "Creating universal binary..."
-clang -arch arm64 -arch x86_64 -dynamiclib -shared -o libarchive.dylib -Wl,-force_load local/lib/libarchive.a local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/liblzo2.a local/lib/libzstd.a local/lib/liblz4.a -liconv
+clang -arch arm64 -arch x86_64 -dynamiclib -shared -o libarchive.dylib -Wl,-force_load local/lib/libarchive.a local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/libzstd.a local/lib/liblz4.a -liconv
 
 echo "Testing library..."
 file libarchive.dylib

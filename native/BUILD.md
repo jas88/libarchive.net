@@ -20,7 +20,6 @@ All library versions are managed in `build-config.sh`:
 | libarchive | 3.7.3 |
 | lz4 | 1.9.4 |
 | zstd | 1.5.6 |
-| lzo | 2.10 |
 | libxml2 | 2.12.6 |
 | zlib | 1.4 |
 | xz (liblzma) | 5.4.6 |
@@ -220,7 +219,7 @@ unzip -l LibArchive.Net.*.nupkg | grep runtimes
 
 ```bash
 # Clean downloaded sources and build artifacts
-rm -rf local* {bzip2,libarchive,libxml2,lz4,lzo,musl-cross-make,xz,zlib,zstd}-*
+rm -rf local* {bzip2,libarchive,libxml2,lz4,musl-cross-make,xz,zlib,zstd}-*
 rm -rf musl-cross-make-master configcache
 rm -f *.so *.dylib *.dll test nativetest
 ```
@@ -248,6 +247,5 @@ The libraries being built have their own licenses:
 - bzip2: BSD-like
 - lz4: BSD-2-Clause
 - zstd: BSD + GPLv2
-- lzo: GPLv2
 - xz (liblzma): Public Domain
 - libxml2: MIT

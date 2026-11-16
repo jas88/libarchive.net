@@ -7,7 +7,7 @@
 
 ## Features
 
-- **Read** archives: ZIP, RAR, 7-Zip, TAR, gzip, bzip2, xz, lzma, lzo, and more
+- **Read** archives: ZIP, RAR, 7-Zip, TAR, gzip, bzip2, xz, lzma, and more
 - **Write** archives: ZIP, 7-Zip, TAR, Ustar, PAX, CPIO, ISO 9660, XAR
 - **Compression**: Gzip, Bzip2, XZ, LZMA, LZ4, Zstd, Compress, LZIP
 - **Encryption**: ZIP (AES-128/192/256, Traditional PKWARE), 7-Zip (AES-256)
