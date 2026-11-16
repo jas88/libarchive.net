@@ -12,7 +12,7 @@
 - **Compression**: Gzip, Bzip2, XZ, LZMA, LZ4, Zstd, Compress, LZIP
 - **Encryption**: ZIP (AES-128/192/256, Traditional PKWARE), 7-Zip (AES-256)
 - **Platform support**: Windows, Linux, macOS (x64, ARM64, ARM, x86)
-- **Native AOT** and trimming compatible (.NET 7+)
+- **Native AOT** and trimming compatible (.NET 10+)
 - **.NET Standard 2.0** support for .NET Framework 4.6.1+
 
 ## Quick Start
@@ -144,9 +144,9 @@ Native libraries for all supported platforms are included in the NuGet package.
 
 ## Requirements
 
-- .NET 6.0+ (recommended)
+- .NET 10.0+ (recommended)
 - .NET Standard 2.0 / .NET Framework 4.6.1+ (supported)
-- Native AOT compatible on .NET 7+
+- Native AOT compatible on .NET 10+
 
 ## License
 
