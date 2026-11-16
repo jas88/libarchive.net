@@ -625,11 +625,9 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     // .NET Standard 2.0 Native Library Loading
     private static void PreloadNativeLibrary()
     {
-        // On Windows, [assembly: DefaultDllImportSearchPaths(DllImportSearchPath.AssemblyDirectory)]
-        // handles native library loading automatically, so we only need manual loading on Unix.
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            // No manual loading needed - .NET Framework will find the DLL via AssemblyDirectory
+            PreloadWindowsLibrary();
             return;
         }
 
@@ -644,7 +642,48 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         LoadUnixLibrary(libraryPath);
     }
 
+    private static void PreloadWindowsLibrary()
+    {
+        // A RID-specific build or publish puts archive.dll next to this assembly, where the
+        // assembly-wide DefaultDllImportSearchPaths(AssemblyDirectory) already finds it. An
+        // assembly with no file location (single-file, Native AOT) has the application
+        // directory treated as its assembly directory by the runtime, so do the same here.
+        var assemblyDirectory = GetAssemblyDirectoryOrNull(Assembly.GetExecutingAssembly())
+                                ?? AppDomain.CurrentDomain.BaseDirectory;
+        if (!string.IsNullOrEmpty(assemblyDirectory) && File.Exists(Path.Combine(assemblyDirectory, "archive.dll")))
+            return;
+
+        // Otherwise the package's .targets file has deployed it to runtimes\{rid}\native\.
+        // .NET (Core) finds it there through the application's deps.json, but .NET Framework
+        // never probes that folder. Load it by full path: when .NET Framework falls back from
+        // the assembly directory to loading "archive" by name, Windows binds that to the
+        // module which is already loaded.
+        // If it is not there either, there is nothing to preload, and the imports resolve or
+        // fail through the runtime's own probing exactly as they would without this method.
+        // (Since .NET 10 that probing no longer includes the OS search, e.g. PATH.)
+        if (TryGetNativeLibraryPath(out var libraryPath, out _))
+            LoadWindowsLibrary(libraryPath);
+    }
+
     private static string GetNativeLibraryPath()
+    {
+        if (TryGetNativeLibraryPath(out var libraryPath, out var notFoundMessage))
+            return libraryPath;
+
+        throw new DllNotFoundException(notFoundMessage);
+    }
+
+    // The directory an assembly was loaded from, or null if it has no file location.
+    // Assembly.Location is an empty string when the assembly was not loaded from a file:
+    // single-file and Native AOT apps, and Assembly.Load(byte[]). Path.GetDirectoryName must
+    // never be given that empty string, because on .NET Framework it throws ArgumentException.
+    private static string? GetAssemblyDirectoryOrNull(Assembly? assembly)
+    {
+        var location = assembly?.Location;
+        return string.IsNullOrEmpty(location) ? null : Path.GetDirectoryName(location);
+    }
+
+    private static bool TryGetNativeLibraryPath(out string libraryPath, out string notFoundMessage)
     {
         // Enable diagnostics via environment variable: LIBARCHIVE_NET_DEBUG=1
         var enableDiagnostics = Environment.GetEnvironmentVariable("LIBARCHIVE_NET_DEBUG") == "1";
@@ -656,8 +695,8 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         var searchLocations = new[]
         {
             ("AppDomain.BaseDirectory", AppDomain.CurrentDomain.BaseDirectory),
-            ("LibArchive.Net Assembly", Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)),
-            ("Entry Assembly", Path.GetDirectoryName(Assembly.GetEntryAssembly()?.Location))
+            ("LibArchive.Net Assembly", GetAssemblyDirectoryOrNull(Assembly.GetExecutingAssembly())),
+            ("Entry Assembly", GetAssemblyDirectoryOrNull(Assembly.GetEntryAssembly()))
         }.Where(loc => !string.IsNullOrEmpty(loc.Item2)).ToArray();
 
         // Determine RID and filename based on platform
@@ -679,21 +718,23 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
             if (string.IsNullOrEmpty(baseDir))
                 continue;
 
-            var libraryPath = Path.Combine(baseDir, "runtimes", rid, "native", filename);
+            var candidatePath = Path.Combine(baseDir, "runtimes", rid, "native", filename);
 
             if (enableDiagnostics)
             {
-                Console.Error.WriteLine($"[LibArchive.Net]     [{locName}] {libraryPath}");
-                Console.Error.WriteLine($"[LibArchive.Net]       Exists: {File.Exists(libraryPath)}");
+                Console.Error.WriteLine($"[LibArchive.Net]     [{locName}] {candidatePath}");
+                Console.Error.WriteLine($"[LibArchive.Net]       Exists: {File.Exists(candidatePath)}");
             }
 
-            if (File.Exists(libraryPath))
+            if (File.Exists(candidatePath))
             {
                 if (enableDiagnostics)
                 {
-                    Console.Error.WriteLine($"[LibArchive.Net]   ✓ Found at: {libraryPath}");
+                    Console.Error.WriteLine($"[LibArchive.Net]   ✓ Found at: {candidatePath}");
                 }
-                return libraryPath;
+                libraryPath = candidatePath;
+                notFoundMessage = string.Empty;
+                return true;
             }
         }
 
@@ -703,13 +744,13 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
             .Select(loc => $"  - [{loc.Item1}] {Path.Combine(loc.Item2, "runtimes", rid, "native", filename)}")
             .ToArray();
 
-        var errorMessage = $"Native library '{filename}' not found. Searched locations:\n{string.Join("\n", searchedPaths)}\n\n" +
+        libraryPath = string.Empty;
+        notFoundMessage = $"Native library '{filename}' not found. Searched locations:\n{string.Join("\n", searchedPaths)}\n\n" +
                           $"Platform: {RuntimeInformation.OSDescription}\n" +
                           $"Architecture: {RuntimeInformation.ProcessArchitecture}\n" +
                           $"RID: {rid}\n\n" +
                           $"Tip: Set LIBARCHIVE_NET_DEBUG=1 environment variable for detailed diagnostics.";
-
-        throw new DllNotFoundException(errorMessage);
+        return false;
     }
 
     private static (string rid, string filename) GetRuntimeIdentifierAndFilename()
@@ -746,6 +787,31 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
             throw new PlatformNotSupportedException($"Unsupported platform: {RuntimeInformation.OSDescription}");
         }
     }
+
+    private static void LoadWindowsLibrary(string libraryPath)
+    {
+        // LOAD_WITH_ALTERED_SEARCH_PATH (0x8): resolve the DLL's own dependencies relative to
+        // its directory rather than the application's. Requires an absolute path.
+        const uint LOAD_WITH_ALTERED_SEARCH_PATH = 0x00000008;
+
+        var fullPath = Path.GetFullPath(libraryPath);
+        var handle = LoadLibraryEx(fullPath, IntPtr.Zero, LOAD_WITH_ALTERED_SEARCH_PATH);
+        if (handle == IntPtr.Zero)
+        {
+            var error = Marshal.GetLastWin32Error();
+            throw new DllNotFoundException(
+                $"Failed to load native library '{fullPath}'. Win32 error {error}: {new System.ComponentModel.Win32Exception(error).Message}");
+        }
+
+        if (Environment.GetEnvironmentVariable("LIBARCHIVE_NET_DEBUG") == "1")
+        {
+            Console.Error.WriteLine($"[LibArchive.Net] Loaded {fullPath}");
+        }
+    }
+
+    [DllImport("kernel32.dll", EntryPoint = "LoadLibraryExW", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern IntPtr LoadLibraryEx(string lpLibFileName, IntPtr hFile, uint dwFlags);
 
     private static void LoadUnixLibrary(string libraryPath)
     {
@@ -791,14 +857,20 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         }
     }
 
+    // libdl is a system library, so these imports must not inherit the assembly-wide
+    // DefaultDllImportSearchPaths(AssemblyDirectory): since .NET 10 that flag on its own
+    // searches the assembly directory only, with no fallback to the OS search.
     // Linux: try multiple libdl versions for compatibility
     [DllImport("libdl.so.2", EntryPoint = "dlopen")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
     private static extern IntPtr dlopen_linux_v2(string filename, int flags);
 
     [DllImport("libdl.so", EntryPoint = "dlopen")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
     private static extern IntPtr dlopen_linux(string filename, int flags);
 
     [DllImport("libdl.dylib", EntryPoint = "dlopen")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
     private static extern IntPtr dlopen_macos(string filename, int flags);
 
     private static IntPtr dlopen(string filename, int flags)
@@ -815,12 +887,15 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     }
 
     [DllImport("libdl.so.2", EntryPoint = "dlerror")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
     private static extern IntPtr dlerror_linux_v2();
 
     [DllImport("libdl.so", EntryPoint = "dlerror")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
     private static extern IntPtr dlerror_linux();
 
     [DllImport("libdl.dylib", EntryPoint = "dlerror")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
     private static extern IntPtr dlerror_macos();
 
     private static string? dlerror()

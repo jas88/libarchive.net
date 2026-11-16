@@ -45,7 +45,9 @@ LZO_URL="https://www.oberhumer.com/opensource/lzo/download/lzo-${LZO_VERSION}.ta
 LIBXML2_MAJOR_MINOR="${LIBXML2_VERSION%.*}"
 LIBXML2_URL="https://download.gnome.org/sources/libxml2/${LIBXML2_MAJOR_MINOR}/libxml2-${LIBXML2_VERSION}.tar.xz"
 BZIP2_URL="https://www.sourceware.org/pub/bzip2/bzip2-${BZIP2_VERSION}.tar.gz"
-ZLIB_URL="https://zlib.net/zlib-${ZLIB_VERSION}.tar.xz"
+# GitHub release asset (byte-identical to zlib.net's). zlib.net only hosts the latest
+# release and intermittently serves bad content to CI runners under parallel load.
+ZLIB_URL="https://github.com/madler/zlib/releases/download/v${ZLIB_VERSION}/zlib-${ZLIB_VERSION}.tar.xz"
 XZ_URL="https://github.com/tukaani-project/xz/releases/download/v${XZ_VERSION}/xz-${XZ_VERSION}.tar.xz"
 
 # Portable SHA256 helper (computes hash and compares directly;
@@ -103,50 +105,52 @@ download_library() {
     # Create cache directory if it doesn't exist
     mkdir -p "$DOWNLOAD_CACHE"
 
-    # Download to cache if not already present
-    if [ ! -f "$cache_file" ]; then
-        echo "Downloading ${name} to cache..."
-        # Retry up to 3 times with exponential backoff for transient network issues
-        local max_retries=3
-        local retry=0
-        local downloaded=false
-
-        while [ $retry -lt $max_retries ] && [ "$downloaded" = "false" ]; do
-            if curl -fsSL "$url" -o "$cache_file"; then
-                echo "Download successful"
-                downloaded=true
-            else
-                retry=$((retry + 1))
-                if [ $retry -lt $max_retries ]; then
-                    echo "Download failed, retrying ($retry/$max_retries)..."
-                    sleep $((retry * 2))
+    # Download to cache if not already present, verifying the checksum. A mismatch
+    # (e.g. an upstream serving an error page with HTTP 200) discards the file and
+    # retries, so one bad response does not fail the build.
+    local max_retries=3
+    local attempt=1
+    while :; do
+        if [ ! -f "$cache_file" ]; then
+            echo "Downloading ${name} to cache (attempt ${attempt}/${max_retries})..."
+            if ! curl -fsSL "$url" -o "$cache_file"; then
+                rm -f "$cache_file"
+                if [ $attempt -ge $max_retries ]; then
+                    echo "ERROR: Failed to download ${name} after $max_retries attempts"
+                    echo "Please check network connectivity or try again later"
+                    echo "URL: $url"
+                    return 1
                 fi
+                attempt=$((attempt + 1))
+                sleep $((attempt * 2))
+                continue
             fi
-        done
+            echo "Download successful"
+        else
+            echo "Using cached ${name}..."
+        fi
 
-        if [ "$downloaded" = "false" ]; then
-            echo "ERROR: Failed to download ${name} after $max_retries attempts from primary source"
-            echo "Please check network connectivity or try again later"
+        # No checksum provided: accept the file as-is
+        [ -z "$expected_sha256" ] && break
+
+        echo "Verifying ${name} checksum..."
+        if sha256_check "$expected_sha256" "$cache_file"; then
+            break
+        fi
+        local actual
+        actual=$(sha256_compute "$cache_file") || actual="(unable to compute)"
+        echo "WARNING: SHA256 checksum mismatch for ${name}"
+        echo "Expected: $expected_sha256"
+        echo "Got:      $actual"
+        rm -f "$cache_file"
+        if [ $attempt -ge $max_retries ]; then
+            echo "ERROR: SHA256 checksum mismatch for ${name} after $max_retries attempts"
             echo "URL: $url"
             return 1
         fi
-    else
-        echo "Using cached ${name}..."
-    fi
-
-    # Verify SHA256 checksum if provided
-    if [ -n "$expected_sha256" ]; then
-        echo "Verifying ${name} checksum..."
-        if ! sha256_check "$expected_sha256" "$cache_file"; then
-            local actual
-            actual=$(sha256_compute "$cache_file") || actual="(unable to compute)"
-            echo "ERROR: SHA256 checksum mismatch for ${name}"
-            echo "Expected: $expected_sha256"
-            echo "Got:      $actual"
-            rm -f "$cache_file"
-            return 1
-        fi
-    fi
+        attempt=$((attempt + 1))
+        sleep $((attempt * 2))
+    done
 
     # Delete any existing unpacked directory to ensure clean start
     rm -rf "$dir_name"
@@ -271,14 +275,16 @@ normalize_autotools_timestamps() {
 # Function to download all libraries
 # Always unpacks fresh copies from cache
 download_all_libraries() {
-    download_library "$LIBARCHIVE_URL" "libarchive" "libarchive-${LIBARCHIVE_VERSION}" "$LIBARCHIVE_SHA256"
-    download_library "$LZ4_URL" "lz4" "lz4-${LZ4_VERSION}" "$LZ4_SHA256"
-    download_library "$ZSTD_URL" "zstd" "zstd-${ZSTD_VERSION}" "$ZSTD_SHA256"
-    download_library "$LZO_URL" "lzo" "lzo-${LZO_VERSION}" "$LZO_SHA256"
-    download_library "$LIBXML2_URL" "libxml2" "libxml2-${LIBXML2_VERSION}" "$LIBXML2_SHA256"
-    download_library "$BZIP2_URL" "bzip2" "bzip2-${BZIP2_VERSION}" "$BZIP2_SHA256"
-    download_library "$ZLIB_URL" "zlib" "zlib-${ZLIB_VERSION}" "$ZLIB_SHA256"
-    download_library "$XZ_URL" "xz" "xz-${XZ_VERSION}" "$XZ_SHA256"
+    # Explicit "|| return 1": callers may run this where set -e does not apply
+    # (e.g. after "&&"), and a failed download must never fall through to a build.
+    download_library "$LIBARCHIVE_URL" "libarchive" "libarchive-${LIBARCHIVE_VERSION}" "$LIBARCHIVE_SHA256" || return 1
+    download_library "$LZ4_URL" "lz4" "lz4-${LZ4_VERSION}" "$LZ4_SHA256" || return 1
+    download_library "$ZSTD_URL" "zstd" "zstd-${ZSTD_VERSION}" "$ZSTD_SHA256" || return 1
+    download_library "$LZO_URL" "lzo" "lzo-${LZO_VERSION}" "$LZO_SHA256" || return 1
+    download_library "$LIBXML2_URL" "libxml2" "libxml2-${LIBXML2_VERSION}" "$LIBXML2_SHA256" || return 1
+    download_library "$BZIP2_URL" "bzip2" "bzip2-${BZIP2_VERSION}" "$BZIP2_SHA256" || return 1
+    download_library "$ZLIB_URL" "zlib" "zlib-${ZLIB_VERSION}" "$ZLIB_SHA256" || return 1
+    download_library "$XZ_URL" "xz" "xz-${XZ_VERSION}" "$XZ_SHA256" || return 1
 
     # Stop autotools rebuild rules firing in any unpacked tarball. Without this the
     # build depends on the host's automake/libtool versions matching the ones each
@@ -292,12 +298,13 @@ download_all_libraries() {
 
 # Detect number of CPU cores
 if command -v nproc >/dev/null 2>&1; then
-    export NCPU=$(nproc)
+    NCPU=$(nproc)
 elif command -v sysctl >/dev/null 2>&1; then
-    export NCPU=$(sysctl -n hw.ncpu)
+    NCPU=$(sysctl -n hw.ncpu)
 else
-    export NCPU=4
+    NCPU=4
 fi
+export NCPU
 
 echo "Build configuration loaded:"
 echo "  libarchive: ${LIBARCHIVE_VERSION}"

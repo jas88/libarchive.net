@@ -1,21 +1,72 @@
 name: Build
 
-# Run this workflow every time a new commit pushed to your repository
-
 on:
   workflow_dispatch:
   pull_request:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
+  schedule:
+    # Weekly run on the default branch keeps its caches warm (GitHub evicts caches
+    # unused for 7 days); PRs can only restore caches from their own ref or main.
+    - cron: '0 6 * * 0'
+
+# Cancel superseded runs of the same PR; never cancel main, tag or scheduled runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   DOTNET_NOLOGO: 1
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  # Bump to invalidate every cached native binary and configure result (e.g. after a
+  # runner toolchain change that native/** does not capture).
+  NATIVE_CACHE_VERSION: v1
+  LLVM_MINGW_VERSION: '20240619'
+  # xz 5.8.2 was built with automake 1.18.1 and autoconf 2.72
+  AUTOCONF_VERSION: '2.72'
+  AUTOCONF_SHA256: ba885c1319578d6c94d46e9b0dceb4014caafe2490e437a0dbca3f270a223f5a
+  AUTOMAKE_VERSION: '1.18.1'
+  AUTOMAKE_SHA256: 168aa363278351b89af56684448f525a5bce5079d0b6842bd910fdd3f1646887
 
 jobs:
+  # Look up the cached macOS dylib on Ubuntu so a macOS runner is only requested when
+  # the dylib actually needs rebuilding (macOS runners are scarcer and less reliable).
+  macos-cache:
+    name: Check cached macOS dylib
+    runs-on: ubuntu-24.04
+    outputs:
+      hit: ${{ steps.native-cache.outputs.cache-hit }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.1
+      # Tag builds always rebuild from source so release binaries never come from a cache.
+      - name: Restore cached macOS dylib
+        id: native-cache
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: native-out/libarchive.dylib
+          key: native-osx-universal-${{ env.NATIVE_CACHE_VERSION }}-${{ hashFiles('native/**') }}
+          # Saved on macOS, restored on Ubuntu; the save step sets the same flag.
+          enableCrossOsArchive: true
+      - name: Archive macOS library
+        if: steps.native-cache.outputs.cache-hit == 'true'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: native-osx-universal
+          path: native-out/libarchive.dylib
+          if-no-files-found: error
+          retention-days: 1
+
   macos:
+    # This exact name is a required status check in the branch protection for main: do not
+    # rename it (even its capitalisation) without updating the rule.
     name: Build MacOS dylib (x86-64 and arm64)
+    needs: [macos-cache]
+    if: needs.macos-cache.outputs.hit != 'true'
     runs-on: macos-latest
     steps:
       - name: Checkout code
@@ -31,9 +82,9 @@ jobs:
         uses: actions/cache@v6.1.0
         with:
           path: ~/config-cache
-          key: config-cache-macos-${{ hashFiles('native/build-*.sh') }}
-          restore-keys: |
-            config-cache-macos-
+          # Exact match only: a configure cache from another toolchain or flag set makes
+          # autoconf abort ("`CC' has changed since the previous run").
+          key: config-cache-macos-${{ env.NATIVE_CACHE_VERSION }}-${{ hashFiles('native/build-*.sh') }}
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
@@ -53,23 +104,66 @@ jobs:
 
           echo "=== ccache stats after build ==="
           ccache -s
-      - name: Archive MacOS library
+
+          mkdir -p native-out
+          cp ~/libarchive-native/libarchive.dylib native-out/
+      - name: Save native binary to cache
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: native-out/libarchive.dylib
+          key: native-osx-universal-${{ env.NATIVE_CACHE_VERSION }}-${{ hashFiles('native/**') }}
+          enableCrossOsArchive: true
+      - name: Archive macOS library
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: maclib
-          path: ~/libarchive-native/libarchive.dylib
+          name: native-osx-universal
+          path: native-out/libarchive.dylib
           if-no-files-found: error
           retention-days: 1
-  linux:
-    needs: [macos]
-    name: Build Windows DLLs, Linux library, and test
+
+  native:
+    name: Build native ${{ matrix.target }}
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-x86,   kind: linux,   script: build-linux-x86.sh,   output: libarchive-linux-x86.so }
+          - { target: linux-x64,   kind: linux,   script: build-linux.sh,       output: libarchive-linux-x64.so }
+          - { target: linux-arm64, kind: linux,   script: build-linux-arm64.sh, output: libarchive-linux-arm64.so }
+          - { target: linux-arm,   kind: linux,   script: build-linux-arm.sh,   output: libarchive-linux-arm.so }
+          - { target: win-x86,     kind: windows, arch: x86,                    output: archive-x86.dll }
+          - { target: win-x64,     kind: windows, arch: x64,                    output: archive-x64.dll }
+          - { target: win-arm64,   kind: windows, arch: arm64,                  output: archive-arm64.dll }
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
+      - name: Compute cache keys
+        id: cache-key
+        run: |
+          # LLVM-MinGW only matters to win-arm64, so only that target's keys carry it.
+          EXTRA=""
+          if [ "${{ matrix.target }}" = "win-arm64" ]; then
+            EXTRA="llvm-mingw-${LLVM_MINGW_VERSION}-"
+          fi
+          {
+            echo "key=native-${{ matrix.target }}-${EXTRA}${NATIVE_CACHE_VERSION}-${{ hashFiles('native/**') }}"
+            # Configure results are only valid for the toolchain that produced them, so
+            # their key carries the same toolchain parts as the binary's.
+            echo "config-key=config-cache-${{ matrix.target }}-${EXTRA}${NATIVE_CACHE_VERSION}-${{ hashFiles('native/build-*.sh') }}"
+          } >> "$GITHUB_OUTPUT"
+      # Native binaries are reused while native/** is unchanged. Tag builds always
+      # rebuild from source so release binaries never come from a cache.
+      - name: Restore cached native binary
+        id: native-cache
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/cache/restore@v6.1.0
         with:
-          fetch-depth: 0
+          path: native-out/${{ matrix.output }}
+          key: ${{ steps.cache-key.outputs.key }}
       - name: Cache library downloads
+        if: steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache@v6.1.0
         with:
           path: ~/downloads
@@ -77,60 +171,46 @@ jobs:
           restore-keys: |
             library-downloads-
       - name: Cache configure results
+        if: steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache@v6.1.0
         with:
           path: ~/config-cache
-          key: config-cache-linux-${{ hashFiles('native/build-*.sh') }}
-          restore-keys: |
-            config-cache-linux-
-      - name: Extract version from tag
-        id: version
-        run: |
-          if [[ $GITHUB_REF == refs/tags/v* ]]; then
-            VERSION=${GITHUB_REF#refs/tags/v}
-            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-            echo "IS_RELEASE=true" >> $GITHUB_OUTPUT
-          else
-            VERSION="0.0.0-dev"
-            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-            echo "IS_RELEASE=false" >> $GITHUB_OUTPUT
-          fi
-          echo "Extracted version: $VERSION"
-      - name: Cache apt packages
+          # Exact match only: a configure cache from another toolchain or flag set makes
+          # autoconf abort ("`CC' has changed since the previous run").
+          key: ${{ steps.cache-key.outputs.config-key }}
+      - name: Install apt packages
+        if: steps.native-cache.outputs.cache-hit != 'true'
         uses: awalsh128/cache-apt-pkgs-action@v1.6.3
         with:
-          packages: libeatmydata1 mingw-w64 mono-complete mono-devel pkg-config
+          packages: ${{ matrix.kind == 'windows' && 'mingw-w64 pkg-config' || 'pkg-config' }}
           version: 1.0
           execute_install_scripts: true
-      - name: Retrieve MacOS library
-        uses: actions/download-artifact@v8.0.2
-        with:
-          name: maclib
       - name: Install LLVM-MinGW for ARM64
+        if: steps.native-cache.outputs.cache-hit != 'true' && matrix.target == 'win-arm64'
         run: |
-          curl -sL https://github.com/mstorsjo/llvm-mingw/releases/download/20240619/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64.tar.xz | tar xJ
-          echo "$(pwd)/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64/bin" >> $GITHUB_PATH
-      - name: Setup .NET Core
-        uses: actions/setup-dotnet@v6.1.0
-        with:
-          cache: true
-          cache-dependency-path: '**/*.csproj'
-      - name: Update Directory.Build.props for SDK version
-        run: ./scripts/generate-build-props.sh
-      - name: ccache
-        uses: hendrikmuhs/ccache-action@v1.2.25
-        with:
-          key: all-native-builds-v2
-          variant: sccache
-        env:
-          CCACHE_COMPILERCHECK: mtime
+          LLVM_MINGW="llvm-mingw-${LLVM_MINGW_VERSION}-ucrt-ubuntu-20.04-x86_64"
+          curl -fsSL "https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/${LLVM_MINGW}.tar.xz" | tar xJ -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/${LLVM_MINGW}/bin" >> "$GITHUB_PATH"
       - name: Verify MinGW compilers are installed
+        if: steps.native-cache.outputs.cache-hit != 'true' && matrix.kind == 'windows'
         run: |
-          which i686-w64-mingw32-gcc || echo "WARNING: i686-w64-mingw32-gcc not found"
-          which x86_64-w64-mingw32-gcc || echo "WARNING: x86_64-w64-mingw32-gcc not found"
+          case "${{ matrix.arch }}" in
+            x86)   CC=i686-w64-mingw32-gcc ;;
+            x64)   CC=x86_64-w64-mingw32-gcc ;;
+            arm64) CC=aarch64-w64-mingw32-gcc ;;
+          esac
+          which "$CC"
+      - name: Cache autotools
+        id: autotools-cache
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache@v6.1.0
+        with:
+          path: ~/.local
+          key: autotools-ubuntu-24.04-autoconf-${{ env.AUTOCONF_VERSION }}-automake-${{ env.AUTOMAKE_VERSION }}
       - name: Install autoconf and automake
+        if: steps.native-cache.outputs.cache-hit != 'true' && steps.autotools-cache.outputs.cache-hit != 'true'
+        working-directory: ${{ runner.temp }}
         run: |
-          # xz 5.8.2 was built with automake 1.18.1 and autoconf 2.72
           # Download with checksum verification; fall back to canonical ftp.gnu.org
           # if a mirror serves a bad/corrupt file.
           fetch_gnu() {
@@ -148,165 +228,242 @@ jobs:
             echo "All sources failed for $path" >&2
             return 1
           }
-          # Install autoconf 2.72
-          fetch_gnu autoconf/autoconf-2.72.tar.xz \
-            ba885c1319578d6c94d46e9b0dceb4014caafe2490e437a0dbca3f270a223f5a \
-            autoconf-2.72.tar.xz
-          tar xJf autoconf-2.72.tar.xz
-          cd autoconf-2.72
-          ./configure --prefix=$HOME/.local
-          make -j$(nproc)
-          make install
-          cd ..
-          # Install automake 1.18.1 (exact version used to build xz 5.8.2)
-          fetch_gnu automake/automake-1.18.1.tar.xz \
-            168aa363278351b89af56684448f525a5bce5079d0b6842bd910fdd3f1646887 \
-            automake-1.18.1.tar.xz
-          tar xJf automake-1.18.1.tar.xz
-          cd automake-1.18.1
-          ./configure --prefix=$HOME/.local
-          make -j$(nproc)
-          make install
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          # Set ACLOCAL_PATH to include system m4 files (for pkg.m4 etc)
-          echo "ACLOCAL_PATH=/usr/share/aclocal:$HOME/.local/share/aclocal" >> $GITHUB_ENV
-      - name: Download library sources once
-        run: |
-          # Load the download function and download all libraries once
-          . native/build-config.sh
-          download_all_libraries
-
-      - name: Build Windows DLLs (x86, x64, arm64)
-        run: |
-          echo "=== sccache stats before build ==="
-          sccache --show-stats
-
-          # Build each architecture in separate directory to avoid conflicts
-          for arch in x86 x64 arm64; do
-            echo "=== Building Windows $arch ==="
-            mkdir -p build-win-$arch
-            cd build-win-$arch
-
-            # Use architecture-specific prefix
-            export PREFIX="$(pwd)/local-$arch"
-
-            # Copy library sources from parent directory (already downloaded)
-            # Use -rpl to hardlink and preserve timestamps (important for xz automake fix)
-            for src in ../bzip2-* ../libarchive-* ../libxml2-* ../lz4-* ../lzo-* ../xz-* ../zlib-* ../zstd-*; do
-              [ -e "$src" ] && cp -rpl "$src" .
-            done
-
-            ARCH=$arch ../native/build-windows.sh
-            mv archive-*.dll ../
-            cd ..
-
-            # Clean up to avoid conflicts with next architecture
-            rm -rf build-win-$arch
-            echo "✓ Windows $arch build complete"
+          for tool in autoconf automake; do
+            if [ "$tool" = autoconf ]; then
+              ver="$AUTOCONF_VERSION"; sha="$AUTOCONF_SHA256"
+            else
+              ver="$AUTOMAKE_VERSION"; sha="$AUTOMAKE_SHA256"
+            fi
+            fetch_gnu "$tool/$tool-$ver.tar.xz" "$sha" "$tool-$ver.tar.xz"
+            tar xJf "$tool-$ver.tar.xz"
+            (cd "$tool-$ver" && ./configure --prefix="$HOME/.local" && make -j"$(nproc)" && make install)
           done
-
-          echo "=== sccache stats after Windows build ==="
-          sccache --show-stats
-      - name: Build Linux libraries (x86, x64, arm64, arm)
+      - name: Add autotools to PATH
+        if: steps.native-cache.outputs.cache-hit != 'true'
         run: |
-          # Each build script handles its own toolchain and sccache setup
-
-          # Build x86 (32-bit)
-          echo "=== Building Linux x86 ==="
-          ./native/build-linux-x86.sh
-
-          # Build x64
-          echo "=== Building Linux x64 ==="
-          ./native/build-linux.sh
-
-          # Build arm64
-          echo "=== Building Linux ARM64 ==="
-          ./native/build-linux-arm64.sh
-
-          # Build armv7
-          echo "=== Building Linux ARM v7 ==="
-          ./native/build-linux-arm.sh
-
-          echo "=== sccache stats after Linux builds ==="
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          # Include system m4 files (for pkg.m4 etc)
+          echo "ACLOCAL_PATH=/usr/share/aclocal:$HOME/.local/share/aclocal" >> "$GITHUB_ENV"
+      - name: sccache
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        uses: hendrikmuhs/ccache-action@v1.2.25
+        with:
+          key: native-${{ matrix.target }}-v3
+          variant: sccache
+      - name: Build Linux library
+        if: steps.native-cache.outputs.cache-hit != 'true' && matrix.kind == 'linux'
+        run: |
+          ./native/${{ matrix.script }}
+          mkdir -p native-out
+          cp "$HOME/libarchive-native/${{ matrix.output }}" native-out/
+          echo "=== sccache stats ==="
           sccache --show-stats
+      - name: Build Windows DLL
+        if: steps.native-cache.outputs.cache-hit != 'true' && matrix.kind == 'windows'
+        run: |
+          mkdir -p build-win native-out
+          cd build-win
+          # Unpack sources with bash first: build-windows.sh runs under /bin/sh and
+          # only downloads them itself when they are missing.
+          bash -c '. ../native/build-config.sh && download_all_libraries'
+          PREFIX="$(pwd)/local" ARCH=${{ matrix.arch }} ../native/build-windows.sh
+          cp ${{ matrix.output }} ../native-out/
+          cd ..
+          rm -rf build-win
+          echo "=== sccache stats ==="
+          sccache --show-stats
+      - name: Save native binary to cache
+        if: steps.native-cache.outputs.cache-hit != 'true' && !startsWith(github.ref, 'refs/tags/v')
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: native-out/${{ matrix.output }}
+          key: ${{ steps.cache-key.outputs.key }}
+      - name: Archive native library
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: native-${{ matrix.target }}
+          path: native-out/${{ matrix.output }}
+          if-no-files-found: error
+          retention-days: 1
+
+  package:
+    name: Pack and test .NET package
+    needs: [macos-cache, macos, native]
+    # macos is skipped when its dylib was cached; macos-cache then supplies the artifact.
+    if: >-
+      ${{ !cancelled() && needs.native.result == 'success' &&
+      (needs.macos-cache.outputs.hit == 'true' || needs.macos.result == 'success') }}
+    runs-on: ubuntu-24.04
+    outputs:
+      package-version: ${{ steps.pack.outputs.PACKAGE_VERSION }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Extract version from tag
+        id: version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          else
+            VERSION="0.0.0-dev"
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Extracted version: $VERSION"
+      - name: Retrieve native libraries
+        uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: native-*
+          path: native-out
+          merge-multiple: true
+      - name: Setup .NET Core
+        uses: actions/setup-dotnet@v6.1.0
+      - name: Update Directory.Build.props for SDK version
+        run: ./scripts/generate-build-props.sh
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4.39.3
         with:
           languages: 'csharp'
           build-mode: manual
-      - name: Build and test .Net package
+      - name: Assemble native runtimes
         run: |
-          mkdir -p LibArchive.Net/runtimes/{osx-x64,osx-arm64,linux-x86,linux-musl-x86,linux-x64,linux-musl-x64,linux-arm,linux-musl-arm,linux-arm64,linux-musl-arm64,win-x86,win-x64,win-arm64}/native
+          R=LibArchive.Net/runtimes
+          mkdir -p "$R"/{osx-x64,osx-arm64,linux-x86,linux-musl-x86,linux-x64,linux-musl-x64,linux-arm,linux-musl-arm,linux-arm64,linux-musl-arm64,win-x86,win-x64,win-arm64}/native
 
-          # Linux x86 (32-bit)
-          cp $HOME/libarchive-native/libarchive-linux-x86.so LibArchive.Net/runtimes/linux-x86/native/libarchive.so
-          cp LibArchive.Net/runtimes/linux-x86/native/libarchive.so LibArchive.Net/runtimes/linux-musl-x86/native/
+          # Linux (musl-linked, so the same binary serves glibc and musl RIDs)
+          for arch in x86 x64 arm64 arm; do
+            cp "native-out/libarchive-linux-$arch.so" "$R/linux-$arch/native/libarchive.so"
+            cp "native-out/libarchive-linux-$arch.so" "$R/linux-musl-$arch/native/libarchive.so"
+          done
 
-          # Linux x64
-          cp $HOME/libarchive-native/libarchive-linux-x64.so LibArchive.Net/runtimes/linux-x64/native/libarchive.so
-          cp LibArchive.Net/runtimes/linux-x64/native/libarchive.so LibArchive.Net/runtimes/linux-musl-x64/native/
-
-          # Linux ARM64
-          cp $HOME/libarchive-native/libarchive-linux-arm64.so LibArchive.Net/runtimes/linux-arm64/native/libarchive.so
-          cp LibArchive.Net/runtimes/linux-arm64/native/libarchive.so LibArchive.Net/runtimes/linux-musl-arm64/native/
-
-          # Linux ARM v7
-          cp $HOME/libarchive-native/libarchive-linux-arm.so LibArchive.Net/runtimes/linux-arm/native/libarchive.so
-          cp LibArchive.Net/runtimes/linux-arm/native/libarchive.so LibArchive.Net/runtimes/linux-musl-arm/native/
-
-          # macOS (downloaded as artifact to current directory)
-          cp libarchive.dylib LibArchive.Net/runtimes/osx-x64/native/
-          cp LibArchive.Net/runtimes/osx-x64/native/libarchive.dylib LibArchive.Net/runtimes/osx-arm64/native/
+          # macOS universal binary
+          cp native-out/libarchive.dylib "$R/osx-x64/native/"
+          cp native-out/libarchive.dylib "$R/osx-arm64/native/"
 
           # Windows
-          mv archive-x86.dll LibArchive.Net/runtimes/win-x86/native/archive.dll
-          mv archive-x64.dll LibArchive.Net/runtimes/win-x64/native/archive.dll
-          mv archive-arm64.dll LibArchive.Net/runtimes/win-arm64/native/archive.dll
+          for arch in x86 x64 arm64; do
+            cp "native-out/archive-$arch.dll" "$R/win-$arch/native/archive.dll"
+          done
 
-          touch libarchive.dylib
-
-          # Build and pack the library first
-          dotnet pack LibArchive.Net/LibArchive.Net.csproj -o . -p:PackageVersion=${{ steps.version.outputs.VERSION }} --configuration Release --nologo
+          ls -lR "$R"
+      - name: Pack
+        id: pack
+        run: |
+          dotnet pack LibArchive.Net/LibArchive.Net.csproj -o . "-p:PackageVersion=${{ steps.version.outputs.VERSION }}" --configuration Release --nologo
 
           # Extract package version for testing
           PACKAGE_FILE=$(ls LibArchive.Net.*.nupkg)
-          PACKAGE_VERSION=$(echo "$PACKAGE_FILE" | sed 's/LibArchive.Net.\(.*\).nupkg/\1/')
+          PACKAGE_VERSION=${PACKAGE_FILE#LibArchive.Net.}
+          PACKAGE_VERSION=${PACKAGE_VERSION%.nupkg}
+          echo "PACKAGE_VERSION=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
+      - name: Test package (modern .NET)
+        env:
+          PACKAGE_VERSION: ${{ steps.pack.outputs.PACKAGE_VERSION }}
+        run: |
+          # Restore against the package just packed: source mapping pins LibArchive.Net to
+          # this directory and an empty packages folder rules out any cached copy.
+          ./scripts/write-package-test-nuget-config.sh . "$RUNNER_TEMP/nuget-test"
+          dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --configfile "$RUNNER_TEMP/nuget-test/nuget.config" -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION"
 
-          # Clear old cached versions to force using local package
-          rm -rf ~/.nuget/packages/libarchive.net/
+          # Determine the modern .NET test target from the project (generated by scripts/generate-build-props.sh)
+          TEST_TFMS=$(dotnet msbuild Test.LibArchive.Net/Test.LibArchive.Net.csproj -getProperty:TargetFrameworks -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION" | tail -1 | tr -d ' \r')
+          TEST_TFM=$(echo "$TEST_TFMS" | tr ';' '\n' | grep -E '^net[0-9]+\.[0-9]+$' | head -1)
+          if [ -z "$TEST_TFM" ]; then
+            echo "::error::No modern .NET target framework found in test project TargetFrameworks '$TEST_TFMS'"
+            exit 1
+          fi
+          echo "Testing modern target framework: $TEST_TFM (from '$TEST_TFMS')"
 
-          # Restore and test using the local NuGet package
-          dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --source . --source https://api.nuget.org/v3/index.json /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
-
-          # Build and run tests for net10.0 with Microsoft Testing Platform
-          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net10.0 --configuration Release --no-restore /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
-          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net10.0 --configuration Release --no-build --nologo /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
-
-          # Build and test net462 with Mono via Microsoft Testing Platform
-          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net462 --configuration Release --nologo /p:UseLocalPackage=true /p:LibArchiveNetVersion=$PACKAGE_VERSION
-
-      - name: Cleanup build artifacts
-        run: rm -rf local {bzip2,libarchive,libxml2,lz4,lzo,xz,zlib,zstd}-* x86-64--musl--stable-*
+          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework "$TEST_TFM" --configuration Release --no-restore -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION"
+          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework "$TEST_TFM" --configuration Release --no-build --nologo -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION"
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4.39.3
-      - name: Upload built packages
-        uses: svenstaro/upload-release-action@2.11.5
-        if: contains(github.ref, 'refs/tags/v')
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: '*.nupkg'
-          tag: ${{ github.ref }}
-          overwrite: true
-          file_glob: true
       - name: Archive production artifacts
         uses: actions/upload-artifact@v7.0.2
         with:
           name: dist
           path: |
             *.nupkg
+          if-no-files-found: error
+
+  test-net462:
+    name: Test package (.NET Framework 4.6.2 on Windows)
+    needs: [package]
+    # Explicit condition: the implicit success() would skip this job whenever the
+    # (legitimately) skipped macos job is upstream.
+    if: ${{ !cancelled() && needs.package.result == 'success' }}
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.1
+      - name: Setup .NET Core
+        uses: actions/setup-dotnet@v6.1.0
+      - name: Retrieve package
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: dist
+          path: dist
+      - name: Test net462 against the package
+        shell: bash
+        env:
+          PACKAGE_VERSION: ${{ needs.package.outputs.package-version }}
+        run: |
+          # LibArchive.Net may only come from dist (not a cache or nuget.org); see the script.
+          ./scripts/write-package-test-nuget-config.sh dist "$RUNNER_TEMP/nuget-test"
+          dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --configfile "$RUNNER_TEMP/nuget-test/nuget.config" -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION"
+          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net462 --configuration Release --no-restore --nologo -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION"
+
+  # Required status check: the branch protection for main requires a check with exactly this
+  # name, so do not rename it without updating the rule. The one job that used to carry the
+  # name is now split across native, package and test-net462; this reports their combined
+  # result (and macOS's), so the rule keeps gating everything it did before.
+  build-and-test:
+    name: Build Windows DLLs, Linux library, and test
+    needs: [macos-cache, macos, native, package, test-net462]
+    # always(): a skipped job counts as a passing required check, so this job must run and
+    # fail explicitly when anything it depends on failed, was cancelled or was skipped.
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check the build and test jobs
+        env:
+          MACOS_CACHE: ${{ needs.macos-cache.result }}
+          MACOS_CACHE_HIT: ${{ needs.macos-cache.outputs.hit }}
+          MACOS: ${{ needs.macos.result }}
+          NATIVE: ${{ needs.native.result }}
+          PACKAGE: ${{ needs.package.result }}
+          TEST_NET462: ${{ needs.test-net462.result }}
+        run: |
+          echo "macos-cache=$MACOS_CACHE (hit=$MACOS_CACHE_HIT) macos=$MACOS native=$NATIVE package=$PACKAGE test-net462=$TEST_NET462"
+          failed=0
+          for result in "$MACOS_CACHE" "$NATIVE" "$PACKAGE" "$TEST_NET462"; do
+            [ "$result" = "success" ] || failed=1
+          done
+          # The macOS build may only be skipped when its dylib came from the cache.
+          if [ "$MACOS" != "success" ] && ! { [ "$MACOS" = "skipped" ] && [ "$MACOS_CACHE_HIT" = "true" ]; }; then
+            failed=1
+          fi
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::A build or test job did not succeed."
+            exit 1
+          fi
+          echo "All build and test jobs succeeded."
+
+  release:
+    name: Publish release
+    needs: [package, test-net462]
+    if: >-
+      ${{ startsWith(github.ref, 'refs/tags/v') && !cancelled() &&
+      needs.package.result == 'success' && needs.test-net462.result == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Retrieve package
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: dist
       - name: Upload built packages
         uses: svenstaro/upload-release-action@2.11.5
-        if: contains(github.ref, 'refs/tags/v')
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: '*.nupkg'
@@ -314,5 +471,4 @@ jobs:
           overwrite: true
           file_glob: true
       - name: Upload Nuget package
-        if: contains(github.ref, 'refs/tags/v')
-        run: dotnet nuget push *.nupkg -k ${{ secrets.NUGET_KEY }} --source https://api.nuget.org/v3/index.json
+        run: dotnet nuget push ./*.nupkg -k ${{ secrets.NUGET_KEY }} --source https://api.nuget.org/v3/index.json

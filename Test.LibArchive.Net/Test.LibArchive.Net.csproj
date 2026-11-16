@@ -5,7 +5,8 @@
         <IsPackable>false</IsPackable>
         <GenerateDocumentationFile>false</GenerateDocumentationFile>
         <ImplicitUsings>enable</ImplicitUsings>
-        <!-- Set PlatformTarget for net462 to trigger automatic native library copying from runtimes folder -->
+        <!-- Run the net462 tests as a 64-bit process. This does not copy archive.dll next to the
+             test assembly: it stays in runtimes\win-x64\native, where LibArchive.Net loads it from. -->
         <PlatformTarget Condition="'$(TargetFramework)' == 'net462'">x64</PlatformTarget>
         <!-- Enable Microsoft Testing Platform via NUnit3TestAdapter -->
         <UseTestingPlatform>true</UseTestingPlatform>
