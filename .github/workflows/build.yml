@@ -21,8 +21,8 @@ concurrency:
 env:
   DOTNET_NOLOGO: 1
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
-  # Bump to invalidate every cached native binary (e.g. after a runner toolchain change
-  # that native/** does not capture).
+  # Bump to invalidate every cached native binary and configure result (e.g. after a
+  # runner toolchain change that native/** does not capture).
   NATIVE_CACHE_VERSION: v1
   LLVM_MINGW_VERSION: '20240619'
   # xz 5.8.2 was built with automake 1.18.1 and autoconf 2.72
@@ -82,7 +82,7 @@ jobs:
           path: ~/config-cache
           # Exact match only: a configure cache from another toolchain or flag set makes
           # autoconf abort ("`CC' has changed since the previous run").
-          key: config-cache-macos-${{ hashFiles('native/build-*.sh') }}
+          key: config-cache-macos-${{ env.NATIVE_CACHE_VERSION }}-${{ hashFiles('native/build-*.sh') }}
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
@@ -137,15 +137,20 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
-      - name: Compute native cache key
+      - name: Compute cache keys
         id: cache-key
         run: |
-          # LLVM-MinGW only matters to win-arm64, so only that target's key carries it.
+          # LLVM-MinGW only matters to win-arm64, so only that target's keys carry it.
           EXTRA=""
           if [ "${{ matrix.target }}" = "win-arm64" ]; then
             EXTRA="llvm-mingw-${LLVM_MINGW_VERSION}-"
           fi
-          echo "key=native-${{ matrix.target }}-${EXTRA}${NATIVE_CACHE_VERSION}-${{ hashFiles('native/**') }}" >> "$GITHUB_OUTPUT"
+          {
+            echo "key=native-${{ matrix.target }}-${EXTRA}${NATIVE_CACHE_VERSION}-${{ hashFiles('native/**') }}"
+            # Configure results are only valid for the toolchain that produced them, so
+            # their key carries the same toolchain parts as the binary's.
+            echo "config-key=config-cache-${{ matrix.target }}-${EXTRA}${NATIVE_CACHE_VERSION}-${{ hashFiles('native/build-*.sh') }}"
+          } >> "$GITHUB_OUTPUT"
       # Native binaries are reused while native/** is unchanged. Tag builds always
       # rebuild from source so release binaries never come from a cache.
       - name: Restore cached native binary
@@ -170,7 +175,7 @@ jobs:
           path: ~/config-cache
           # Exact match only: a configure cache from another toolchain or flag set makes
           # autoconf abort ("`CC' has changed since the previous run").
-          key: config-cache-${{ matrix.target }}-${{ hashFiles('native/build-*.sh') }}
+          key: ${{ steps.cache-key.outputs.config-key }}
       - name: Install apt packages
         if: steps.native-cache.outputs.cache-hit != 'true'
         uses: awalsh128/cache-apt-pkgs-action@v1.6.3
