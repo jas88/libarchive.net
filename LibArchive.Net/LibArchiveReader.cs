@@ -842,14 +842,20 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         }
     }
 
+    // libdl is a system library, so these imports must not inherit the assembly-wide
+    // DefaultDllImportSearchPaths(AssemblyDirectory): since .NET 10 that flag on its own
+    // searches the assembly directory only, with no fallback to the OS search.
     // Linux: try multiple libdl versions for compatibility
     [DllImport("libdl.so.2", EntryPoint = "dlopen")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
     private static extern IntPtr dlopen_linux_v2(string filename, int flags);
 
     [DllImport("libdl.so", EntryPoint = "dlopen")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
     private static extern IntPtr dlopen_linux(string filename, int flags);
 
     [DllImport("libdl.dylib", EntryPoint = "dlopen")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
     private static extern IntPtr dlopen_macos(string filename, int flags);
 
     private static IntPtr dlopen(string filename, int flags)
@@ -866,12 +872,15 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     }
 
     [DllImport("libdl.so.2", EntryPoint = "dlerror")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
     private static extern IntPtr dlerror_linux_v2();
 
     [DllImport("libdl.so", EntryPoint = "dlerror")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
     private static extern IntPtr dlerror_linux();
 
     [DllImport("libdl.dylib", EntryPoint = "dlerror")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
     private static extern IntPtr dlerror_macos();
 
     private static string? dlerror()
