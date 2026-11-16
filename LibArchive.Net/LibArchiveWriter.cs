@@ -241,10 +241,15 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     /// <param name="password">Password for encryption.</param>
     /// <param name="encryption">Encryption type (default: AES-256).</param>
     /// <returns>This LibArchiveWriter instance for fluent API.</returns>
-    /// <exception cref="ArgumentException">The password is null or empty.</exception>
+    /// <exception cref="ArgumentException">
+    /// The password is null or empty, or the format is ZIP and <paramref name="encryption"/> is not a defined
+    /// <see cref="EncryptionType"/> value.
+    /// </exception>
     /// <exception cref="NotSupportedException">
     /// Encryption other than <see cref="EncryptionType.None"/> was requested for a format other than ZIP,
-    /// or libarchive cannot write the encryption type.
+    /// or <see cref="EncryptionType.AES192"/> was requested, which libarchive's ZIP writer cannot write.
+    /// This method does not check whether the native library has a cryptography backend: a missing backend
+    /// is reported when the writer is created.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Thrown for every request that is not rejected with one of the exceptions above, unless

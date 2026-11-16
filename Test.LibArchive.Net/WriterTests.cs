@@ -285,6 +285,15 @@ public class WriterTests
     }
 
     [Test]
+    public void TestWithPasswordRejectsInvalidArguments()
+    {
+        using var zip = new LibArchiveWriter(Path.Combine(testDirectory, "with-password.zip"), ArchiveFormat.Zip);
+
+        Assert.Throws<ArgumentException>(() => zip.WithPassword(string.Empty));
+        Assert.Throws<ArgumentException>(() => zip.WithPassword(Password, (EncryptionType)int.MaxValue));
+    }
+
+    [Test]
     public void TestWithPasswordCannotChangeEncryptionOfOpenArchive()
     {
         // libarchive accepts a passphrase only before the archive is opened, and the constructor opens it
