@@ -8,6 +8,10 @@ v0.3.2 - unreleased
 **API Improvements:**
 - `LibArchiveWriter.GetUnixPermissions` now returns `System.IO.UnixFileMode` and uses `FileInfo.UnixFileMode` directly on .NET 7+, falling back to defaults when the platform reports `0` (Windows) or `-1` (file missing). On .NET Standard 2.0 an internal `UnixFileMode` polyfill mirrors the BCL flags enum so the same code paths and constants are used everywhere.
 
+**Target Frameworks:**
+- Add a `net11.0` build. The package is now built with the .NET 11 SDK.
+- Drop the `net8.0` and `net9.0` builds, as .NET 8 and .NET 9 have reached end of support. The package now ships `netstandard2.0`, `net10.0` and `net11.0` builds, so apps targeting .NET 8 or .NET 9 get the .NET Standard 2.0 build. That build is not marked as trimming or Native AOT compatible: target .NET 10 or later for those.
+
 v0.3.1 - April 7, 2026
 
 **Native Library Updates:**

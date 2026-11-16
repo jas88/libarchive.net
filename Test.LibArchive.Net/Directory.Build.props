@@ -5,6 +5,6 @@
   <!-- Test projects target latest .NET plus net462 for Mono testing -->
   <!-- Auto-generated based on SDK version by scripts/generate-build-props.sh -->
   <PropertyGroup>
-    <TargetFrameworks>net10.0;net462</TargetFrameworks>
+    <TargetFrameworks>net11.0;net462</TargetFrameworks>
   </PropertyGroup>
 </Project>
