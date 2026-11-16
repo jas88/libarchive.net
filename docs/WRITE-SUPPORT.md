@@ -89,7 +89,8 @@ writer.AddFile("sensitive-data.xlsx");
 
 Only ZIP archives can be encrypted:
 
-- A password with any other format, 7-Zip included, throws `NotSupportedException`.
+- A password with any other format, 7-Zip included, throws `NotSupportedException` unless the encryption
+  type is `EncryptionType.None`.
 - `EncryptionType.AES192` throws `NotSupportedException`: libarchive's ZIP writer supports AES-128 and
   AES-256 only.
 - `EncryptionType.None` ignores the password and writes an unencrypted archive.

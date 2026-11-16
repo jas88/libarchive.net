@@ -245,7 +245,10 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     /// The archive format is not ZIP, or libarchive cannot write the encryption type.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// The request differs from the encryption the writer was created with.
+    /// Thrown for every request that is not rejected with one of the exceptions above, unless
+    /// <paramref name="encryption"/> is <see cref="EncryptionType.None"/> and the writer is not encrypting.
+    /// Encryption can only be configured before the archive is opened, so a request that matches the encryption
+    /// the writer was created with throws as well.
     /// </exception>
     public LibArchiveWriter WithPassword(string password, EncryptionType encryption = EncryptionType.Default)
     {

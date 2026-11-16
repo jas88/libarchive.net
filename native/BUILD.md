@@ -227,7 +227,7 @@ unzip -l LibArchive.Net.*.nupkg | grep runtimes
 
 ```bash
 # Clean downloaded sources and build artifacts
-rm -rf local* {bzip2,libarchive,libxml2,lz4,lzo,musl-cross-make,xz,zlib,zstd}-*
+rm -rf local* {bzip2,libarchive,libxml2,lz4,lzo,mbedtls,musl-cross-make,xz,zlib,zstd}-*
 rm -rf musl-cross-make-master configcache
 rm -f *.so *.dylib *.dll test nativetest
 ```

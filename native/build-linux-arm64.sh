@@ -18,6 +18,10 @@ cd "$BUILD_DIR"
 # Load shared configuration
 . "${SCRIPT_DIR}/build-config.sh"
 
+# Load the mbedTLS build and verification helpers shared by the Linux builds
+# shellcheck source-path=SCRIPTDIR
+. "${SCRIPT_DIR}/build-linux-common.sh"
+
 echo "Setting up aarch64 musl cross-compiler toolchain from Bootlin..."
 # Download toolchain to cache (does not unpack)
 TOOLCHAIN_ARCHIVE=$(download_toolchain "$TOOLCHAIN_ARM64_URL" "aarch64-musl")
@@ -65,10 +69,6 @@ echo ""
 # Download and unpack fresh copies of all libraries
 echo "Setting up library sources..."
 download_all_libraries
-
-# mbedTLS is only used on Linux (Windows has CNG, macOS has CommonCrypto), so it is
-# not part of the shared download_all_libraries
-download_library "$MBEDTLS_URL" "mbedtls" "mbedtls-${MBEDTLS_VERSION}" "$MBEDTLS_SHA256"
 
 # Build compression libraries (static only to avoid conflicts with -static LDFLAGS)
 echo "Building lz4 ${LZ4_VERSION}..."
@@ -119,18 +119,8 @@ cd libxml2-${LIBXML2_VERSION}
 make -sj$NCPU install
 cd ..
 
-echo "Building mbedTLS ${MBEDTLS_VERSION}..."
-cd "mbedtls-${MBEDTLS_VERSION}"
-# Replace the default configuration in the source tree itself rather than pointing
-# at ours with -DMBEDTLS_CONFIG_FILE: libarchive compiles against the headers
-# installed below and must see exactly the configuration libmbedcrypto.a was built with.
-cp "${SCRIPT_DIR}/mbedtls-config.h" include/mbedtls/mbedtls_config.h
-# Only the crypto library is needed, so build that one target and install it by hand
-make -C library libmbedcrypto.a "CC=$CC" "AR=$AR" CFLAGS="-fPIC -O2 -fvisibility=hidden"
-mkdir -p "$PREFIX/lib" "$PREFIX/include"
-cp library/libmbedcrypto.a "$PREFIX/lib/"
-cp -R include/mbedtls include/psa "$PREFIX/include/"
-cd ..
+# Download, build and install the static mbedTLS crypto library (see build-linux-common.sh)
+build_mbedtls
 
 echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
@@ -147,28 +137,8 @@ cd ..
 echo "Creating final shared library..."
 $CC -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/liblzo2.a local/lib/libzstd.a local/lib/liblz4.a local/lib/libmbedcrypto.a ${TOOLCHAIN_SYSROOT}/lib/libc.a -nostdlib
 
-echo "=== Verifying crypto backend ==="
-# Fail the build if ZIP AES encryption was silently lost. libarchive's configure does
-# not treat an unusable mbedTLS as an error (a 4.x bump, for example, just falls back
-# to the stub cryptor), and a library with unresolved symbols still links but can
-# never be loaded.
-# ${AR%ar}nm replaces only the trailing "ar" of the tool name. ${AR/ar/nm} would
-# rewrite the first "ar" in the whole path instead - the one in "libarchive-linux-...".
-NM="${AR%ar}nm"
-if ! LIB_SYMBOLS=$("$NM" libarchive.so) || ! LIB_UNDEFINED=$("$NM" -D --undefined-only libarchive.so); then
-    echo "ERROR: could not read the symbols of libarchive.so with $NM"
-    exit 1
-fi
-if ! grep -q ' [Tt] mbedtls_pkcs5_pbkdf2_hmac$' <<< "$LIB_SYMBOLS"; then
-    echo "ERROR: mbedtls_pkcs5_pbkdf2_hmac is not defined in libarchive.so."
-    echo "libarchive was built without its mbedTLS crypto backend, so ZIP AES encryption would not work."
-    exit 1
-fi
-if grep -E ' (mbedtls|psa)_' <<< "$LIB_UNDEFINED"; then
-    echo "ERROR: libarchive.so has the unresolved mbedTLS symbols listed above and would fail to load."
-    exit 1
-fi
-echo "mbedTLS crypto backend present, no unresolved mbedtls_/psa_ symbols"
+# Fail the build unless the mbedTLS crypto backend was linked in (see build-linux-common.sh)
+verify_crypto_backend libarchive.so
 
 echo "Testing library..."
 cat > test.c <<EOT
@@ -187,9 +157,11 @@ echo "=== Checking dynamic library dependencies ==="
 ldd libarchive.so || echo "Statically linked (no dynamic dependencies)"
 
 echo "=== Inspecting symbols ==="
-${AR/ar/nm} -D libarchive.so | head -20 || true
-${AR/ar/nm} libarchive.so | grep -c " T " | xargs echo "Defined symbols:"
-${AR/ar/nm} libarchive.so | grep -c " U " | xargs echo "Undefined symbols:"
+# The toolchain's nm: only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
+NM="${AR%ar}nm"
+"$NM" -D libarchive.so | head -20 || true
+"$NM" libarchive.so | grep -c " T " | xargs echo "Defined symbols:"
+"$NM" libarchive.so | grep -c " U " | xargs echo "Undefined symbols:"
 
 echo "Skipping native test (cross-compilation - cannot run ARM64 binary on x86_64 host)"
 
