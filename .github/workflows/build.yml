@@ -62,7 +62,9 @@ jobs:
           retention-days: 1
 
   macos:
-    name: Build macOS dylib (x86-64 and arm64)
+    # This exact name is a required status check in the branch protection for main: do not
+    # rename it (even its capitalisation) without updating the rule.
+    name: Build MacOS dylib (x86-64 and arm64)
     needs: [macos-cache]
     if: needs.macos-cache.outputs.hit != 'true'
     runs-on: macos-latest
@@ -411,6 +413,42 @@ jobs:
           ./scripts/write-package-test-nuget-config.sh dist "$RUNNER_TEMP/nuget-test"
           dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --configfile "$RUNNER_TEMP/nuget-test/nuget.config" -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION"
           dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net462 --configuration Release --no-restore --nologo -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION"
+
+  # Required status check: the branch protection for main requires a check with exactly this
+  # name, so do not rename it without updating the rule. The one job that used to carry the
+  # name is now split across native, package and test-net462; this reports their combined
+  # result (and macOS's), so the rule keeps gating everything it did before.
+  build-and-test:
+    name: Build Windows DLLs, Linux library, and test
+    needs: [macos-cache, macos, native, package, test-net462]
+    # always(): a skipped job counts as a passing required check, so this job must run and
+    # fail explicitly when anything it depends on failed, was cancelled or was skipped.
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check the build and test jobs
+        env:
+          MACOS_CACHE: ${{ needs.macos-cache.result }}
+          MACOS_CACHE_HIT: ${{ needs.macos-cache.outputs.hit }}
+          MACOS: ${{ needs.macos.result }}
+          NATIVE: ${{ needs.native.result }}
+          PACKAGE: ${{ needs.package.result }}
+          TEST_NET462: ${{ needs.test-net462.result }}
+        run: |
+          echo "macos-cache=$MACOS_CACHE (hit=$MACOS_CACHE_HIT) macos=$MACOS native=$NATIVE package=$PACKAGE test-net462=$TEST_NET462"
+          failed=0
+          for result in "$MACOS_CACHE" "$NATIVE" "$PACKAGE" "$TEST_NET462"; do
+            [ "$result" = "success" ] || failed=1
+          done
+          # The macOS build may only be skipped when its dylib came from the cache.
+          if [ "$MACOS" != "success" ] && ! { [ "$MACOS" = "skipped" ] && [ "$MACOS_CACHE_HIT" = "true" ]; }; then
+            failed=1
+          fi
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::A build or test job did not succeed."
+            exit 1
+          fi
+          echo "All build and test jobs succeeded."
 
   release:
     name: Publish release
