@@ -470,5 +470,39 @@ jobs:
           tag: ${{ github.ref }}
           overwrite: true
           file_glob: true
-      - name: Upload Nuget package
-        run: dotnet nuget push ./*.nupkg -k ${{ secrets.NUGET_KEY }} --source https://api.nuget.org/v3/index.json
+
+  # nuget.org Trusted Publishing: there is no stored API key. GitHub issues this job an OIDC
+  # token, and NuGet/login exchanges it for an API key that is valid for one hour.
+  #
+  # The trusted publishing policy on nuget.org only accepts a token from this workflow file
+  # (build.yml) running in the "nuget" environment, so renaming either one breaks publishing
+  # until the policy is updated to match.
+  #
+  # Keep this job minimal: no checkout, and only GitHub's and NuGet's own actions. Any step
+  # in a job that has "id-token: write" in this environment can obtain a key that publishes
+  # packages, which is why the GitHub release upload above is a separate job.
+  publish-nuget:
+    name: Publish to nuget.org
+    needs: [release]
+    if: >-
+      ${{ startsWith(github.ref, 'refs/tags/v') && !cancelled() &&
+      needs.release.result == 'success' }}
+    runs-on: ubuntu-24.04
+    environment: nuget
+    permissions:
+      id-token: write
+    steps:
+      - name: Retrieve package
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: dist
+      - name: Log in to nuget.org (OIDC token for a short-lived API key)
+        id: login
+        uses: NuGet/login@v1.2.0
+        with:
+          # The nuget.org account that owns the trusted publishing policy (profile name).
+          user: jas88
+      - name: Push package
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: dotnet nuget push ./*.nupkg --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json
