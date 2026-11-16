@@ -24,7 +24,7 @@ BZIP2_SHA256="ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269"
 
 # Bootlin toolchain versions (Linux only)
 # Bootlin stable 2025.08-1: GCC 14.3.0, musl latest, binutils 2.43.1
-BOOTLIN_RELEASE="stable-2025.08-1"
+BOOTLIN_RELEASE="stable-2026.08-1"
 MUSL_VERSION="1.2.5"
 GCC_VERSION="9.4.0"
 BINUTILS_VERSION="2.44"
