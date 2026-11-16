@@ -35,7 +35,8 @@ LibArchive.Net now provides comprehensive write support for creating archives in
 - **TAR and every other format**: Not supported (use external encryption)
 
 libarchive can only encrypt ZIP archives. A password combined with any other format throws
-`NotSupportedException` instead of writing an archive that is not protected.
+`NotSupportedException` instead of writing an archive that is not protected, unless the encryption
+type is `EncryptionType.None`, which ignores the password and writes an unencrypted archive.
 
 ### ✅ Zero-Copy I/O Optimization
 

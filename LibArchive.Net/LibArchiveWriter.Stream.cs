@@ -32,7 +32,8 @@ public partial class LibArchiveWriter
     /// <param name="encryption">Encryption type when a password is provided (default: AES-256).</param>
     /// <param name="blockSize">Block size in bytes for writing (default: 1 MiB).</param>
     /// <exception cref="NotSupportedException">
-    /// A password was supplied for a format other than ZIP, or with an encryption type that libarchive
+    /// A password was supplied for a format other than ZIP (unless the encryption type is
+    /// <see cref="EncryptionType.None"/>, which ignores the password), or with an encryption type that libarchive
     /// or this native library build cannot write.
     /// </exception>
     public LibArchiveWriter(
@@ -193,7 +194,8 @@ public partial class LibArchiveWriter
     /// <param name="initialCapacity">Initial capacity of the memory buffer in bytes (default: 64 KB).</param>
     /// <returns>A LibArchiveWriter that writes to memory.</returns>
     /// <exception cref="NotSupportedException">
-    /// A password was supplied for a format other than ZIP, or with an encryption type that libarchive
+    /// A password was supplied for a format other than ZIP (unless the encryption type is
+    /// <see cref="EncryptionType.None"/>, which ignores the password), or with an encryption type that libarchive
     /// or this native library build cannot write.
     /// </exception>
     public static LibArchiveWriter CreateMemoryWriter(
