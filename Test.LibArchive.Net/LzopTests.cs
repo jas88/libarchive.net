@@ -10,18 +10,21 @@ namespace Test.LibArchive.Net;
 // in-process with lzokay's LZO1X decompressor (see native/build-lzo-shim.sh). The wrapper
 // has no lzop writer, so the archive has to be a fixture.
 //
-// The fixture must be written by the reference lzop tool, so that these tests check
-// lzokay against real lzop output and not against itself. Create it with:
+// The fixture is written by the reference lzop tool, so that these tests check lzokay
+// against real lzop output and not against itself. It was created with lzop 1.04
+// (LZO 2.10) and the bsdtar of macOS:
 //
 //     mkdir lzoptest && cd lzoptest
 //     seq 1 5000 > numbers.txt
 //     head -c 600000 /dev/zero > zeros.bin
 //     : > empty
-//     tar --format=ustar -cf ../lzoptest.tar numbers.txt zeros.bin empty
-//     lzop -9 ../lzoptest.tar
+//     touch -t 202601010000.00 numbers.txt zeros.bin empty
+//     COPYFILE_DISABLE=1 tar --format=ustar --no-xattrs --no-mac-metadata --no-acls \
+//         --uid 0 --gid 0 --numeric-owner -cf ../lzoptest.tar numbers.txt zeros.bin empty
+//     cd .. && touch -t 202601010000.00 lzoptest.tar && lzop -9 lzoptest.tar
 //
-// and commit the resulting lzoptest.tar.lzo next to this file. zeros.bin spans three of
-// lzop's 256 KiB blocks. Until the fixture is there, these tests are reported as ignored.
+// The extra tar options keep extended attributes, AppleDouble files and the local user
+// and group out of the archive. zeros.bin spans three of lzop's 256 KiB blocks.
 [TestFixture]
 public class LzopTests
 {
@@ -36,11 +39,7 @@ public class LzopTests
     [SetUp]
     public void RequireFixture()
     {
-        if (!File.Exists(Fixture))
-        {
-            Assert.Ignore($"{Fixture} is not in the repository: it has to be written by the reference lzop tool. " +
-                          "See the comment at the top of LzopTests.cs.");
-        }
+        Assert.That(Fixture, Does.Exist, $"{Fixture} was not copied to the test output directory");
     }
 
     [Test]
