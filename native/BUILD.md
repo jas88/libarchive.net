@@ -96,7 +96,8 @@ This will automatically detect your platform and build the appropriate libraries
 - make
 - sccache (the scripts compile through it)
 - autoconf, automake, libtool and pkg-config (libxml2 is built with its `autogen.sh`)
-- unzip
+- tar, gzip, xz and bzip2, which unpack the downloads (`.tar.gz`, `.tar.xz` and `.tar.bz2` archives)
+- file (each script runs it on the library it built)
 - For the ARMv7 and ARM64 load tests: QEMU user-mode emulation (`qemu-arm`,
   `qemu-aarch64`; Debian/Ubuntu package `qemu-user`)
 
@@ -370,8 +371,10 @@ The libraries being built have their own licenses:
 - zlib: Zlib
 - bzip2: BSD-like
 - lz4: BSD-2-Clause
-- zstd: BSD + GPLv2
+- zstd: BSD-3-Clause (upstream offers BSD OR GPLv2)
 - lzokay: MIT
-- xz (liblzma): Public Domain
+- xz (liblzma): 0BSD (BSD Zero Clause) since XZ Utils 5.6.0; earlier releases were public domain
 - libxml2: MIT
 - mbedTLS (Linux only): Apache-2.0 (upstream offers Apache-2.0 OR GPL-2.0-or-later)
+
+[THIRD-PARTY-NOTICES.txt](../THIRD-PARTY-NOTICES.txt), which the package also contains, has their full notices, and those of the code that the build toolchains link into the native libraries.
