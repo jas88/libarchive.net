@@ -1,0 +1,7 @@
+# Test fixtures that are plain text but are read byte for byte: a checkout must keep the bytes
+# the reference tools wrote, even where core.autocrlf would convert them (as on the Windows CI
+# runners). Compressed and archive fixtures hold NUL bytes, so git already leaves them alone;
+# add any new plain-text fixture here.
+Test.LibArchive.Net/rawtest.txt -text
+Test.LibArchive.Net/mtreetest-seq.txt -text
+Test.LibArchive.Net/mtreetest.mtree -text
