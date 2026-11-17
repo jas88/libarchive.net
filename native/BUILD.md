@@ -60,7 +60,7 @@ This will automatically detect your platform and build the appropriate libraries
 ./build-all.sh --all --package
 ```
 
-`--linux` builds all four Linux libraries (x64, x86, ARMv7, ARM64). On Linux, `--all` builds Linux and Windows, skipping macOS with a warning, and stops with an error if a MinGW cross-compiler is missing (see the [Windows requirements](#windows-x86-x64-arm64)). On macOS it builds macOS and skips Linux and Windows with a warning. Unless it has stopped, it then creates the package. `--package` packs version `$PACKAGE_VERSION`, or `0.0.0-dev` if it is not set (for example `PACKAGE_VERSION=1.2.3 ./build-all.sh --package`), into the repository root.
+`--linux` builds the Linux x64, ARMv7 and ARM64 libraries. On Linux, `--all` builds Linux and Windows, skipping macOS with a warning, and stops with an error if a MinGW cross-compiler is missing (see the [Windows requirements](#windows-x86-x64-arm64)). On macOS it builds macOS and skips Linux and Windows with a warning. Unless it has stopped, it then creates the package. `--package` packs version `$PACKAGE_VERSION`, or `0.0.0-dev` if it is not set (for example `PACKAGE_VERSION=1.2.3 ./build-all.sh --package`), into the repository root.
 
 ## Platform-Specific Requirements
 
@@ -138,10 +138,6 @@ LibArchive.Net/runtimes/
 ├── linux-x64/native/
 │   └── libarchive.so
 ├── linux-musl-x64/native/
-│   └── libarchive.so
-├── linux-x86/native/
-│   └── libarchive.so
-├── linux-musl-x86/native/
 │   └── libarchive.so
 ├── linux-arm/native/
 │   └── libarchive.so

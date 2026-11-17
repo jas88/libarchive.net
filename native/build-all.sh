@@ -68,7 +68,7 @@ else
                 echo ""
                 echo "Options:"
                 echo "  --all       Build for all platforms and package"
-                echo "  --linux     Build for Linux (x64, x86, ARMv7, ARM64)"
+                echo "  --linux     Build for Linux (x64, ARMv7, ARM64)"
                 echo "  --macos     Build for macOS (universal binary)"
                 echo "  --windows   Build for Windows (x86, x64, arm64)"
                 echo "  --package   Create NuGet package after building"
@@ -98,7 +98,7 @@ cp -R "$SCRIPT_DIR"/* .
 
 # Build for Linux
 if [ $BUILD_LINUX -eq 1 ]; then
-    log_info "Building for Linux (x64, x86, ARMv7, ARM64)..."
+    log_info "Building for Linux (x64, ARMv7, ARM64)..."
     if [ "$PLATFORM" != "linux" ]; then
         log_warn "Cross-compilation for Linux not yet supported on $PLATFORM"
         log_warn "Skipping Linux build"
@@ -106,7 +106,8 @@ if [ $BUILD_LINUX -eq 1 ]; then
         # build-linux.sh builds x64, build-linux-<arch>.sh the others; each leaves
         # libarchive-linux-<arch>.so in $NATIVE_OUT. The libraries use musl-libc, so
         # each one goes to both its linux-<arch> and its linux-musl-<arch> folder.
-        for arch in x64 x86 arm arm64; do
+        # No x86: LibArchive.Net never loads a Linux x86 library.
+        for arch in x64 arm arm64; do
             if [ "$arch" = x64 ]; then
                 ./build-linux.sh
             else
