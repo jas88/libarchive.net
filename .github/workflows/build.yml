@@ -24,7 +24,11 @@ env:
   # Bump to invalidate every cached native binary and configure result (e.g. after a
   # runner toolchain change that native/** does not capture).
   NATIVE_CACHE_VERSION: v1
+  # LLVM-MinGW (win-arm64 only) and the SHA-256 of its release asset
+  # llvm-mingw-<version>-ucrt-ubuntu-20.04-x86_64.tar.xz: update the two together.
+  # The release publishes no checksum, so the hash is of the asset as downloaded.
   LLVM_MINGW_VERSION: '20240619'
+  LLVM_MINGW_SHA256: 27d33157cc252c29ad6f777a96a0d94176fea1b534ff09b5071485def143b90e
   # xz 5.8.2 was built with automake 1.18.1 and autoconf 2.72
   AUTOCONF_VERSION: '2.72'
   AUTOCONF_SHA256: ba885c1319578d6c94d46e9b0dceb4014caafe2490e437a0dbca3f270a223f5a
@@ -203,7 +207,13 @@ jobs:
         if: steps.native-cache.outputs.cache-hit != 'true' && matrix.target == 'win-arm64'
         run: |
           LLVM_MINGW="llvm-mingw-${LLVM_MINGW_VERSION}-ucrt-ubuntu-20.04-x86_64"
-          curl -fsSL "https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/${LLVM_MINGW}.tar.xz" | tar xJ -C "$RUNNER_TEMP"
+          ARCHIVE="$RUNNER_TEMP/${LLVM_MINGW}.tar.xz"
+          curl -fsSL --retry 3 --retry-delay 5 -o "$ARCHIVE" \
+            "https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/${LLVM_MINGW}.tar.xz"
+          # Verified before anything is unpacked; a mismatch fails the job
+          echo "${LLVM_MINGW_SHA256}  ${ARCHIVE}" | sha256sum -c -
+          tar xJf "$ARCHIVE" -C "$RUNNER_TEMP"
+          rm -f "$ARCHIVE"
           echo "$RUNNER_TEMP/${LLVM_MINGW}/bin" >> "$GITHUB_PATH"
       - name: Verify MinGW compilers are installed
         if: steps.native-cache.outputs.cache-hit != 'true' && matrix.kind == 'windows'
