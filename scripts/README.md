@@ -2,8 +2,9 @@
 
 `check-native-updates.sh` looks upstream for newer releases of native libraries
 whose versions are pinned in `native/build-config.sh`. When it finds any, it
-reports them and, unless it is a dry run, updates the pins and opens one pull
-request. `.github/workflows/check-native-dependencies.yml` runs it weekly.
+reports them and, unless it is a dry run, updates the pins it can and opens one
+pull request for them. `.github/workflows/check-native-dependencies.yml` runs it
+weekly.
 
 `native/build-config.sh` is the source of truth for the pinned versions and their
 SHA256 checksums, so neither is repeated here.
@@ -14,26 +15,31 @@ SHA256 checksums, so neither is repeated here.
    requests in `jas88/libarchive.net` that carry the `native` label and whose
    branch name starts with `dependabot/native/`. If there is one, it lists it and
    exits without checking anything, dry run or not. Merge or close that pull
-   request to get a new one. If the lookup itself fails, the script carries on as
-   though none were open.
+   request to get a new one. If the lookup itself fails (for example, `gh` is not
+   authenticated), a dry run prints a warning and carries on. Otherwise the script
+   stops before changing anything, so that it cannot open a second pull request.
 2. **Compare versions.** It reads each current version from
    `native/build-config.sh` and finds the latest upstream version with one of the
    [check methods](#check-methods). A version that sorts higher under `sort -V`
    is an update. A check that finds no version (network error or pattern mismatch)
    is reported as failed, and the remaining checks still run.
-3. **Update the pins.** For each update it rewrites the `<NAME>_VERSION` line in
-   that file (`<NAME>` being the library's name in upper case), downloads the new
-   tarball from `<NAME>_URL` and rewrites the `<NAME>_SHA256` line with that
-   tarball's checksum. If the download or the checksum fails, the version stays
-   bumped, the old checksum stays in place and the output asks for it to be
-   corrected by hand.
-4. **Open a pull request.** It creates the branch
-   `dependabot/native/<YYYYMMDD>-updates` from the commit that is checked out,
-   commits `native/build-config.sh`, pushes the branch to `origin` and opens a
-   pull request in `jas88/libarchive.net` with the labels `dependencies` and
-   `native`, which must already exist. All updates from one run share that pull
-   request. Its title is `Bump native <name> from <old> to <new>` for one update
-   and `Bump <N> native dependencies` for several.
+3. **Update the pins.** For each update it rewrites the `<NAME>_VERSION` line
+   (`<NAME>` being the library's name in upper case) in a copy of that file,
+   downloads the new tarball from the `<NAME>_URL` that the copy sets, and
+   rewrites the copy's `<NAME>_SHA256` line with that tarball's checksum. Only then
+   does the copy replace the file. If any of this fails (a line cannot be
+   rewritten, `<NAME>_URL` is not set, the download fails or no SHA256 can be
+   computed), the file keeps that library's current version and checksum, and the
+   library is left out of the pull request and reported as a failed check.
+4. **Open a pull request.** If at least one update was applied, it creates the
+   branch `dependabot/native/<YYYYMMDD>-updates` from the commit that is checked
+   out, commits `native/build-config.sh`, pushes the branch to `origin` and opens
+   a pull request in `jas88/libarchive.net` with the labels `dependencies` and
+   `native`, which must already exist. All updates applied in one run share that
+   pull request, and only they appear in its title, body and commit. Its title is
+   `Bump native <name> from <old> to <new>` for one update and
+   `Bump <N> native dependencies` for several. If no update could be applied, it
+   creates no branch, commit or pull request.
 
 A dry run, which is the default, does steps 1 and 2, prints what it would update
 and stops. Setting `DRY_RUN=0` enables steps 3 and 4.
@@ -41,10 +47,12 @@ and stops. Setting `DRY_RUN=0` enables steps 3 and 4.
 `native/build-config.sh` is the only file the script edits or commits. Neither the
 script nor the workflow merges the pull request.
 
-The script exits 1 if a required tool is missing, if a `git` or `gh` command in
-step 4 fails, or if any check failed. In the last case any pull request for the
-other updates is still opened first, and a dry run that found updates exits 0
-regardless. In every other case it exits 0.
+The script exits 1 if a required tool is missing, if it cannot create its
+temporary files or write `native/build-config.sh`, if the pull request lookup in
+step 1 fails outside a dry run, if a `git` or `gh` command in step 4 fails, or if
+any check failed, an update that could not be applied included. In the last case
+any pull request for the other updates is still opened first, and a dry run that
+found updates exits 0 regardless. In every other case it exits 0.
 
 ## Check methods
 
@@ -83,8 +91,16 @@ DRY_RUN=0 bash scripts/check-native-updates.sh
 
 - `curl`, `jq`, `gh` and `git` must be installed, even for a dry run. Applying
   updates also needs `shasum` or `sha256sum`, to compute the new checksums.
+  Without either, every update fails in step 3.
 - A dry run still queries GitHub and the upstream download sites. It does not edit
-  files, create a branch or open a pull request.
+  files, create a branch or open a pull request. It also works without `gh`
+  authentication, after the warning from step 1.
+- If `GITHUB_TOKEN` is set and not empty, or failing that `GH_TOKEN`, the version
+  checks whose URL is on `https://api.github.com/` (every `github` check, and the
+  `web` check for mbedTLS) send it as a bearer token, which avoids the low rate
+  limit for unauthenticated requests. Those requests follow no redirects. None of
+  the script's other requests, tarball downloads included, carries the token, and
+  it is never printed. (`gh` reads the same variables for its own requests.)
 - Only `DRY_RUN=1`, or an unset or empty `DRY_RUN`, gives a dry run. Any other
   value applies the updates.
 - With `DRY_RUN=0`, `gh` must be authenticated and allowed to open pull requests,
@@ -101,10 +117,10 @@ DRY_RUN=0 bash scripts/check-native-updates.sh
   `dry_run` input is set to `true`.
 - **Credentials.** The repository is checked out with the `WORKFLOW_TOKEN` secret,
   a personal access token, and the same secret is passed to the script as
-  `GITHUB_TOKEN`. No step uses the workflow's default token, because a branch
-  pushed or a pull request opened with that token does not start other workflows,
-  so the build would never run on the update pull request. Commits are authored
-  as `github-actions[bot]`.
+  `GITHUB_TOKEN`, for `gh` and the GitHub API requests. No step uses the
+  workflow's default token, because a branch pushed or a pull request opened with
+  that token does not start other workflows, so the build would never run on the
+  update pull request. Commits are authored as `github-actions[bot]`.
 - **Outcome.** The step summary only states that the check completed. Updates and
   failed checks are in the job log. The job fails whenever the script exits 1,
   which includes a run that opened a pull request but had a failed check.
@@ -140,5 +156,8 @@ For a library called `foo`:
 - **Toolchains are not checked.** The script only prints a note: the musl, GCC and
   binutils versions in `native/build-config.sh` are for reference, and the real
   toolchains are Bootlin prebuilt releases (<https://toolchains.bootlin.com/>).
+- **Authenticated requests do not follow redirects.** With a token, a GitHub API
+  answer that redirects, as it does for a renamed repository, is reported as a
+  failed check. Update the repository named in the script to fix it.
 - **The repository is fixed.** The pull request lookup and creation always target
   `jas88/libarchive.net`, whatever `origin` points at.
