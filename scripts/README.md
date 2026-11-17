@@ -120,7 +120,8 @@ DRY_RUN=0 bash scripts/check-native-updates.sh
   `GITHUB_TOKEN`, for `gh` and the GitHub API requests. No step uses the
   workflow's default token, because a branch pushed or a pull request opened with
   that token does not start other workflows, so the build would never run on the
-  update pull request. Commits are authored as `github-actions[bot]`.
+  update pull request. The workflow therefore grants the default token no
+  permissions. Commits are authored as `github-actions[bot]`.
 - **Outcome.** The step summary only states that the check completed. Updates and
   failed checks are in the job log. The job fails whenever the script exits 1,
   which includes a run that opened a pull request but had a failed check.
