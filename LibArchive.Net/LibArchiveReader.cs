@@ -75,6 +75,31 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 #endif
     }
 
+    private static readonly System.Text.UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+
+    // Decodes a NUL-terminated string if it is valid UTF-8.
+    private static bool TryDecodeStrictUtf8(IntPtr ptr, out string? value)
+    {
+        var length = 0;
+        unsafe
+        {
+            var p = (byte*)ptr;
+            while (p[length] != 0)
+                length++;
+        }
+        var bytes = new byte[length];
+        Marshal.Copy(ptr, bytes, 0, length);
+        try
+        {
+            value = StrictUtf8.GetString(bytes);
+            return true;
+        }
+        catch (System.Text.DecoderFallbackException)
+        {
+            value = null;
+            return false;
+        }
+    }
 
     /// <summary>
     /// Opens the specified archive file for read access with the specified block size.
@@ -386,11 +411,31 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         {
             this.entryHandle = entryHandle;
             this.archiveHandle = archiveHandle;
-            Name = PtrToStringUTF8(archive_entry_pathname(entryHandle)) ?? throw new ApplicationException("Unable to retrieve entry's pathname");
+            Name = GetPathname(entryHandle) ?? throw new ApplicationException("Unable to retrieve entry's pathname");
             Type = (EntryType)archive_entry_filetype(entryHandle);
             LengthBytes = archive_entry_size_is_set(entryHandle) != 0
                 ? archive_entry_size(entryHandle)
                 : null;
+        }
+
+        // A format reader stores an entry's name either as the raw bytes of a format that defines
+        // no encoding (ustar, cpio, ZIP without its UTF-8 flag), which archive_entry_pathname
+        // returns unchanged and which are decoded as UTF-8, or, on Windows, as UTF-16 for a format
+        // that records Unicode names (ZIP with the UTF-8 flag, pax, 7-Zip, XAR). For the latter,
+        // archive_entry_pathname converts to the "C" locale, which on Windows maps U+0000-U+00FF
+        // to single bytes ("Größe" comes back as Latin-1, not UTF-8) and falls back to UTF-8 only
+        // when a character above U+00FF fails. archive_entry_pathname_utf8 gives those names
+        // exactly, but is only the second choice: on Windows it would read raw bytes as Latin-1,
+        // and on Unix it returns NULL for every non-ASCII name, since nothing converts from the
+        // "C" locale's ASCII. So bytes that are valid UTF-8 win, then the UTF-8 form, and only then
+        // the bytes with invalid sequences replaced, as before.
+        private static string? GetPathname(IntPtr entry)
+        {
+            var name = archive_entry_pathname(entry);
+            if (name != IntPtr.Zero && TryDecodeStrictUtf8(name, out var decoded))
+                return decoded;
+            var utf8 = archive_entry_pathname_utf8(entry);
+            return PtrToStringUTF8(utf8 != IntPtr.Zero ? utf8 : name);
         }
 
         internal static Entry? Create(IntPtr entryHandle, IntPtr archiveHandle)
@@ -639,6 +684,10 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial IntPtr archive_entry_pathname(IntPtr entry);
 
+    [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    private static partial IntPtr archive_entry_pathname_utf8(IntPtr entry);
+
     [LibraryImport("archive", EntryPoint = "archive_entry_filetype")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial ushort archive_entry_filetype_u16(IntPtr entry);
@@ -708,6 +757,9 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr archive_entry_pathname(IntPtr entry);
+
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr archive_entry_pathname_utf8(IntPtr entry);
 
     [DllImport("archive", EntryPoint = "archive_entry_filetype", CallingConvention = CallingConvention.Cdecl)]
     private static extern ushort archive_entry_filetype_u16(IntPtr entry);

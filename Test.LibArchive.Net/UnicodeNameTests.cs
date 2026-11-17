@@ -93,5 +93,119 @@ public class UnicodeNameTests
         var path = Path.Combine(testDirectory, "fehlt-ä.zip");
         Assert.Throws<ApplicationException>(() => new LibArchiveReader(path).Dispose());
     }
+
+    // Entry names: Latin-1 (precomposed, NFC), CJK, an astral-plane emoji, and a directory
+    private static readonly string[] EntryNames =
+    {
+        "Größe.txt",
+        "日本語.txt",
+        "\U0001F600.txt",
+        "Ordner-é/中文-ä.txt",
+    };
+
+    private static string ContentOf(string name) => "content of " + name;
+
+    public enum WriterKind { File, Stream, Memory }
+
+    // The formats that store an entry's name as the bytes they are given: libarchive passes
+    // the UTF-8 bytes through, and reads them back unchanged, whatever the locale.
+    //
+    // Not covered, because libarchive 3.8.11 cannot keep a non-ASCII name in them in the "C"
+    // locale a .NET process runs in on Unix (measured on macOS): every name in pax (ArchiveFormat.Tar
+    // and Pax) and XAR is converted to UTF-8, and in 7-Zip to UTF-16, from the locale's ASCII.
+    // Writing pax or XAR then fails with "Can't translate pathname ... to UTF-8" (ARCHIVE_WARN,
+    // which the writer reports as an error); a 7-Zip archive is written, but reading it fails with
+    // "Pathname cannot be converted from UTF-16LE to current locale". ISO 9660 warns that the name
+    // cannot be converted to UTF-16BE for Joliet. On Windows these conversions go through UTF-16
+    // and behave differently, so the outcome is platform-dependent.
+    private static readonly ArchiveFormat[] ByteFormats = { ArchiveFormat.Zip, ArchiveFormat.Ustar, ArchiveFormat.Cpio };
+
+    private byte[] WriteArchive(ArchiveFormat format, WriterKind kind, out string path)
+    {
+        path = Path.Combine(testDirectory, $"names-{format}-{kind}.bin");
+        void AddEntries(LibArchiveWriter w)
+        {
+            foreach (var name in EntryNames)
+                w.AddEntry(name, Encoding.UTF8.GetBytes(ContentOf(name)));
+        }
+
+        switch (kind)
+        {
+            case WriterKind.File:
+                using (var writer = new LibArchiveWriter(path, format))
+                    AddEntries(writer);
+                return File.ReadAllBytes(path);
+            case WriterKind.Stream:
+                using (var stream = File.Create(path))
+                using (var writer = new LibArchiveWriter(stream, format))
+                    AddEntries(writer);
+                return File.ReadAllBytes(path);
+            default:
+                var memoryWriter = LibArchiveWriter.CreateMemoryWriter(format);
+                using (memoryWriter)
+                    AddEntries(memoryWriter);
+                var bytes = memoryWriter.ToArray();
+                File.WriteAllBytes(path, bytes);
+                return bytes;
+        }
+    }
+
+    private static (string Name, string Text)[] ReadEntries(LibArchiveReader reader) =>
+        reader.Entries().Select(e => (e.Name, e.ReadAllText())).ToArray();
+
+    [Test]
+    public void NonAsciiEntryNamesRoundTrip(
+        [ValueSource(nameof(ByteFormats))] ArchiveFormat format,
+        [Values] WriterKind kind)
+    {
+        var bytes = WriteArchive(format, kind, out var path);
+        var expected = EntryNames.Select(n => (n, ContentOf(n))).ToArray();
+
+        using (var reader = new LibArchiveReader(path))
+        {
+            Assert.That(ReadEntries(reader), Is.EqualTo(expected), "read from path");
+            reader.Reset();
+            Assert.That(ReadEntries(reader), Is.EqualTo(expected), "after Reset");
+        }
+
+        using (var reader = new LibArchiveReader(new MemoryStream(bytes)))
+            Assert.That(ReadEntries(reader), Is.EqualTo(expected), "read from stream");
+    }
+
+    [Test]
+    public void NonAsciiEntryNamesAreStoredAsUtf8Bytes([ValueSource(nameof(ByteFormats))] ArchiveFormat format)
+    {
+        // Each name must be in the archive as its UTF-8 encoding, not as '?' or another code page
+        var bytes = WriteArchive(format, WriterKind.Memory, out _);
+        foreach (var name in EntryNames)
+            Assert.That(IndexOf(bytes, Encoding.UTF8.GetBytes(name)), Is.GreaterThanOrEqualTo(0), name);
+    }
+
+    [Test]
+    public void AddFileUsesNonAsciiSourceFileName([ValueSource(nameof(ByteFormats))] ArchiveFormat format)
+    {
+        var source = Path.Combine(testDirectory, "Quelle-ß-日本-\U0001F600.txt");
+        File.WriteAllText(source, "from disk");
+        var archive = Path.Combine(testDirectory, $"addfile-{format}.bin");
+
+        using (var writer = new LibArchiveWriter(archive, format))
+            writer.AddFile(source);
+
+        using var reader = new LibArchiveReader(archive);
+        Assert.That(ReadEntries(reader), Is.EqualTo(new[] { (Path.GetFileName(source), "from disk") }));
+    }
+
+    private static int IndexOf(byte[] haystack, byte[] needle)
+    {
+        for (int i = 0; i + needle.Length <= haystack.Length; i++)
+        {
+            int j = 0;
+            while (j < needle.Length && haystack[i + j] == needle[j])
+                j++;
+            if (j == needle.Length)
+                return i;
+        }
+        return -1;
+    }
 }
 }

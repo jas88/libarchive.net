@@ -635,6 +635,14 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial void archive_entry_free(IntPtr entry);
 
+    // Entry names are set as the "multibyte" form, the UTF-8 bytes as they are, and not with
+    // archive_entry_set_pathname_utf8 or archive_entry_copy_pathname_w. libarchive's writers read
+    // names back through that multibyte form (archive_entry_pathname_l), and on Unix .NET leaves
+    // the C library in the "C" locale, whose ASCII nothing converts to or from: with only a
+    // UTF-8 or wide form set, libarchive 3.8.11 rejects a non-ASCII name for ZIP, tar and cpio,
+    // writes 7-Zip archives it cannot read and ISO 9660 images without the entry, and its pax
+    // writer can dereference NULL. The bytes themselves go into ZIP (without its UTF-8 flag),
+    // ustar and cpio unchanged.
     [LibraryImport("archive")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial void archive_entry_set_pathname(IntPtr entry, IntPtr pathname);
