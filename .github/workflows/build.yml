@@ -81,9 +81,10 @@ jobs:
           # DOWNLOAD_CACHE in native/build-config.sh: this path unless XDG_CACHE_HOME
           # names another directory (the build log prints the one in use)
           path: ~/.cache/libarchive-net/downloads
-          key: library-downloads-${{ hashFiles('native/build-config.sh') }}
+          # One cache per job (see the native job's download cache)
+          key: library-downloads-osx-universal-${{ hashFiles('native/build-config.sh') }}
           restore-keys: |
-            library-downloads-
+            library-downloads-osx-universal-
       - name: Cache configure results
         uses: actions/cache@v6.1.0
         with:
@@ -175,9 +176,13 @@ jobs:
           # DOWNLOAD_CACHE in native/build-config.sh: this path unless XDG_CACHE_HOME
           # names another directory (the build log prints the one in use)
           path: ~/.cache/libarchive-net/downloads
-          key: library-downloads-${{ hashFiles('native/build-config.sh') }}
+          # One cache per job, because each job downloads different files (only the
+          # Linux jobs fetch a Bootlin toolchain and mbedTLS). With one key for all of
+          # them, only the first job to finish could save the cache, and runs that hit
+          # the key never save it again, so the cache held that one job's downloads.
+          key: library-downloads-${{ matrix.target }}-${{ hashFiles('native/build-config.sh') }}
           restore-keys: |
-            library-downloads-
+            library-downloads-${{ matrix.target }}-
       - name: Cache configure results
         if: steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache@v6.1.0
