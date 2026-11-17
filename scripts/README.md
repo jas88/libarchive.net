@@ -137,6 +137,12 @@ For a library called `foo`:
   the `github` method. It uses `web` with a pattern that only matches release
   tarballs of the pinned LTS series, so no other series is ever proposed. Moving
   to another series means editing that pattern.
+- **lzokay is not checked.** lzokay, which provides lzop support, publishes no
+  releases, so `native/build-config.sh` pins it to a commit (`LZOKAY_COMMIT`) and
+  to the checksum of GitHub's archive of that commit (`LZOKAY_SHA256`). It has no
+  `LZOKAY_VERSION` and no `check_dependency` call, so the script never looks at
+  it. Check its commit history by hand. When the pin moves, also check that
+  `native/lzo-shim/lzokay-bounds-checks.patch` still applies and is still needed.
 - **Toolchains are not checked.** The script only prints a note: the musl, GCC and
   binutils versions in `native/build-config.sh` are for reference, and the real
   toolchains are Bootlin prebuilt releases (<https://toolchains.bootlin.com/>).

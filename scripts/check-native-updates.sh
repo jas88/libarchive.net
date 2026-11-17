@@ -234,7 +234,6 @@ CURRENT_ZSTD=$(read_current_version "ZSTD_VERSION")
 CURRENT_XZ=$(read_current_version "XZ_VERSION")
 CURRENT_ZLIB=$(read_current_version "ZLIB_VERSION")
 CURRENT_LIBXML2=$(read_current_version "LIBXML2_VERSION")
-CURRENT_LZO=$(read_current_version "LZO_VERSION")
 CURRENT_BZIP2=$(read_current_version "BZIP2_VERSION")
 CURRENT_MBEDTLS=$(read_current_version "MBEDTLS_VERSION")
 
@@ -258,11 +257,6 @@ check_dependency "zlib" "$CURRENT_ZLIB" "web" \
 # libxml2
 check_dependency "libxml2" "$CURRENT_LIBXML2" "gnome" \
     'libxml2-([0-9]+\.[0-9]+\.[0-9]+)\.tar\.xz' || true
-
-# lzo
-check_dependency "lzo" "$CURRENT_LZO" "web" \
-    "https://www.oberhumer.com/opensource/lzo/download/" \
-    'lzo-([0-9]+\.[0-9]+)\.tar\.gz' || true
 
 # bzip2
 check_dependency "bzip2" "$CURRENT_BZIP2" "web" \

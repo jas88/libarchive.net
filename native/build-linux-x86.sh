@@ -95,11 +95,10 @@ cp libbz2.a $PREFIX/lib/
 cp bzlib.h $PREFIX/include/
 cd ..
 
-echo "Building lzo ${LZO_VERSION}..."
-cd lzo-${LZO_VERSION}
-./configure --cache-file=$(get_config_cache i686-linux) --build=x86_64-pc-linux-gnu --host=i686-linux --prefix=$PREFIX --disable-shared --enable-static
-make -sj$NCPU install
-cd ..
+# lzop (LZO1X) support: lzokay behind the liblzo2 API, in place of the GPL-licensed liblzo2
+# shellcheck source-path=SCRIPTDIR disable=SC1091
+. "${SCRIPT_DIR}/build-lzo-shim.sh"
+build_lzo_shim "${SCRIPT_DIR}/lzo-shim" "lzokay-${LZOKAY_COMMIT}" "$CXXFLAGS"
 
 echo "Building zlib ${ZLIB_VERSION}..."
 cd zlib-${ZLIB_VERSION}
@@ -166,6 +165,10 @@ NM="${AR%ar}nm"
 "$NM" libarchive.so | grep -c " U " | xargs echo "Undefined symbols:"
 
 echo "Skipping native test (cross-compilation - cannot run 32-bit i386 binary on x86_64 host)"
+
+# Fail the build unless lzop support was linked in and needs nothing the library lacks (see build-lzo-shim.sh)
+verify_lzo_support libarchive.so
+verify_lzo_shim_resolved libarchive.so
 
 echo "Copying output to ${OUTPUT_DIR}..."
 cp libarchive.so "${OUTPUT_DIR}/libarchive-linux-x86.so"
