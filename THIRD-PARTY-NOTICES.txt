@@ -2,7 +2,8 @@ THIRD-PARTY NOTICES
 ===================
 
 LibArchive.Net is licensed under the BSD 2-Clause licence in LICENSE.md. That
-licence covers the managed wrapper and the build scripts in this repository.
+licence covers the managed wrapper and the build scripts in this repository,
+and the interface code for lzokay in native/lzo-shim (see section 9).
 
 The LibArchive.Net NuGet package also ships prebuilt native libraries
 (runtimes/<rid>/native/libarchive.so, libarchive.dylib and archive.dll). Code
@@ -80,16 +81,47 @@ This file is written and updated by hand. Nothing generates it.
 
 * The Mbed TLS section (8) was checked against the native binaries of a later
   package, built by the same workflow after Mbed TLS was added to the Linux
-  builds; that section says what was found in them and how. Only section 8
-  rests on that package: the toolchain sections were not checked again on it.
-  Its Linux libraries were built from Mbed TLS 3.6.8 (the version number that
-  mbedtls_version_get_number returns in each of them), configured by
-  native/mbedtls-config.h, with the Bootlin release named above (as the
-  compiler identification recorded in each of them shows). The text copied in
-  section 8 is from the Mbed TLS 3.6.8 release tarball at the address that
-  native/build-config.sh gives, whose SHA-256 checksum matches the one pinned
-  there. When MBEDTLS_VERSION or native/mbedtls-config.h changes, repeat the
-  checks that section 8 describes and update this record.
+  builds; that section says what was found in them and how. Section 8 rests on
+  that package, and so in part do sections 5 and 7 (see below); the toolchain
+  sections were not checked again on it. Its Linux libraries were built from
+  Mbed TLS 3.6.8 (the version number that mbedtls_version_get_number returns
+  in each of them), configured by native/mbedtls-config.h, with the Bootlin
+  release named above (as the compiler identification recorded in each of them
+  shows). The text copied in section 8 is from the Mbed TLS 3.6.8 release
+  tarball at the address that native/build-config.sh gives, whose SHA-256
+  checksum matches the one pinned there. When MBEDTLS_VERSION or
+  native/mbedtls-config.h changes, repeat the checks that section 8 describes
+  and update this record.
+
+* The lzokay section (9) was checked against the native binaries of a third
+  package, built by the same workflow from the branch that added lzokay,
+  before Mbed TLS was added to the Linux builds; its Linux libraries do not
+  contain Mbed TLS, which does not affect section 9. Its Windows x86 and x64
+  DLLs were built from a later commit of that branch than its other native
+  binaries, which the workflow took from its cache; the native directory is
+  the same at both commits. Only section 9 rests on that package, apart
+  from the statements in sections 5 and 7 about which binaries contain
+  Zstandard's dictionary builder and libxml2, which were checked against
+  the native binaries of all three packages. The third package's binaries
+  were built with the toolchains named above (the compiler identification
+  in its Linux libraries and DLLs names the same Bootlin release and the
+  "win32" GCC of the Ubuntu packages), and in addition: the C++ compilers of
+  the Windows x86 and x64 DLLs came from the Ubuntu 24.04 packages
+  g++-mingw-w64-i686-win32 and g++-mingw-w64-x86-64-win32
+  13.2.0-6ubuntu1+26.1, and the macOS library was built with Xcode 26.6,
+  whose libc++ is version 21.1.6 (as the ABI tag of a libc++ function in
+  the library shows). The text copied in section 9 is from GitHub's archive
+  of the pinned lzokay commit, at the address that native/build-config.sh
+  gives, whose SHA-256 checksum matches the one pinned there, and from the
+  libstdc++ headers of the Bootlin toolchain archives and of those Ubuntu
+  packages, checked against Bootlin's published checksums and Ubuntu's
+  signed package index. The objects compiled for the checks in section 9
+  were built by GCC 15.2 (for Linux), MinGW-w64 GCC 16.2 (for Windows x86
+  and x64), Clang 23.1 (for Windows arm64) and Apple Clang 21 with the
+  macOS 27.2 SDK, whose libc++ is version 22.1.6. The earlier release that
+  section 9 uses as an example of libraries built with liblzo2 is 0.3.1.
+  When LZOKAY_COMMIT, native/lzo-shim or a build toolchain changes, repeat
+  the checks that section 9 describes and update this record.
 
 
 Summary
@@ -102,10 +134,10 @@ Summary
    4  XZ Utils (liblzma)      BSD Zero Clause (0BSD)            all
    5  Zstandard (libzstd)     BSD (chosen from BSD or GPLv2)    all
    6  LZ4 (liblz4)            BSD 2-Clause                      all
-   7  libxml2                 MIT                               all
+   7  libxml2                 MIT                               macOS, Windows
    8  Mbed TLS                Apache 2.0 (chosen from           Linux
       (libmbedcrypto)         Apache 2.0 or GPLv2 or later)
-   9  lzokay                  MIT                               all
+   9  lzokay                  MIT; parts as noted               all
   10  musl libc               MIT; parts as noted               Linux
   11  GCC runtime (libgcc)    GPLv3 with GCC Runtime Library    Linux x86;
                               Exception                         Windows x86, x64
@@ -497,9 +529,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 Two files in the "lib" directory, lib/dictBuilder/divsufsort.c and
 lib/dictBuilder/divsufsort.h, are not under the dual licence and carry their
-own notice instead. They are compiled into libzstd.a; whether the linker
-keeps them in the final binaries has not been checked, so the notice is
-reproduced here, from lib/dictBuilder/divsufsort.c, in any case:
+own notice instead. They are compiled into libzstd.a, but none of their code
+is in the native binaries inspected (see below), so the notice is not
+needed for them. It is reproduced here, from lib/dictBuilder/divsufsort.c,
+in case a later build does link that code:
 
 ----- BEGIN zstd: lib/dictBuilder/divsufsort.c (notice) -----
 /*
@@ -528,6 +561,20 @@ reproduced here, from lib/dictBuilder/divsufsort.c, in any case:
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 ----- END zstd: lib/dictBuilder/divsufsort.c (notice) -----
+
+Verified on the binaries inspected (see "How this file is maintained"), in
+all three packages: no code of Zstandard's dictionary builder (the files
+zdict.c, cover.c, fastcover.c and divsufsort.c in lib/dictBuilder) is in
+any of the native binaries. libarchive does not use it, so the linker leaves
+those objects of libzstd.a out. The Linux symbol tables name other source
+files of libzstd, such as zstd_common.c, but none of those four, and
+neither they nor the macOS library define or refer to any name of the
+dictionary builder (ZDICT_, COVER_ and FASTCOVER_ names, divsufsort and
+divbwt, or the ss_ and tr_ helpers of divsufsort.c). The DLLs are stripped,
+so all the binaries were searched instead for the two lookup tables of
+divsufsort.c (lg_table and sqq_table) and for a message each of zdict.c,
+cover.c and fastcover.c. The search finds them in objects compiled for this
+check from those files of the pinned release, and in none of the binaries.
 
 
 ==============================================================================
@@ -593,7 +640,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 7. libxml2
 ==============================================================================
 
-Applies to:  all native binaries (Linux, macOS, Windows)
+Applies to:  macOS and Windows native binaries (not the Linux ones; see
+             the end of this section)
 Source:      https://gitlab.gnome.org/GNOME/libxml2 (release pinned in
              native/build-config.sh)
 Licence:     MIT licence (SPDX identifier: MIT)
@@ -668,6 +716,30 @@ with different Copyright notices". These are their notices:
  * Author: Gary Pennington
  */
 ----- END libxml2: list.c (notice) -----
+
+Linux: this section does not apply. libxml2.a is named on the link commands
+of native/build-linux*.sh, but libarchive uses libxml2 only for its XAR
+format support, which the Linux libraries do not have: they contain the
+stub of libarchive that reports "Xar not supported on this platform", and
+the Linux build scripts configure libarchive with --without-xml2. The
+linker therefore takes nothing from libxml2.a. As none of libxml2's code is
+in the Linux libraries, its notice is not needed for them.
+
+Verified on the binaries inspected (see "How this file is maintained"), in
+all three packages: libxml2 code is inside the macOS library and the three
+DLLs, and not inside any of the Linux libraries. The Linux symbol tables
+define and refer to no libxml2 name (none beginning with "xml" or "html")
+and name no source file of libxml2: the objects taken from libz.a are
+followed directly by those taken from liblzma.a, the libraries on either
+side of libxml2.a on the link command. Each half of the macOS library
+defines over 2,500 libxml2 names, among them xmlTextReaderRead and
+xmlNewTextWriter. The DLLs are stripped, so they were searched instead for
+three strings of libxml2's code: a message of its text writer
+("xmlTextWriterStartDocument : invalid writer!"), an error message of its
+parser ("Extra content at the end of the document") and the XML namespace
+name "http://www.w3.org/XML/1998/namespace". The search finds all three in
+every DLL and in both halves of every macOS library, and none of them in
+any Linux library.
 
 
 ==============================================================================
@@ -1005,15 +1077,31 @@ calls Mbed TLS's mbedtls_version_get_string.
 Applies to:  all native binaries (Linux, macOS, Windows)
 Source:      https://github.com/AxioDL/lzokay (commit pinned in
              native/build-config.sh)
-Licence:     MIT licence (SPDX identifier: MIT)
+Licence:     MIT licence (SPDX identifier: MIT); the code compiled in from
+             the C++ standard library headers is under the terms set out
+             towards the end of this section.
 
 lzokay implements the LZO1X compression format, which libarchive needs to
 read and write lzop data. It is what the liblzo2.a named on the link commands
 is built from: liblzo2 itself, which is under the GNU General Public License,
-is not part of the native binaries. libarchive reaches lzokay through
-interface code in native/lzo-shim, which belongs to this repository and is
-covered by LICENSE.md. lzokay is compiled with the changes in
-native/lzo-shim/lzokay-bounds-checks.patch applied.
+is not part of the native binaries. build_lzo_shim in native/build-lzo-shim.sh
+builds that liblzo2.a from two files: lzokay.cpp of the lzokay source, and
+native/lzo-shim/lzo-shim.cpp, which implements, on top of lzokay, the part
+of the liblzo2 API that libarchive uses, with the headers in
+native/lzo-shim/include. libarchive reaches lzokay only through that
+interface code. The files in native/lzo-shim are this repository's own code
+and, like the rest of it, are under the BSD 2-Clause licence in LICENSE.md,
+the licence that the package metadata names.
+
+lzokay publishes no releases. native/build-config.sh pins a commit
+(LZOKAY_COMMIT) and the SHA-256 checksum of GitHub's archive of that commit
+(LZOKAY_SHA256), which is what the build downloads. Of the files in that
+archive, the build compiles lzokay.cpp, with lzokay's one header, lzokay.hpp;
+the C interface in its lzokay-c directory and its test program are not
+built. The archive has one licence file, LICENSE, reproduced below, and no
+NOTICE file. None of its other files carries a copyright or licence
+statement; lzokay.cpp says only that it is "Based on documentation from the
+Linux sources: Documentation/lzo.txt".
 
 ----- BEGIN lzokay: LICENSE -----
 The MIT License
@@ -1039,19 +1127,246 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ----- END lzokay: LICENSE -----
 
-lzokay and the interface code are C++. The native binaries are not linked
-against a C++ runtime library, and every build script checks that the object
-files need none. They are, however, compiled with the C++ standard library
-headers of each build toolchain: GNU libstdc++ for the Linux binaries and the
-Windows x86 and x64 binaries, LLVM libc++ for the macOS binary and the Windows
-arm64 binary. Code that those headers define inline or as templates is
-compiled into the object files where lzokay uses it. The libstdc++ headers
-are distributed under the GNU General Public License version 3 with the GCC
-Runtime Library Exception, the exception reproduced in section 11. libc++ is
-part of the LLVM project, whose licence is reproduced in section 13. Not
-verified: which header code each compiler leaves in the object files, and
-that the copies of those two texts in sections 11 and 13 match the ones the
-toolchains' C++ libraries were released with.
+The build changes one file of lzokay. Before compiling it, build_lzo_shim
+applies native/lzo-shim/lzokay-bounds-checks.patch to its copy of
+lzokay.cpp. The patch changes three macros, NEEDS_IN, NEEDS_OUT and
+CONSUME_ZERO_BYTE_LENGTH, because as published lzokay's decompressor trusts
+its input too far: its bounds checks compare "pointer + count" with the end
+of a buffer, which can wrap around where pointers are 32 bits wide, and its
+scan over a run of zero bytes does not stop at the end of the input, so that
+a corrupt or hostile lzop stream could make it read or write outside its
+buffers. The patched checks compare the count with the space that is left,
+for the compressor's use of NEEDS_OUT as well, and the scan stops at the end
+of the input. The patch file says this at its head. lzokay.hpp is compiled
+unchanged.
+
+C++ standard library headers. lzokay.cpp and lzo-shim.cpp are C++, and
+build_lzo_shim compiles them with -fno-exceptions -fno-rtti
+-fno-threadsafe-statics and hidden visibility. The native binaries are not
+linked against a C++ runtime library, and every build script checks that the
+two object files need none. The files do include headers of the C++
+standard library: lzokay.hpp includes <cstddef>, <cstdint> and <memory>,
+lzokay.cpp adds <cstring>, <algorithm> and <iterator>, and lzo-shim.cpp adds
+<new>. lzokay.cpp uses the function templates std::fill, std::fill_n,
+std::copy_n, std::min, std::mismatch, std::begin and std::end, and
+lzo-shim.cpp uses placement new, so code from those headers is compiled into
+the two objects. That is code compiled from the headers, not code of a C++
+runtime library such as libstdc++.a or libc++.a, none of which is in the
+binaries (see below). Each build compiles the two files with the headers of
+the C++ library of its own toolchain:
+
+    Linux               GNU libstdc++ of the Bootlin toolchain
+    Windows x86, x64    GNU libstdc++ of the Ubuntu packages
+                        g++-mingw-w64-i686-win32 and
+                        g++-mingw-w64-x86-64-win32
+    Windows arm64       LLVM libc++ of LLVM-MinGW
+    macOS               LLVM libc++ of the macOS SDK of Apple's Xcode
+
+To find out which header code that is, the two files were compiled for this
+check, with the build's flags and with the headers of each of those
+toolchains (for Linux with x86-64, i686 and aarch64 compilers; for macOS
+with the headers of a newer SDK, see below), and the line tables of the
+resulting objects were read. They attribute code to these headers:
+
+* libstdc++ (the headers of both toolchains): bits/stl_algobase.h (std::min,
+  std::fill, std::fill_n, std::mismatch and the helpers that std::copy_n
+  calls), bits/stl_algo.h (std::copy_n), bits/stl_pair.h (the std::pair that
+  std::mismatch returns) and bits/predefined_ops.h in the object of
+  lzokay.cpp; <new> (placement new) in that of lzo-shim.cpp, except for
+  aarch64; and, with the Bootlin headers, bits/range_access.h (std::end).
+* libc++ of LLVM-MinGW: __algorithm/mismatch.h, fill_n.h, comp.h and
+  copy_move_common.h, and __string/constexpr_c_functions.h.
+* libc++ of the macOS SDK: the same headers and, for its std::mismatch,
+  which is vectorised, __algorithm/simd_utils.h, __algorithm/unwrap_iter.h
+  and __bit/countr.h.
+
+The libstdc++ headers are under the GNU General Public License version 3 or
+later with the GCC Runtime Library Exception version 3.1, as each of them
+says. The exception is reproduced in section 11, where its text is compared
+with the COPYING.RUNTIME files of the GCC releases of both toolchains. This
+file relies on that exception for the code that GCC compiles from these
+headers, as it does for libgcc. Three of the headers, bits/stl_algobase.h,
+bits/stl_algo.h and bits/stl_pair.h, also carry two older notices, of the
+Hewlett-Packard Company and of Silicon Graphics Computer Systems, Inc. Each
+grants permission on condition that the copyright notice appear in all
+copies and that it and the permission notice appear in supporting
+documentation. They are reproduced below as the headers of the Bootlin
+toolchains have them; the headers of the Ubuntu packages have the same
+text. The three differ only in the years of the Silicon Graphics
+copyright.
+
+----- BEGIN libstdc++: bits/stl_algobase.h (notice) -----
+/*
+ *
+ * Copyright (c) 1994
+ * Hewlett-Packard Company
+ *
+ * Permission to use, copy, modify, distribute and sell this software
+ * and its documentation for any purpose is hereby granted without fee,
+ * provided that the above copyright notice appear in all copies and
+ * that both that copyright notice and this permission notice appear
+ * in supporting documentation.  Hewlett-Packard Company makes no
+ * representations about the suitability of this software for any
+ * purpose.  It is provided "as is" without express or implied warranty.
+ *
+ *
+ * Copyright (c) 1996-1998
+ * Silicon Graphics Computer Systems, Inc.
+ *
+ * Permission to use, copy, modify, distribute and sell this software
+ * and its documentation for any purpose is hereby granted without fee,
+ * provided that the above copyright notice appear in all copies and
+ * that both that copyright notice and this permission notice appear
+ * in supporting documentation.  Silicon Graphics makes no
+ * representations about the suitability of this software for any
+ * purpose.  It is provided "as is" without express or implied warranty.
+ */
+----- END libstdc++: bits/stl_algobase.h (notice) -----
+
+----- BEGIN libstdc++: bits/stl_algo.h (notice) -----
+/*
+ *
+ * Copyright (c) 1994
+ * Hewlett-Packard Company
+ *
+ * Permission to use, copy, modify, distribute and sell this software
+ * and its documentation for any purpose is hereby granted without fee,
+ * provided that the above copyright notice appear in all copies and
+ * that both that copyright notice and this permission notice appear
+ * in supporting documentation.  Hewlett-Packard Company makes no
+ * representations about the suitability of this software for any
+ * purpose.  It is provided "as is" without express or implied warranty.
+ *
+ *
+ * Copyright (c) 1996
+ * Silicon Graphics Computer Systems, Inc.
+ *
+ * Permission to use, copy, modify, distribute and sell this software
+ * and its documentation for any purpose is hereby granted without fee,
+ * provided that the above copyright notice appear in all copies and
+ * that both that copyright notice and this permission notice appear
+ * in supporting documentation.  Silicon Graphics makes no
+ * representations about the suitability of this software for any
+ * purpose.  It is provided "as is" without express or implied warranty.
+ */
+----- END libstdc++: bits/stl_algo.h (notice) -----
+
+----- BEGIN libstdc++: bits/stl_pair.h (notice) -----
+/*
+ *
+ * Copyright (c) 1994
+ * Hewlett-Packard Company
+ *
+ * Permission to use, copy, modify, distribute and sell this software
+ * and its documentation for any purpose is hereby granted without fee,
+ * provided that the above copyright notice appear in all copies and
+ * that both that copyright notice and this permission notice appear
+ * in supporting documentation.  Hewlett-Packard Company makes no
+ * representations about the suitability of this software for any
+ * purpose.  It is provided "as is" without express or implied warranty.
+ *
+ *
+ * Copyright (c) 1996,1997
+ * Silicon Graphics Computer Systems, Inc.
+ *
+ * Permission to use, copy, modify, distribute and sell this software
+ * and its documentation for any purpose is hereby granted without fee,
+ * provided that the above copyright notice appear in all copies and
+ * that both that copyright notice and this permission notice appear
+ * in supporting documentation.  Silicon Graphics makes no
+ * representations about the suitability of this software for any
+ * purpose.  It is provided "as is" without express or implied warranty.
+ */
+----- END libstdc++: bits/stl_pair.h (notice) -----
+
+The libc++ headers of LLVM-MinGW and of the macOS SDK each say that they are
+"Part of the LLVM Project, under the Apache License v2.0 with LLVM
+Exceptions". That licence and its exceptions are reproduced in section 13,
+as the first part of compiler-rt's licence file, and that part is identical
+to the same part of the LLVM licence file in the LLVM-MinGW release. The
+first of the exceptions allows portions of the software that compiling
+embeds into an object form to be redistributed in that form without
+complying with sections 4(a), 4(b) and 4(d) of the Apache License.
+
+Verified on the binaries inspected (see "How this file is maintained"):
+lzokay and the interface code are inside every native binary, the four
+Linux libraries, both halves of the macOS library and the three DLLs, and
+none of their symbols is exported.
+
+* Linux (all four; the linux-musl-* files are identical copies): the symbol
+  tables name the objects lzo-shim.cpp and lzokay.cpp, one after the other,
+  between those of liblzma and libzstd, the libraries before and after
+  liblzo2.a on the link command. Each library defines lzokay::decompress,
+  lzokay::compress, lzokay::DictImpl::advance and the static function
+  encode_literal_run, which lzokay.cpp defines, and lzo_init, lzo_version,
+  lzo_version_string, lzo_adler32, lzo1x_decompress_safe, lzo1x_1_compress,
+  lzo1x_1_15_compress, lzo1x_999_compress_level, a function compress in an
+  anonymous namespace and a lookup table, which lzo-shim.cpp defines, as the
+  objects compiled for this check show. All of them are local to the
+  library: the only exported names that contain "lzo" are libarchive's own
+  archive_liblzo2_version, archive_read_support_filter_lzop and
+  archive_write_add_filter_lzop. In the x86 library these 13 functions are
+  identical to those of the objects compiled for this check with the
+  headers of the Bootlin toolchain, apart from the bytes that the linker
+  fills in, so that library contains exactly the libstdc++ header code
+  listed above. For the x64 and arm64 libraries the compilers used for this
+  check make slightly different code for some of the functions (9 and 6 of
+  the 13 are identical in the same way), and the arm library was not
+  compared, as no compiler for it was at hand.
+* macOS (both halves): the same functions of lzokay.cpp, apart from the
+  static one, and the eight functions with lzo names, none of them exported
+  (nm describes each as "was a private external"); kEndOfStream, a constant
+  of lzo-shim.cpp; and, among lzokay's functions, one more:
+  std::__1::__mismatch_vectorized for unsigned char pointers, instantiated
+  from libc++'s __algorithm/mismatch.h; its ABI tag records the version of
+  that libc++ (see "How this file is maintained"). The object of lzokay.cpp
+  compiled for this check defines the same function, with the tag of the
+  newer libc++ of its SDK. The only exported names that contain "lzo" are
+  libarchive's own, as on Linux.
+* Windows (all three DLLs): the DLLs are stripped, so they were searched
+  instead for three things: the string "lzokay-shim", which lzo-shim.cpp
+  returns as the liblzo2 version; the 24-byte table of LZO error codes that
+  the compilers make of its switch statement; and lzokay's hash multiplier
+  0x9f5f as the operand of a multiply instruction (x86, x64) or of a move
+  instruction (arm, arm64). The search finds all three in every Linux library
+  and in both halves of the macOS library: the table where the Linux symbol
+  tables put the lookup table of lzo-shim.cpp and, in the macOS library,
+  directly after kEndOfStream, and the multiplier three to five times, only
+  inside lzokay::DictImpl::advance. It finds them in each DLL: the string
+  twice (libarchive's version report keeps a copy of its own), the table once,
+  directly after one copy of the string as in the objects of lzo-shim.cpp, and
+  the multiplier four times within 1.6 KB of code.
+* None of the binaries contains liblzo2. The Linux and macOS libraries
+  define none of the names that only liblzo2 defines (such as
+  __lzo_init_v2, _lzo_config_check or lzo1x_999_compress_internal), and
+  none of the binaries contains "Mar 01 2017", the date that liblzo2's
+  lzo_version_date returns, which the search finds in the Linux libraries
+  of an earlier release of this package, built with liblzo2 (see "How this
+  file is maintained").
+* No code of a C++ runtime library is inside the binaries. The Linux and
+  macOS libraries neither define nor refer to any symbol of libstdc++,
+  libsupc++, libc++, libc++abi or libunwind (no operator new or delete, no
+  __cxa_ or _Unwind_ routine, no type information), apart from the header
+  template in the macOS library described above and __cxa_atexit, which the
+  macOS library takes from /usr/lib/libSystem.B.dylib and already referred
+  to before lzokay was added. The Linux libraries name no source file of
+  those libraries and have no run-time dependencies; the macOS library
+  depends only on /usr/lib/libiconv.2.dylib and libSystem. The DLLs contain
+  none of the type information names St9bad_alloc, St9exception and
+  N10__cxxabiv117__class_type_infoE, nor the messages of the terminate
+  handler of libsupc++ or of libunwind and libc++abi; the search finds each
+  of them in one or more of the runtime libraries of the Windows toolchains
+  (libstdc++.a and libsupc++.a of the Ubuntu packages; libc++.a,
+  libc++abi.a and libunwind.a of LLVM-MinGW).
+
+Not verified: that the code of the other Linux libraries, of the DLLs and of
+the macOS library is exactly what their own build compilers make of the two
+files and the headers named above; only in the Linux x86 library were all of
+the functions found identical. The SDK of the Xcode that built the macOS
+library was not available for this check: what is said above of its libc++
+headers rests on the newer SDK that was read instead and on the ABI tag in the
+library. As section 13 says, the LLVM-MinGW download is not pinned by a
+checksum.
 
 
 ==============================================================================
