@@ -101,6 +101,8 @@ The package is annotated with trim analysis attributes to ensure safe trimming b
   - zlib 1.3.1
   - xz 5.4.6
   - bzip2 1.0.8
+- **Cryptography library included (Linux only)**:
+  - mbedTLS 3.6.8 (its crypto library only, for ZIP AES encryption and digests; the macOS and Windows libraries use the operating system's cryptography instead)
 
 ### License
 
