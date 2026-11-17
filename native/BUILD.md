@@ -7,7 +7,7 @@ This directory contains the unified build system for building libarchive native 
 The build system consists of:
 - **build-config.sh**: Central configuration file with all library versions and URLs
 - **build-lzo-shim.sh**: Builds and verifies lzop support from lzokay (see "lzop support" below)
-- **build-linux.sh**, **build-linux-x86.sh**, **build-linux-arm.sh**, **build-linux-arm64.sh**: Linux x64, x86, ARMv7 and ARM64 build scripts (using musl-libc)
+- **build-linux.sh**, **build-linux-arm.sh**, **build-linux-arm64.sh**: Linux x64, ARMv7 and ARM64 build scripts (using musl-libc)
 - **build-linux-common.sh**: Steps shared by the Linux scripts: the mbedTLS build, the final link, and the checks and load tests of the linked library
 - **build-macos.sh**: macOS universal binary build script (x86_64 + arm64)
 - **build-windows.sh**: Windows build script (x86, x64, arm64 via MinGW)
@@ -86,7 +86,7 @@ This will automatically detect your platform and build the appropriate libraries
 
 ## Platform-Specific Requirements
 
-### Linux (x64, x86, ARMv7, ARM64)
+### Linux (x64, ARMv7, ARM64)
 
 **Requirements:**
 - An x86-64 Linux build machine (the Bootlin toolchains are x86-64 Linux programs)
@@ -109,13 +109,13 @@ linked into it, so the same file loads in glibc and musl processes.
 - All dependencies are statically linked
 - Build time: ~20-30 minutes (the musl toolchain is a Bootlin prebuilt release, downloaded rather than built)
 
-**How the library is linked and tested** (all four Linux scripts use the functions
+**How the library is linked and tested** (all three Linux scripts use the functions
 in `build-linux-common.sh`):
 - `link_libarchive` links all of `libarchive.a` with the other static libraries,
   the toolchain's own `libgcc.a` (`$CC -print-libgcc-file-name`) and musl's static
   `libc.a`, with `-nostdlib`. No shared library is linked, not even `libgcc_s`.
   libgcc supplies the helper routines that compiled code calls (integer division on
-  x86 and ARMv7, 128-bit floating point on ARM64). musl's `libc.a` calls those
+  ARMv7, 128-bit floating point on ARM64). musl's `libc.a` calls those
   helpers and libgcc calls back into `libc.a`, so the archives are linked as one
   `--start-group`/`--end-group`. `-Wl,-z,defs` makes the link fail on any strong
   (non-weak) unresolved symbol: the toolchain links with `-z now` (BIND_NOW), so such
@@ -126,8 +126,8 @@ in `build-linux-common.sh`):
   zstd's optional `ZSTD_trace_*` hooks, are allowed: they resolve to null.
 - `test_load_musl` builds a small dynamically linked musl program with the target
   toolchain and runs it with the musl dynamic loader from the toolchain's sysroot,
-  so that the process contains nothing but musl and the library: natively for x64
-  and x86, and under QEMU user-mode emulation for ARMv7 and ARM64. The program
+  so that the process contains nothing but musl and the library: natively for x64,
+  and under QEMU user-mode emulation for ARMv7 and ARM64. The program
   loads `./libarchive.so` with `RTLD_NOW`, calls a few of its functions (including
   reading an empty archive) and fails the build on any error. If QEMU is missing,
   the ARMv7 and ARM64 tests fail the build under GitHub Actions and are skipped
@@ -230,7 +230,7 @@ The GitHub Actions workflow (`.github/workflows/build.yml`) uses these scripts:
 
 1. **macOS job**: Runs `build-macos.sh`, uploads `libarchive.dylib`
 2. **native job** (one job per target, on Linux):
-   - Runs `build-linux.sh`, `build-linux-x86.sh`, `build-linux-arm.sh` and `build-linux-arm64.sh`
+   - Runs `build-linux.sh`, `build-linux-arm.sh` and `build-linux-arm64.sh`
    - Runs `build-windows.sh` for x86, x64 and arm64
    - Uploads each library
 3. **package job**:
