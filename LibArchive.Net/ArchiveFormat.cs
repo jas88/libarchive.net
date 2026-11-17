@@ -7,13 +7,15 @@ public enum ArchiveFormat
 {
     /// <summary>
     /// ZIP format - widely supported, moderate compression.
-    /// Supports encryption (AES-128, AES-192, AES-256, Traditional PKWARE).
+    /// Supports encryption (AES-128, AES-256, Traditional PKWARE): the only format libarchive can encrypt.
+    /// AES-192 cannot be written (see <see cref="EncryptionType.AES192"/>).
     /// </summary>
     Zip,
 
     /// <summary>
     /// 7-Zip format - excellent compression ratio.
-    /// Supports AES-256 encryption.
+    /// No encryption: libarchive cannot encrypt 7-Zip archives, so a password with this format throws
+    /// <see cref="System.NotSupportedException"/> unless the encryption type is <see cref="EncryptionType.None"/>.
     /// </summary>
     SevenZip,
 
@@ -45,6 +47,15 @@ public enum ArchiveFormat
 
     /// <summary>
     /// XAR (eXtensible Archive) format - Used by macOS installers.
+    /// Not available on Linux.
     /// </summary>
+    /// <remarks>
+    /// libarchive's XAR support needs an XML library, and the Linux native libraries are built without one
+    /// (libarchive is configured with --without-xml2 --without-expat). On Linux, creating a
+    /// <see cref="LibArchiveWriter"/> with this format throws <see cref="System.ApplicationException"/>
+    /// ("Xar not supported on this platform") before anything is written, and opening a XAR archive with
+    /// <see cref="LibArchiveReader"/> throws <see cref="System.ApplicationException"/>
+    /// ("Unrecognized archive format").
+    /// </remarks>
     Xar,
 }
