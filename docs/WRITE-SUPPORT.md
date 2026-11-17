@@ -366,6 +366,10 @@ try
     using var writer = new LibArchiveWriter("archive.zip", ArchiveFormat.Zip);
     writer.AddDirectory(@"C:\Data");
 }
+catch (DirectoryNotFoundException ex)
+{
+    Console.WriteLine($"Directory not found: {ex.Message}");
+}
 catch (FileNotFoundException ex)
 {
     Console.WriteLine($"File not found: {ex.Message}");

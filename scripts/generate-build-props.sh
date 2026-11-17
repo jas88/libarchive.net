@@ -33,9 +33,10 @@ MAX_MAJOR=$(echo "$MAX_VERSION" | cut -d. -f1)
 
 echo "Detected .NET SDK maximum version: $MAX_VERSION (major: $MAX_MAJOR)"
 
-# Determine minimum supported major version based on SDK version
-# .NET 8 LTS until Nov 2026, .NET 10 LTS until Nov 2028
-# We support: current LTS (8) through current SDK version
+# Determine the oldest .NET major version to target from the SDK's major version. The library targets
+# netstandard2.0 plus net${MIN_MAJOR}.0 through net${MAX_MAJOR}.0, meant to be every .NET version that is
+# not end-of-life (end of support: .NET 8 LTS Nov 2026, .NET 10 LTS Nov 2028). For example, the .NET 11
+# SDK gives net10.0;net11.0. An SDK major version missing from this table targets only its own version.
 if [ "$MAX_MAJOR" -eq 9 ] || [ "$MAX_MAJOR" -eq 10 ]; then
     MIN_MAJOR=8
 elif [ "$MAX_MAJOR" -eq 11 ] || [ "$MAX_MAJOR" -eq 12 ]; then
