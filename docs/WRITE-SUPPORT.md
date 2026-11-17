@@ -15,7 +15,14 @@ LibArchive.Net now provides comprehensive write support for creating archives in
 - **PAX** - Modern TAR with Unicode support
 - **CPIO** - Unix archive format
 - **ISO 9660** - CD-ROM filesystem
-- **XAR** - macOS package format
+- **XAR** - macOS package format (not on Linux, see below)
+
+XAR is not available on Linux. libarchive's XAR support needs an XML library, and the Linux native
+libraries are built without one (`native/build-linux*.sh` configure libarchive with
+`--without-xml2 --without-expat`). On Linux, creating a writer for `ArchiveFormat.Xar` throws
+`ApplicationException` ("Xar not supported on this platform") before anything is written, and XAR
+archives cannot be read either. The Windows and macOS native libraries are built with libxml2 and
+support XAR.
 
 ### ✅ Compression Algorithms
 
@@ -27,6 +34,10 @@ LibArchive.Net now provides comprehensive write support for creating archives in
 - **Zstd** - Modern, excellent balance (.zst)
 - **Compress** - Legacy Unix (.Z)
 - **LZIP** - LZMA with integrity checking (.lz)
+
+The compression type is a filter applied to the whole archive, as in `.tar.gz`. ZIP and 7-Zip compress
+their contents themselves, so they need no filter: leave `compression` at `CompressionType.None`.
+`CompressionType.Deflate` is not a filter, and the writer throws `NotSupportedException` for it.
 
 ### ✅ Encryption Support
 
@@ -40,20 +51,26 @@ type is `EncryptionType.None`, which ignores the password and writes an unencryp
 
 ### ✅ Zero-Copy I/O Optimization
 
-Performance is optimized for each .NET version:
+`AddFile`, `AddFiles` and `AddDirectory` read each file in one of these ways, depending on its size and on
+which build of the package the application uses:
 
-| File Size | .NET Standard 2.0 | .NET 6-8 | .NET 9 |
-|-----------|------------------|----------|---------|
-| < 85 KB | ArrayPool | ArrayPool | **stackalloc** ⚡ |
-| 85 KB - 2 MB | ArrayPool | ArrayPool | **Span + RandomAccess** ⚡ |
-| 2 MB - 64 MB | FileStream | Memory-mapped | **Chunked RandomAccess** |
-| > 64 MB | FileStream | Memory-mapped ⚡ | Memory-mapped ⚡ |
+| File Size | .NET Standard 2.0 build | .NET builds |
+|-----------|-------------------------|-------------|
+| Up to 85,000 bytes | FileStream + ArrayPool | **stackalloc + RandomAccess** ⚡ |
+| 85,000 bytes - 2 MiB | FileStream + ArrayPool | **ArrayPool + RandomAccess** ⚡ |
+| 2 MiB - 64 MiB | FileStream + ArrayPool | FileStream + ArrayPool |
+| 64 MiB and over | Memory-mapped ⚡ | Memory-mapped ⚡ |
+
+The .NET builds are the package's target frameworks other than .NET Standard 2.0 (see .NET Targets
+below). Applications on .NET Framework, and on .NET versions that have no build of their own, use the
+.NET Standard 2.0 build.
 
 ## Basic Usage
 
 ### Creating a Simple Archive
 
 ```csharp
+using System.Text;
 using LibArchive.Net;
 
 // Create a ZIP archive
@@ -169,8 +186,7 @@ byte[] archiveBytes = memoryStream.ToArray();
 using var fileStream = File.Create("output.7z");
 using var writer = new LibArchiveWriter(
     fileStream,
-    ArchiveFormat.SevenZip,
-    compression: CompressionType.LZMA);
+    ArchiveFormat.SevenZip);
 
 writer.AddDirectory(@"C:\Data");
 ```
@@ -181,10 +197,7 @@ writer.AddDirectory(@"C:\Data");
 // Create archive in memory
 byte[] archiveBytes;
 
-using (var writer = LibArchiveWriter.CreateMemoryWriter(
-    ArchiveFormat.Zip,
-    compression: CompressionType.Deflate,
-    compressionLevel: 6))
+using (var writer = LibArchiveWriter.CreateMemoryWriter(ArchiveFormat.Zip))
 {
     writer.AddEntry("file1.txt", data1);
     writer.AddEntry("file2.txt", data2);
@@ -208,6 +221,9 @@ return File(archiveBytes, "application/zip", "download.zip");
 
 ### 2. Compression Level Guidelines
 
+The level applies to the compression filter only: with `CompressionType.None` it has no effect, so it does
+not change how ZIP or 7-Zip compress their contents.
+
 ```csharp
 // Fast compression (level 1-3)
 compressionLevel: 1  // Fastest, larger files
@@ -221,22 +237,20 @@ compressionLevel: 9  // Slowest, smallest files
 
 ### 3. Batch Operations
 
-```csharp
-// ✅ Good: Single call with IEnumerable
-writer.AddFiles(fileInfos);
+`AddFiles` is not faster than calling `AddFile` for each file: both write each file the same way.
+`AddFiles` adds progress reporting and path mapping:
 
-// ❌ Avoid: Multiple individual calls
-foreach (var file in fileInfos)
-    writer.AddFile(file.FullName);
+```csharp
+writer.AddFiles(fileInfos, progress: progress);
 ```
 
-### 4. .NET 9 Performance
+### 4. Small Files in the .NET Builds
 
-On .NET 9, files < 85 KB use stackalloc for maximum performance:
+In the .NET builds, files of up to 85,000 bytes use stackalloc for maximum performance:
 
 ```csharp
-// Optimal for many small files on .NET 9
-writer.AddFiles(smallConfigFiles);  // Each < 85 KB
+// Optimal for many small files in the .NET builds
+writer.AddFiles(smallConfigFiles);  // Each up to 85,000 bytes
 ```
 
 ## Security Considerations
@@ -309,9 +323,7 @@ var progress = new Progress<FileProgress>(p =>
 
 using var writer = new LibArchiveWriter(
     backupFile,
-    ArchiveFormat.SevenZip,
-    compression: CompressionType.LZMA,
-    compressionLevel: 9);
+    ArchiveFormat.SevenZip);
 
 writer.AddDirectory(
     @"C:\ImportantData",
@@ -329,10 +341,8 @@ void ExportData(string outputPath, ArchiveFormat format)
 {
     var compression = format switch
     {
-        ArchiveFormat.Zip => CompressionType.Deflate,
-        ArchiveFormat.SevenZip => CompressionType.LZMA,
         ArchiveFormat.Tar => CompressionType.Gzip,
-        _ => CompressionType.None
+        _ => CompressionType.None  // ZIP and 7-Zip compress their contents themselves
     };
 
     using var writer = new LibArchiveWriter(outputPath, format, compression);
@@ -421,10 +431,10 @@ void AddDirectory(
 
 ## .NET Targets
 
-- .NET Standard 2.0
-- .NET 6.0
-- .NET 8.0
-- .NET 9.0
+- .NET Standard 2.0, used on .NET Framework 4.6.1 and later, and on .NET versions that have no build of
+  their own
+- A build for each current .NET version: `scripts/generate-build-props.sh` derives the list from the
+  .NET SDK that `global.json` selects, and writes it to `LibArchive.Net/Directory.Build.props`
 
 ## License
 
