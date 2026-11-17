@@ -52,7 +52,7 @@ and stops. Setting `DRY_RUN=0` enables steps 3 and 4.
 `native/build-config.sh` is the only file the script edits or commits. Neither the
 script nor the workflow merges the pull request.
 
-The script exits 1 if a required tool is missing, if it cannot create its
+The script exits 1 if a required tool is missing, if it cannot create or write its
 temporary files or write `native/build-config.sh`, if the pull request lookup in
 step 1 fails outside a dry run, if a `git` or `gh` command in step 4 fails, or if
 any check failed, an update that could not be applied included. In the last case

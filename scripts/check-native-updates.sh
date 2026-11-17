@@ -22,9 +22,10 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 UPDATES_FILE="$WORK_DIR/updates"   # name|old|new: every update found
 APPLIED_FILE="$WORK_DIR/applied"   # name|old|new: updates written to build-config.sh
 FAILED_CHECKS="$WORK_DIR/failed"   # name|reason: every failed check, failed updates included
-: > "$UPDATES_FILE"
-: > "$APPLIED_FILE"
-: > "$FAILED_CHECKS"
+if ! : > "$UPDATES_FILE" || ! : > "$APPLIED_FILE" || ! : > "$FAILED_CHECKS"; then
+    echo -e "${RED}Error: could not create the temporary files in $WORK_DIR${NC}"
+    exit 1
+fi
 
 # Check for required tools
 for cmd in curl jq gh git; do
@@ -40,9 +41,15 @@ read_current_version() {
     grep "^${var_name}=" "$CONFIG_FILE" | sed 's/^[^=]*="\([^"]*\)"/\1/'
 }
 
+# Append a line to one of the temporary files. A lost line would be a lost update or
+# a lost failed check, so a failed write stops the script.
+add_line() {
+    printf '%s\n' "$2" >> "$1" || { echo -e "${RED}Error: could not write $1${NC}"; exit 1; }
+}
+
 # Record a failed check: the library's name and why it failed
 record_failure() {
-    echo "$1|$2" >> "$FAILED_CHECKS"
+    add_line "$FAILED_CHECKS" "$1|$2"
 }
 
 # List the failed checks recorded so far
@@ -346,7 +353,7 @@ check_dependency() {
 
     if version_gt "$latest" "$current"; then
         echo -e " ${YELLOW}⚠️  UPDATE AVAILABLE${NC}"
-        echo "$name|$current|$latest" >> "$UPDATES_FILE"
+        add_line "$UPDATES_FILE" "$name|$current|$latest"
         return 0
     else
         echo -e " ${GREEN}✓${NC}"
@@ -464,7 +471,7 @@ echo ""
 while IFS='|' read -r name old new; do
     echo "Updating $name: $old -> $new"
     if update_version "$name" "$old" "$new"; then
-        echo "$name|$old|$new" >> "$APPLIED_FILE"
+        add_line "$APPLIED_FILE" "$name|$old|$new"
     fi
 done < "$UPDATES_FILE"
 
