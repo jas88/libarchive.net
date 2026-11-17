@@ -60,6 +60,8 @@ This will automatically detect your platform and build the appropriate libraries
 ./build-all.sh --all --package
 ```
 
+`--linux` builds all four Linux libraries (x64, x86, ARMv7, ARM64). `--all` builds each platform the machine can build (Linux and Windows on Linux, macOS on macOS), skips the others with a warning, and creates the package. `--package` packs version `$PACKAGE_VERSION`, or `0.0.0-dev` if it is not set (for example `PACKAGE_VERSION=1.2.3 ./build-all.sh --package`), into the repository root.
+
 ## Platform-Specific Requirements
 
 ### Linux (x86-64)
@@ -136,6 +138,18 @@ LibArchive.Net/runtimes/
 ├── linux-x64/native/
 │   └── libarchive.so
 ├── linux-musl-x64/native/
+│   └── libarchive.so
+├── linux-x86/native/
+│   └── libarchive.so
+├── linux-musl-x86/native/
+│   └── libarchive.so
+├── linux-arm/native/
+│   └── libarchive.so
+├── linux-musl-arm/native/
+│   └── libarchive.so
+├── linux-arm64/native/
+│   └── libarchive.so
+├── linux-musl-arm64/native/
 │   └── libarchive.so
 ├── osx-x64/native/
 │   └── libarchive.dylib
@@ -227,8 +241,8 @@ Also add it to the update checker: see "Adding a library" in [scripts/README.md]
 # Full test (requires appropriate OS or VMs)
 ./build-all.sh --all --package
 
-# Verify NuGet package contents
-unzip -l LibArchive.Net.*.nupkg | grep runtimes
+# Verify NuGet package contents (build-all.sh writes it to the repository root)
+unzip -l ../LibArchive.Net.*.nupkg | grep runtimes
 ```
 
 ### Cleaning Build Artifacts
