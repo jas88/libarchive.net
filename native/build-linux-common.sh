@@ -55,12 +55,12 @@ build_mbedtls() {
 # One pass over libgcc.a and then libc.a, as the x86 build used to link them, left the
 # __divmoddi4 that libc.a's lldiv needs undefined.
 #
-# -z defs makes the link fail on any unresolved symbol. Without it ld leaves the symbol
-# to be found when the library is loaded, and since the toolchain links with -z now
-# (BIND_NOW) and the library names no other library, the library then fails to load in
-# any process that does not happen to define that symbol itself. Weak references, such
-# as zstd's optional ZSTD_trace_* hooks, are still allowed: they resolve to null when
-# nothing defines them.
+# -z defs makes the link fail on any strong (non-weak) unresolved symbol. Without it ld
+# leaves the symbol to be found when the library is loaded, and since the toolchain
+# links with -z now (BIND_NOW) and the library names no other library, the library then
+# fails to load in any process that does not happen to define that symbol itself. Weak
+# references, such as zstd's optional ZSTD_trace_* hooks, are still allowed: they
+# resolve to null when nothing defines them.
 #
 # To link another static library, add it to the archive list below.
 # Usage: link_libarchive <library>
