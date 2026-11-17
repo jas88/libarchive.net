@@ -197,11 +197,15 @@ jobs:
         if: steps.native-cache.outputs.cache-hit != 'true' && matrix.kind == 'windows'
         run: |
           case "${{ matrix.arch }}" in
-            x86)   CC=i686-w64-mingw32-gcc ;;
-            x64)   CC=x86_64-w64-mingw32-gcc ;;
-            arm64) CC=aarch64-w64-mingw32-gcc ;;
+            x86)   PREFIX=i686-w64-mingw32 ;;
+            x64)   PREFIX=x86_64-w64-mingw32 ;;
+            arm64) PREFIX=aarch64-w64-mingw32 ;;
           esac
-          which "$CC" "${CC%gcc}g++"
+          # build-windows.sh uses <prefix>-gcc-win32 and <prefix>-g++-win32 where they
+          # exist and the plain names otherwise; one of each must be present
+          for tool in gcc g++; do
+            command -v "$PREFIX-$tool-win32" || command -v "$PREFIX-$tool"
+          done
       - name: Cache autotools
         id: autotools-cache
         if: steps.native-cache.outputs.cache-hit != 'true'
