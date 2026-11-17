@@ -161,14 +161,14 @@ if [ $BUILD_WINDOWS -eq 1 ]; then
 
         # Build x86
         log_info "Building Windows x86..."
-        rm -rf local-* bzip2-* libarchive-* libxml2-* lz4-* lzo-* xz-* zlib-* zstd-*
+        rm -rf local-* bzip2-* libarchive-* libxml2-* lz4-* lzokay-* xz-* zlib-* zstd-*
         ARCH=i686 ./build-windows.sh
         mkdir -p "$REPO_ROOT/LibArchive.Net/runtimes/win-x86/native"
         cp archive-x86.dll "$REPO_ROOT/LibArchive.Net/runtimes/win-x86/native/archive.dll"
 
         # Build arm64
         log_info "Building Windows arm64..."
-        rm -rf local-* bzip2-* libarchive-* libxml2-* lz4-* lzo-* xz-* zlib-* zstd-*
+        rm -rf local-* bzip2-* libarchive-* libxml2-* lz4-* lzokay-* xz-* zlib-* zstd-*
         ARCH=aarch64 ./build-windows.sh
         mkdir -p "$REPO_ROOT/LibArchive.Net/runtimes/win-arm64/native"
         cp archive-arm64.dll "$REPO_ROOT/LibArchive.Net/runtimes/win-arm64/native/archive.dll"

@@ -6,7 +6,10 @@
 LIBARCHIVE_VERSION="3.8.11"
 LZ4_VERSION="1.11.1"
 ZSTD_VERSION="1.5.7"
-LZO_VERSION="2.10"
+# lzokay (MIT) provides lzop support in place of the GPL-licensed liblzo2: see
+# build-lzo-shim.sh. It has no releases or tags, so it is pinned to a commit - the
+# head of its default branch, which has the fix for building with current compilers.
+LZOKAY_COMMIT="db2df1fcbebc2ed06c10f727f72567d40f06a2be"
 LIBXML2_VERSION="2.15.4"
 ZLIB_VERSION="1.4"
 XZ_VERSION="5.8.4"
@@ -21,7 +24,7 @@ MBEDTLS_VERSION="3.6.8"
 LIBARCHIVE_SHA256="a3dc0872b1b39da34dc18ef1b944f0f11ffd37425d70ae04be679279f1cf43d2"
 LZ4_SHA256="683fed08a844ad012196381e40badf80c0bbe4962959761416d41c9e67d77ec7"
 ZSTD_SHA256="eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3"
-LZO_SHA256="c0f892943208266f9b6543b3ae308fab6284c5c90e627931446fb49b4221a072"
+LZOKAY_SHA256="e5314402b590e656474c0087af1f9d6fac727cb7718011791cdab8a61245a066"
 LIBXML2_SHA256="98087fd181d9070724f3fbc65c7377db03038eb92bd882374daff44940138821"
 ZLIB_SHA256="4f11c512053d7bab8d9e9b89bde3575add3e4c50a383b42ef6cb837035fc5a7c"
 XZ_SHA256="4ce24038fd4221e0d13bc1a2de7a4db56e90b92b3bf75321f6c14be73f65de4b"
@@ -44,7 +47,8 @@ export TOOLCHAIN_ARM64_URL="${TOOLCHAIN_BASE_URL}/aarch64/tarballs/aarch64--musl
 LIBARCHIVE_URL="https://github.com/libarchive/libarchive/releases/download/v${LIBARCHIVE_VERSION}/libarchive-${LIBARCHIVE_VERSION}.tar.xz"
 LZ4_URL="https://github.com/lz4/lz4/archive/refs/tags/v${LZ4_VERSION}.tar.gz"
 ZSTD_URL="https://github.com/facebook/zstd/releases/download/v${ZSTD_VERSION}/zstd-${ZSTD_VERSION}.tar.gz"
-LZO_URL="https://www.oberhumer.com/opensource/lzo/download/lzo-${LZO_VERSION}.tar.gz"
+# GitHub's archive of the pinned commit, which unpacks into lzokay-${LZOKAY_COMMIT}/
+LZOKAY_URL="https://github.com/AxioDL/lzokay/archive/${LZOKAY_COMMIT}.tar.gz"
 # libxml2 URL uses major.minor as directory (e.g., 2.15.1 -> 2.15)
 LIBXML2_MAJOR_MINOR="${LIBXML2_VERSION%.*}"
 LIBXML2_URL="https://download.gnome.org/sources/libxml2/${LIBXML2_MAJOR_MINOR}/libxml2-${LIBXML2_VERSION}.tar.xz"
@@ -290,7 +294,7 @@ download_all_libraries() {
     download_library "$LIBARCHIVE_URL" "libarchive" "libarchive-${LIBARCHIVE_VERSION}" "$LIBARCHIVE_SHA256" || return 1
     download_library "$LZ4_URL" "lz4" "lz4-${LZ4_VERSION}" "$LZ4_SHA256" || return 1
     download_library "$ZSTD_URL" "zstd" "zstd-${ZSTD_VERSION}" "$ZSTD_SHA256" || return 1
-    download_library "$LZO_URL" "lzo" "lzo-${LZO_VERSION}" "$LZO_SHA256" || return 1
+    download_library "$LZOKAY_URL" "lzokay" "lzokay-${LZOKAY_COMMIT}" "$LZOKAY_SHA256" || return 1
     download_library "$LIBXML2_URL" "libxml2" "libxml2-${LIBXML2_VERSION}" "$LIBXML2_SHA256" || return 1
     download_library "$BZIP2_URL" "bzip2" "bzip2-${BZIP2_VERSION}" "$BZIP2_SHA256" || return 1
     download_library "$ZLIB_URL" "zlib" "zlib-${ZLIB_VERSION}" "$ZLIB_SHA256" || return 1
@@ -303,7 +307,6 @@ download_all_libraries() {
     # runs a full, self-consistent autoreconf (libtoolize included).
     normalize_autotools_timestamps "libarchive-${LIBARCHIVE_VERSION}"
     normalize_autotools_timestamps "xz-${XZ_VERSION}"
-    normalize_autotools_timestamps "lzo-${LZO_VERSION}"
 }
 
 # Detect number of CPU cores
@@ -320,7 +323,7 @@ echo "Build configuration loaded:"
 echo "  libarchive: ${LIBARCHIVE_VERSION}"
 echo "  lz4: ${LZ4_VERSION}"
 echo "  zstd: ${ZSTD_VERSION}"
-echo "  lzo: ${LZO_VERSION}"
+echo "  lzokay: ${LZOKAY_COMMIT}"
 echo "  libxml2: ${LIBXML2_VERSION}"
 echo "  zlib: ${ZLIB_VERSION}"
 echo "  xz: ${XZ_VERSION}"

@@ -7,7 +7,7 @@
 
 ## Features
 
-- **Read** archives: ZIP, RAR, 7-Zip, TAR, gzip, bzip2, xz, lzma, lzo, and more
+- **Read** archives: ZIP, RAR, 7-Zip, TAR, gzip, bzip2, xz, lzma, lzop (decoded by [lzokay](https://github.com/AxioDL/lzokay)), and more
 - **Write** archives: ZIP, 7-Zip, TAR, Ustar, PAX, CPIO, ISO 9660, XAR
 - **Compression**: Gzip, Bzip2, XZ, LZMA, LZ4, Zstd, Compress, LZIP
 - **Encryption**: ZIP only. Writing supports AES-128, AES-256 and traditional PKWARE; reading also handles AES-192. 7-Zip encryption is not supported by libarchive

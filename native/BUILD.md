@@ -6,6 +6,7 @@ This directory contains the unified build system for building libarchive native 
 
 The build system consists of:
 - **build-config.sh**: Central configuration file with all library versions and URLs
+- **build-lzo-shim.sh**: Builds and verifies lzop support from lzokay (see "lzop support" below)
 - **build-linux.sh**: Linux x86-64 build script (using musl-libc)
 - **build-macos.sh**: macOS universal binary build script (x86_64 + arm64)
 - **build-windows.sh**: Windows build script (x86, x64, arm64 via MinGW)
@@ -20,7 +21,7 @@ The libraries are:
 - libarchive
 - lz4
 - zstd
-- lzo
+- lzokay (lzop support)
 - libxml2
 - zlib
 - xz (liblzma)
@@ -32,6 +33,23 @@ mbedTLS is built and statically linked by the Linux scripts only, as a minimal
 encryption and digest support. Windows (CNG) and macOS (CommonCrypto) use the
 operating system's crypto instead. It is pinned to the 3.6 LTS line because
 libarchive cannot build against mbedTLS 4.
+
+### lzop support
+
+libarchive's lzop filters are written against liblzo2, which is GPL-licensed and is therefore not
+linked in. `build-lzo-shim.sh` builds a stand-in `liblzo2.a` instead, from
+[lzokay](https://github.com/AxioDL/lzokay) (MIT) and the sources in `lzo-shim/`, which implement the
+part of the liblzo2 API that libarchive uses. libarchive's own `--with-lzo2` configure checks find
+it, so libarchive itself is not patched.
+
+- lzokay has no releases, so `build-config.sh` pins a commit (`LZOKAY_COMMIT`) and the checksum of
+  GitHub's archive of it. `lzo-shim/lzokay-bounds-checks.patch` is applied to it, because its
+  decompressor does not check its input fully; re-check the patch whenever the pin moves.
+- The shim is C++, so every build needs a C++ compiler (`CXX`) and the `patch` program. It is
+  compiled so that it needs no C++ runtime, because the Linux libraries are linked without one.
+- Every build script fails if lzop support did not reach the library it linked
+  (`verify_lzo_support`). The Linux scripts also fail if the shim left a symbol unresolved
+  (`verify_lzo_shim_resolved`), since such a library would link but never load.
 
 ## Quick Start
 
@@ -103,7 +121,7 @@ This will automatically detect your platform and build the appropriate libraries
 - Linux build machine
 - MinGW-w64 cross-compiler toolchain
   - Ubuntu/Debian: `sudo apt-get install mingw-w64`
-  - Fedora: `sudo dnf install mingw64-gcc mingw32-gcc`
+  - Fedora: `sudo dnf install mingw64-gcc mingw32-gcc mingw64-gcc-c++ mingw32-gcc-c++`
 
 **Output:**
 - `archive-x86.dll` (32-bit x86)
@@ -209,7 +227,7 @@ The built libraries are cached between runs, keyed on the contents of `native/**
 
 **Problem:** "x86_64-w64-mingw32-gcc: command not found"
 - Install MinGW: `sudo apt-get install mingw-w64` (Ubuntu/Debian)
-- Or: `sudo dnf install mingw64-gcc mingw32-gcc` (Fedora)
+- Or: `sudo dnf install mingw64-gcc mingw32-gcc mingw64-gcc-c++ mingw32-gcc-c++` (Fedora)
 
 **Problem:** "Cannot find -lws2_32"
 - Ensure MinGW runtime libraries are installed
@@ -245,7 +263,7 @@ unzip -l ../LibArchive.Net.*.nupkg | grep runtimes
 
 ```bash
 # Clean downloaded sources and build artifacts
-rm -rf local* {bzip2,libarchive,libxml2,lz4,lzo,mbedtls,xz,zlib,zstd}-*
+rm -rf local* {bzip2,libarchive,libxml2,lz4,lzokay,mbedtls,xz,zlib,zstd}-*
 # Linux and macOS build directories, their output, and the configure cache
 rm -rf ~/libarchive-linux-* ~/libarchive-macos ~/libarchive-native ~/config-cache
 rm -f *.so *.dylib *.dll test nativetest
@@ -274,7 +292,7 @@ The libraries being built have their own licenses:
 - bzip2: BSD-like
 - lz4: BSD-2-Clause
 - zstd: BSD + GPLv2
-- lzo: GPLv2
+- lzokay: MIT
 - xz (liblzma): Public Domain
 - libxml2: MIT
 - mbedTLS (Linux only): Apache-2.0 (upstream offers Apache-2.0 OR GPL-2.0-or-later)
