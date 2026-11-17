@@ -417,6 +417,11 @@ zstd-*/
 # native/lzo-shim holds sources, not a download: keep it out of reach of any "lzo-*/" rule above
 !/native/lzo-shim/
 
+# Native libraries put in the package's runtimes folder for a local build, test or pack,
+# by native/build-all.sh (see native/BUILD.md) or by hand. None is tracked: CI packs the
+# libraries that its own native jobs build.
+/LibArchive.Net/runtimes/*/native/
+
 # Playwright MCP artifacts
 .playwright-mcp/
 
