@@ -31,12 +31,10 @@ XZ_SHA256="4ce24038fd4221e0d13bc1a2de7a4db56e90b92b3bf75321f6c14be73f65de4b"
 BZIP2_SHA256="ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269"
 MBEDTLS_SHA256="bc54b818e87f49c0b3281dd85d24adaede0e63b4e822e3fbd49c005a38b9595b"
 
-# Bootlin toolchain versions (Linux only)
-# Bootlin stable 2025.08-1: GCC 14.3.0, musl latest, binutils 2.43.1
+# Bootlin toolchain release (Linux only). Renovate is configured to keep it current
+# (.github/renovate.json); the GCC, musl and binutils versions in each release are
+# listed at https://toolchains.bootlin.com/.
 BOOTLIN_RELEASE="stable-2026.08-1"
-MUSL_VERSION="1.2.5"
-GCC_VERSION="9.4.0"
-BINUTILS_VERSION="2.44"
 
 # Bootlin toolchain URLs (exported for use in build scripts)
 TOOLCHAIN_BASE_URL="https://toolchains.bootlin.com/downloads/releases/toolchains"
@@ -330,8 +328,6 @@ echo "  libxml2: ${LIBXML2_VERSION}"
 echo "  zlib: ${ZLIB_VERSION}"
 echo "  xz: ${XZ_VERSION}"
 echo "  bzip2: ${BZIP2_VERSION}"
-echo "  musl: ${MUSL_VERSION:-N/A}"
-echo "  gcc: ${GCC_VERSION:-N/A}"
-echo "  binutils: ${BINUTILS_VERSION:-N/A}"
+echo "  Bootlin toolchains (Linux): ${BOOTLIN_RELEASE}"
 echo "  CPUs: ${NCPU}"
 echo "  PREFIX: ${PREFIX}"

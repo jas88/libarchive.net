@@ -14,19 +14,19 @@ The build system consists of:
 
 ## Library Versions
 
-All library versions are managed in `build-config.sh`:
+All library versions are managed in `build-config.sh`, which pins the version,
+download URL and SHA256 checksum of each library, so they are not repeated here.
+The libraries are:
 
-| Library | Version |
-|---------|---------|
-| libarchive | 3.7.3 |
-| lz4 | 1.9.4 |
-| zstd | 1.5.6 |
-| lzokay (lzop support) | commit db2df1f |
-| libxml2 | 2.12.6 |
-| zlib | 1.4 |
-| xz (liblzma) | 5.4.6 |
-| bzip2 | 1.0.8 |
-| mbedTLS (Linux only) | 3.6.8 |
+- libarchive
+- lz4
+- zstd
+- lzokay (lzop support)
+- libxml2
+- zlib
+- xz (liblzma)
+- bzip2
+- mbedTLS (Linux only)
 
 mbedTLS is built and statically linked by the Linux scripts only, as a minimal
 `libmbedcrypto.a` (see `mbedtls-config.h`) that gives libarchive its ZIP AES
@@ -78,6 +78,8 @@ This will automatically detect your platform and build the appropriate libraries
 ./build-all.sh --all --package
 ```
 
+`--linux` builds the Linux x64, ARMv7 and ARM64 libraries. On Linux, `--all` builds Linux and Windows, skipping macOS with a warning, and stops with an error if a MinGW cross-compiler is missing (see the [Windows requirements](#windows-x86-x64-arm64)). On macOS it builds macOS and skips Linux and Windows with a warning. Unless it has stopped, it then creates the package. `--package` packs version `$PACKAGE_VERSION`, or `0.0.0-dev` if it is not set (for example `PACKAGE_VERSION=1.2.3 ./build-all.sh --package`), into the repository root.
+
 ## Platform-Specific Requirements
 
 ### Linux (x86-64)
@@ -87,6 +89,8 @@ This will automatically detect your platform and build the appropriate libraries
 - curl
 - gcc
 - make
+- sccache (the scripts compile through it)
+- autoconf, automake, libtool and pkg-config (libxml2 is built with its `autogen.sh`)
 - unzip
 
 **Output:** `libarchive.so` (fully static, no external dependencies except glibc)
@@ -94,7 +98,7 @@ This will automatically detect your platform and build the appropriate libraries
 **Notes:**
 - Uses musl-libc cross-compiler for maximum portability
 - All dependencies are statically linked
-- Build time: ~20-30 minutes (includes building musl toolchain)
+- Build time: ~20-30 minutes (the musl toolchain is a Bootlin prebuilt release, downloaded rather than built)
 
 ### macOS (Universal Binary)
 
@@ -126,6 +130,7 @@ This will automatically detect your platform and build the appropriate libraries
 
 **Notes:**
 - Cross-compiled from Linux
+- ARM64 needs `aarch64-w64-mingw32-gcc`, which the MinGW packages above do not provide; CI uses LLVM-MinGW for it
 - All dependencies statically linked
 - Build time: ~5-10 minutes per architecture
 
@@ -144,59 +149,70 @@ ARCH=aarch64 ./build-windows.sh
 
 ## Directory Structure
 
-After building, libraries are placed in:
+After building, `build-all.sh` places the libraries in:
 
 ```
 LibArchive.Net/runtimes/
-├── linux-x64/
+├── linux-x64/native/
 │   └── libarchive.so
-├── osx-any64/
+├── linux-musl-x64/native/
+│   └── libarchive.so
+├── linux-arm/native/
+│   └── libarchive.so
+├── linux-musl-arm/native/
+│   └── libarchive.so
+├── linux-arm64/native/
+│   └── libarchive.so
+├── linux-musl-arm64/native/
+│   └── libarchive.so
+├── osx-x64/native/
 │   └── libarchive.dylib
-├── win-x86/
+├── osx-arm64/native/
+│   └── libarchive.dylib
+├── win-x86/native/
 │   └── archive.dll
-├── win-x64/
+├── win-x64/native/
 │   └── archive.dll
-└── win-arm64/
+└── win-arm64/native/
     └── archive.dll
 ```
 
+Run on their own, the Linux and macOS scripts leave their library in `~/libarchive-native/`, and `build-windows.sh` leaves its DLL in the current directory.
+
 ## Updating Library Versions
 
-To update library versions:
+A weekly workflow runs `scripts/check-native-updates.sh`, which looks for new releases and opens a pull request that updates their version and checksum variables; see [scripts/README.md](../scripts/README.md). To update library versions by hand:
 
 1. Edit `build-config.sh`
 2. Update the version variables (e.g., `LIBARCHIVE_VERSION="3.8.0"`)
-3. Update the URLs if the download pattern changed
-4. Test the build on each platform
-5. Update this README with the new versions
+3. Update the matching `*_SHA256` variables to the SHA256 of each new tarball: the builds verify each library tarball against them and fail on a mismatch
+4. Update the URLs if the download pattern changed
+5. Test the build on each platform
 
 ## CI/CD Integration
 
 The GitHub Actions workflow (`.github/workflows/build.yml`) uses these scripts:
 
 1. **macOS job**: Runs `build-macos.sh`, uploads `libarchive.dylib`
-2. **Linux job**:
-   - Downloads macOS artifact
-   - Runs `build-linux.sh`
-   - Places both libraries in runtimes/
-   - Builds and tests .NET package
-   - Creates NuGet package
+2. **native job** (one job per target, on Linux):
+   - Runs `build-linux.sh`, `build-linux-x86.sh`, `build-linux-arm.sh` and `build-linux-arm64.sh`
+   - Runs `build-windows.sh` for x86, x64 and arm64
+   - Uploads each library
+3. **package job**:
+   - Downloads all the native libraries
+   - Places them in runtimes/
+   - Creates the NuGet package and tests it
 
-Currently, Windows builds are pre-built and checked into the repository. To enable CI builds:
-
-1. Add a Windows build job using Linux + MinGW
-2. Build all three Windows architectures
-3. Upload as artifacts
-4. Include in final package
+The built libraries are cached between runs, keyed on the contents of `native/**`; tag builds always rebuild them from source.
 
 ## Troubleshooting
 
 ### Linux Build Issues
 
-**Problem:** "musl-cross-make build failed"
-- Check internet connectivity (downloads many sources)
-- Verify disk space (~2GB needed during build)
-- Check build log: `cat musl-cross-make-master/musl.log`
+**Problem:** "Failed to download ... toolchain" or "Toolchain compiler not found"
+- Check internet connectivity to toolchains.bootlin.com (the scripts download a prebuilt Bootlin musl toolchain)
+- Check that `BOOTLIN_RELEASE` in `build-config.sh` names a published Bootlin release
+- Delete the toolchain tarball from the download cache (`~/downloads`) if an earlier download was cut short: a cached tarball is reused without being checked
 
 ### macOS Build Issues
 
@@ -221,12 +237,14 @@ Currently, Windows builds are pre-built and checked into the repository. To enab
 
 ### Adding a New Dependency
 
-1. Add version variable to `build-config.sh`
+1. Add version and `*_SHA256` checksum variables to `build-config.sh`
 2. Add download URL to `build-config.sh`
 3. Update `download_all_libraries()` function
 4. Add build steps to each platform script
 5. Update linker commands to include the new library
 6. Test on all platforms
+
+Also add it to the update checker: see "Adding a library" in [scripts/README.md](../scripts/README.md).
 
 ### Testing Changes
 
@@ -237,16 +255,17 @@ Currently, Windows builds are pre-built and checked into the repository. To enab
 # Full test (requires appropriate OS or VMs)
 ./build-all.sh --all --package
 
-# Verify NuGet package contents
-unzip -l LibArchive.Net.*.nupkg | grep runtimes
+# Verify NuGet package contents (build-all.sh writes it to the repository root)
+unzip -l ../LibArchive.Net.*.nupkg | grep runtimes
 ```
 
 ### Cleaning Build Artifacts
 
 ```bash
 # Clean downloaded sources and build artifacts
-rm -rf local* {bzip2,libarchive,libxml2,lz4,lzokay,mbedtls,musl-cross-make,xz,zlib,zstd}-*
-rm -rf musl-cross-make-master configcache
+rm -rf local* {bzip2,libarchive,libxml2,lz4,lzokay,mbedtls,xz,zlib,zstd}-*
+# Linux and macOS build directories, their output, and the configure cache
+rm -rf ~/libarchive-linux-* ~/libarchive-macos ~/libarchive-native ~/config-cache
 rm -f *.so *.dylib *.dll test nativetest
 ```
 
@@ -255,13 +274,13 @@ rm -f *.so *.dylib *.dll test nativetest
 Build times on GitHub Actions runners (approximate):
 
 - **macOS**: 15-20 minutes (M1 runner)
-- **Linux**: 25-30 minutes (includes musl toolchain)
-- **Windows** (if added to CI): 15-20 minutes (all 3 architectures)
+- **Linux**: 25-30 minutes (includes downloading the musl toolchain)
+- **Windows**: 15-20 minutes (all 3 architectures)
 
 Optimization strategies:
-- Use ccache (already enabled in workflow)
-- Cache `configcache` between runs (already enabled)
-- Pre-built musl toolchain (possible future optimization)
+- Use ccache and sccache (already enabled in workflow)
+- Cache `~/config-cache` between runs (already enabled)
+- Pre-built Bootlin musl toolchains (already used)
 
 ## License
 

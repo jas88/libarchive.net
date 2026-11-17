@@ -11,9 +11,9 @@ on:
         required: false
         default: 'false'
 
-permissions:
-  contents: write
-  pull-requests: write
+# No step uses the default GITHUB_TOKEN: checkout, the push and the pull request
+# all use the WORKFLOW_TOKEN secret, so the default token needs no permissions.
+permissions: {}
 
 jobs:
   check-updates:
@@ -46,6 +46,8 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          echo "### Native Dependency Check Complete" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Check the job logs for details on any updates found." >> $GITHUB_STEP_SUMMARY
+          {
+            echo "### Native Dependency Check Complete"
+            echo ""
+            echo "Check the job logs for details on any updates found."
+          } >> "$GITHUB_STEP_SUMMARY"

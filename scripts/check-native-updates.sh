@@ -6,6 +6,9 @@ set -uo pipefail
 REPO_ROOT="${GITHUB_WORKSPACE:-$(pwd)}"
 CONFIG_FILE="$REPO_ROOT/native/build-config.sh"
 DRY_RUN="${DRY_RUN:-1}"
+# Token for GitHub API requests (see fetch_url): GITHUB_TOKEN, or else GH_TOKEN.
+# Never printed, and only ever sent to https://api.github.com/.
+GITHUB_API_TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -13,10 +16,22 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Temporary files
-UPDATES_FILE=$(mktemp)
-FAILED_CHECKS=$(mktemp)
-trap "rm -f $UPDATES_FILE $FAILED_CHECKS" EXIT
+# Temporary files, all in one directory that is removed on exit, together with any
+# temporary file replace_config has beside build-config.sh at that moment. A signal
+# ends the script through exit, so that the EXIT trap also runs then.
+CONFIG_TMP=""
+WORK_DIR=$(mktemp -d) || { echo -e "${RED}Error: could not create a temporary directory${NC}"; exit 1; }
+trap 'rm -rf "$WORK_DIR"; [ -z "$CONFIG_TMP" ] || rm -f "$CONFIG_TMP"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+UPDATES_FILE="$WORK_DIR/updates"   # name|old|new: every update found
+APPLIED_FILE="$WORK_DIR/applied"   # name|old|new: updates written to build-config.sh
+FAILED_CHECKS="$WORK_DIR/failed"   # name|reason: every failed check, failed updates included
+if ! : > "$UPDATES_FILE" || ! : > "$APPLIED_FILE" || ! : > "$FAILED_CHECKS"; then
+    echo -e "${RED}Error: could not create the temporary files in $WORK_DIR${NC}"
+    exit 1
+fi
 
 # Check for required tools
 for cmd in curl jq gh git; do
@@ -32,17 +47,45 @@ read_current_version() {
     grep "^${var_name}=" "$CONFIG_FILE" | sed 's/^[^=]*="\([^"]*\)"/\1/'
 }
 
-# Check for existing open PRs with native dependency updates
+# Append a line to one of the temporary files. A lost line would be a lost update or
+# a lost failed check, so a failed write stops the script.
+add_line() {
+    printf '%s\n' "$2" >> "$1" || { echo -e "${RED}Error: could not write $1${NC}"; exit 1; }
+}
+
+# Record a failed check: the library's name and why it failed
+record_failure() {
+    add_line "$FAILED_CHECKS" "$1|$2"
+}
+
+# List the failed checks recorded so far
+report_failed_checks() {
+    local failed_count name reason
+    failed_count=$(wc -l < "$FAILED_CHECKS" | tr -d ' ')
+    echo -e "${YELLOW}⚠️  Warning: $failed_count dependency check(s) failed:${NC}"
+    while IFS='|' read -r name reason; do
+        echo "  - $name ($reason)"
+    done < "$FAILED_CHECKS"
+    echo ""
+}
+
+# Check for existing open PRs with native dependency updates.
+# Returns 0 if there are none, 1 if there are (after listing them), and 2 if the
+# lookup itself failed, so that a failed lookup is never mistaken for "none open".
 check_existing_prs() {
     echo "Checking for existing native dependency update PRs..."
 
-    # Search for open PRs with the "native" label created by github-actions
+    # Open PRs that carry the "native" label and whose branch name starts with
+    # "dependabot/native/", the prefix of the branches this script creates. Who
+    # opened them is not checked.
     local existing_prs
-    existing_prs=$(gh pr list -R jas88/libarchive.net \
+    if ! existing_prs=$(gh pr list -R jas88/libarchive.net \
         --state open \
         --label "native" \
         --json number,title,headRefName \
-        --jq '.[] | select(.headRefName | startswith("dependabot/native/")) | .number' 2>/dev/null || echo "")
+        --jq '.[] | select(.headRefName | startswith("dependabot/native/")) | .number'); then
+        return 2
+    fi
 
     if [ -n "$existing_prs" ]; then
         local pr_count
@@ -63,15 +106,45 @@ check_existing_prs() {
     return 0
 }
 
+# True if $1 is an https URL whose host is exactly api.github.com: the whole of
+# what lies between "https://" and the first "/" must be "api.github.com", so a
+# different host (api.github.com.example), user info, a port, or a URL that only
+# contains this one further along does not match.
+is_github_api_url() {
+    case "$1" in
+        https://api.github.com/*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Fetch a URL to stdout, failing on HTTP errors. Usage: fetch_url <url> [curl options]
+# With GITHUB_API_TOKEN set, a request to the GitHub API carries it as a bearer
+# token. curl reads that header from stdin, so the token is on no command line, and
+# that request follows no redirect (no -L, and --max-redirs 0 in case an option
+# asks for one), so the token can only reach the URL checked above. Every other
+# request is made as before: it follows redirects and carries no token.
+fetch_url() {
+    local url=$1
+    shift
+    if [ -n "$GITHUB_API_TOKEN" ] && is_github_api_url "$url"; then
+        printf 'Authorization: Bearer %s\n' "$GITHUB_API_TOKEN" | \
+            curl -sf -H @- "$@" --max-redirs 0 "$url"
+    else
+        curl -sfL "$@" "$url"
+    fi
+}
+
 # Function to check GitHub releases
 check_github_release() {
     local repo=$1
     local url="https://api.github.com/repos/$repo/releases/latest"
 
-    local version=$(curl -sfL -H "Accept: application/vnd.github.v3+json" "$url" | \
+    local version
+    version=$(fetch_url "$url" -H "Accept: application/vnd.github.v3+json" | \
                     jq -r '.tag_name // empty' | sed 's/^v//')
 
-    echo "$version"
+    # printf, not echo: a tag such as "-n" must reach the version check unchanged
+    printf '%s\n' "$version"
 }
 
 # Function to check web page for version
@@ -79,7 +152,8 @@ check_web_version() {
     local url=$1
     local pattern=$2
 
-    local content=$(curl -sfL "$url" || echo "")
+    local content
+    content=$(fetch_url "$url" || echo "")
     if [ -z "$content" ]; then
         echo ""
         return
@@ -99,68 +173,153 @@ version_gt() {
     [ "$ver2" = "$(echo -e "$ver1\n$ver2" | sort -V | head -n1)" ] && [ "$ver1" != "$ver2" ]
 }
 
-# Function to update version variable in build-config.sh
+# True if $1 is a plain dotted number of at most MAX_VERSION_LENGTH characters.
+# A version taken from upstream is written into build-config.sh, which this script
+# and every build source as shell code, and goes into sed expressions, the PR and the
+# commit, so a release tag such as 1.0$(cmd) must never get that far. The digits are
+# listed rather than written as a range, so that no locale can widen the set.
+MAX_VERSION_LENGTH=32
+valid_version() {
+    local re='^[0123456789]+(\.[0123456789]+)*$'
+    [ ${#1} -le "$MAX_VERSION_LENGTH" ] && [[ $1 =~ $re ]]
+}
+
+# Print a value from upstream quoted for the log: cut to 64 characters, then
+# printf %q in the C locale, which escapes every byte that is not printable ASCII,
+# so the value cannot inject terminal escapes or start a new log line.
+log_quote() {
+    local value=$1
+    [ ${#value} -le 64 ] || value="${value:0:64}..."
+    ( export LC_ALL=C; printf '%q' "$value" )
+}
+
+# Print the value that the copy of build-config.sh in $1 gives the variable named $2.
+# The copy is sourced in a subshell, so that nothing in it changes this script's own
+# variables, and the variable is unset first, so that only the copy can set it.
+config_value() {
+    local wanted_var=$2
+    (
+        unset "$wanted_var"
+        # shellcheck source=/dev/null  # a copy of native/build-config.sh
+        . "$1" >/dev/null 2>&1
+        printf '%s' "${!wanted_var:-}"
+    )
+}
+
+# Print the SHA256 of the file $2, computed by sha256_compute from the copy of
+# build-config.sh in $1 (sourced in a subshell, as above). Fails without a SHA256 tool.
+config_sha256() {
+    (
+        # shellcheck source=/dev/null  # a copy of native/build-config.sh
+        . "$1" >/dev/null 2>&1
+        sha256_compute "$2"
+    )
+}
+
+# Replace build-config.sh with the file $1 so that it is never half written. The new
+# content goes into a temporary file in the same directory, so that the rename cannot
+# cross file systems; cp -p gives that file build-config.sh's mode (portably, unlike
+# chmod --reference or stat), and mv -f then renames it over build-config.sh in one
+# step. If any step fails, the temporary file is removed and 1 is returned, with
+# build-config.sh exactly as it was. If the script is stopped meanwhile, the EXIT
+# trap removes the temporary file.
+replace_config() {
+    CONFIG_TMP=$(mktemp "${CONFIG_FILE%/*}/.build-config.sh.XXXXXX") || { CONFIG_TMP=""; return 1; }
+    if cp -p "$CONFIG_FILE" "$CONFIG_TMP" && cat "$1" > "$CONFIG_TMP" && mv -f "$CONFIG_TMP" "$CONFIG_FILE"; then
+        CONFIG_TMP=""
+        return 0
+    fi
+    rm -f "$CONFIG_TMP"
+    CONFIG_TMP=""
+    return 1
+}
+
+# Report and record an update that could not be applied
+update_failed() {
+    echo -e "  ${RED}ERROR: $2${NC}"
+    echo -e "  ${RED}Leaving $1 out of the PR: build-config.sh keeps its current version and checksum${NC}"
+    record_failure "$1" "update not applied: $2"
+}
+
+# Function to update a library's version and SHA256 checksum in build-config.sh.
+# Both go into a copy of the file first, and the copy replaces build-config.sh only
+# once it holds the new version and the checksum of the new version's tarball, and the
+# update has been recorded for the PR (APPLIED_FILE; this is the only place that does).
+# If any step fails, build-config.sh is left exactly as it was, the failure is recorded
+# as a failed check, and 1 is returned so that the library is left out of the PR.
 update_version() {
     local dep_name=$1
     local old_ver=$2
     local new_ver=$3
 
-    local config_script="$REPO_ROOT/native/build-config.sh"
-    local var_name=$(echo "$dep_name" | tr '[:lower:]-' '[:upper:]_')_VERSION
-    local sha_var_name=$(echo "$dep_name" | tr '[:lower:]-' '[:upper:]_')_SHA256
+    local prefix
+    prefix=$(echo "$dep_name" | tr '[:lower:]-' '[:upper:]_')
+    local var_name="${prefix}_VERSION"
+    local sha_var_name="${prefix}_SHA256"
+    local url_var_name="${prefix}_URL"
 
     if [ "$DRY_RUN" = "1" ]; then
         echo "  Would update $var_name in build-config.sh: $old_ver -> $new_ver"
         echo "  Would update $sha_var_name checksum"
-    else
-        # Update version variable
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' "s/^${var_name}=\"${old_ver}\"$/${var_name}=\"${new_ver}\"/" "$config_script"
-        else
-            sed -i "s/^${var_name}=\"${old_ver}\"$/${var_name}=\"${new_ver}\"/" "$config_script"
-        fi
-
-        # Re-source config in current shell to get updated URL and sha256_compute
-        . "$config_script" >/dev/null 2>&1 || true
-
-        local url_var_name
-        url_var_name="$(echo "$dep_name" | tr '[:lower:]-' '[:upper:]_')_URL"
-        local new_url
-        eval "new_url=\$$url_var_name"
-
-        if [ -n "$new_url" ]; then
-            echo "  Downloading new version to compute SHA256..."
-            local tmpfile
-            tmpfile=$(mktemp)
-            if curl -fsSL "$new_url" -o "$tmpfile" 2>/dev/null; then
-                local new_sha256
-                new_sha256=$(sha256_compute "$tmpfile") || true
-                rm -f "$tmpfile"
-
-                # Validate we got a 64-char hex string before writing
-                if [[ "$new_sha256" =~ ^[0-9a-f]{64}$ ]]; then
-                    # Update SHA256 in config
-                    local old_sha256
-                    old_sha256=$(grep "^${sha_var_name}=" "$config_script" | sed 's/^[^=]*="\([^"]*\)"/\1/')
-                    if [ -n "$old_sha256" ]; then
-                        if [[ "$OSTYPE" == "darwin"* ]]; then
-                            sed -i '' "s/^${sha_var_name}=\"${old_sha256}\"$/${sha_var_name}=\"${new_sha256}\"/" "$config_script"
-                        else
-                            sed -i "s/^${sha_var_name}=\"${old_sha256}\"$/${sha_var_name}=\"${new_sha256}\"/" "$config_script"
-                        fi
-                        echo "  Updated $sha_var_name: $new_sha256"
-                    fi
-                else
-                    echo -e "  ${RED}ERROR: SHA256 computation failed (got: '$new_sha256')${NC}"
-                    echo -e "  ${RED}Please manually update $sha_var_name in build-config.sh${NC}"
-                fi
-            else
-                rm -f "$tmpfile"
-                echo -e "  ${YELLOW}Warning: Could not download new version to compute SHA256${NC}"
-                echo -e "  ${YELLOW}Please manually update $sha_var_name in build-config.sh${NC}"
-            fi
-        fi
+        return 0
     fi
+
+    local candidate="$WORK_DIR/build-config.$dep_name"
+    local tarball="$WORK_DIR/$dep_name.download"
+
+    # The new version, in the copy
+    if ! sed "s/^${var_name}=\"${old_ver}\"$/${var_name}=\"${new_ver}\"/" "$CONFIG_FILE" > "$candidate" ||
+        ! grep -qxF "${var_name}=\"${new_ver}\"" "$candidate"; then
+        update_failed "$dep_name" "could not change the ${var_name} line to ${var_name}=\"${new_ver}\""
+        return 1
+    fi
+
+    # The new version's download URL, as the copy builds it
+    local new_url
+    new_url=$(config_value "$candidate" "$url_var_name")
+    if [ -z "$new_url" ]; then
+        update_failed "$dep_name" "build-config.sh does not set ${url_var_name}"
+        return 1
+    fi
+
+    echo "  Downloading new version to compute SHA256..."
+    if ! curl -fsSL "$new_url" -o "$tarball"; then
+        update_failed "$dep_name" "could not download ${new_url}"
+        return 1
+    fi
+
+    # Validate we got a 64-char hex string before writing
+    local new_sha256
+    new_sha256=$(config_sha256 "$candidate" "$tarball")
+    if [[ ! "$new_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+        update_failed "$dep_name" "SHA256 computation failed (got: '${new_sha256}')"
+        return 1
+    fi
+
+    # The new checksum, in the copy
+    if ! grep -q "^${sha_var_name}=" "$candidate"; then
+        update_failed "$dep_name" "build-config.sh has no ${sha_var_name} line"
+        return 1
+    fi
+    if ! sed "s/^${sha_var_name}=\"[^\"]*\"$/${sha_var_name}=\"${new_sha256}\"/" "$candidate" > "$candidate.sha256" ||
+        ! grep -qxF "${sha_var_name}=\"${new_sha256}\"" "$candidate.sha256"; then
+        update_failed "$dep_name" "the ${sha_var_name} line is not of the form ${sha_var_name}=\"<sha256>\""
+        return 1
+    fi
+
+    # Both are in place. Record the update for the PR first, so that a record that
+    # cannot be written stops the script (add_line) before build-config.sh is touched.
+    # Then the copy replaces build-config.sh, atomically (see replace_config). If that
+    # fails, build-config.sh is unchanged but cannot be updated at all, so the script
+    # stops; the record left behind is harmless, as this exits before any branch or
+    # PR is created.
+    add_line "$APPLIED_FILE" "$dep_name|$old_ver|$new_ver"
+    if ! replace_config "$candidate.sha256"; then
+        echo -e "  ${RED}ERROR: could not replace $CONFIG_FILE; it is unchanged${NC}"
+        exit 1
+    fi
+    echo "  Updated $var_name: $new_ver"
+    echo "  Updated $sha_var_name: $new_sha256"
 }
 
 # Function to check single dependency
@@ -188,20 +347,35 @@ check_dependency() {
         gnome)
             # Check for newer major.minor first
             local base_url="https://download.gnome.org/sources/libxml2/"
-            local latest_mm=$(curl -sf "$base_url" | \
+            local latest_mm
+            latest_mm=$(curl -sf "$base_url" | \
                 grep -oE 'href="([0-9]+\.[0-9]+)/"' | \
                 sed 's/href="//;s/\/"//g' | \
                 sort -V | tail -1)
 
-            local url="$base_url$latest_mm/"
-            local pattern="${check_args[0]}"
-            latest=$(check_web_version "$url" "$pattern")
+            # The directory name goes into a URL, so it must pass the version check
+            # too. If it does not (or is empty), it is what gets reported below.
+            if valid_version "$latest_mm"; then
+                local url="$base_url$latest_mm/"
+                local pattern="${check_args[0]}"
+                latest=$(check_web_version "$url" "$pattern")
+            else
+                latest="$latest_mm"
+            fi
             ;;
     esac
 
     if [ -z "$latest" ]; then
         echo -e "${RED}ERROR${NC}"
-        echo "$name" >> "$FAILED_CHECKS"
+        record_failure "$name" "network error or version pattern mismatch"
+        return 1
+    fi
+
+    # Every method's result is checked here, before it is compared, printed or
+    # recorded as an update: anything else is a failed check, quoted for the log
+    if ! valid_version "$latest"; then
+        echo -e "${RED}ERROR${NC}"
+        record_failure "$name" "unexpected version string $(log_quote "$latest")"
         return 1
     fi
 
@@ -209,7 +383,7 @@ check_dependency() {
 
     if version_gt "$latest" "$current"; then
         echo -e " ${YELLOW}⚠️  UPDATE AVAILABLE${NC}"
-        echo "$name|$current|$latest" >> "$UPDATES_FILE"
+        add_line "$UPDATES_FILE" "$name|$current|$latest"
         return 0
     else
         echo -e " ${GREEN}✓${NC}"
@@ -218,9 +392,23 @@ check_dependency() {
 }
 
 # Check for existing PRs first (skip if any are open)
-if ! check_existing_prs; then
-    exit 0
-fi
+check_existing_prs
+case $? in
+    0) ;;
+    1) exit 0 ;;
+    *)
+        # Without the lookup, a second update PR could be opened next to an open one.
+        # Only a dry run, which opens nothing, may carry on.
+        if [ "$DRY_RUN" = "1" ]; then
+            echo -e "${YELLOW}Warning: could not look up open native dependency PRs (see the gh error above)${NC}"
+            echo -e "${YELLOW}Carrying on because this is a dry run; applying updates would stop here${NC}"
+        else
+            echo -e "${RED}Error: could not look up open native dependency PRs (see the gh error above)${NC}"
+            echo -e "${RED}Stopping before changing anything, so that no duplicate PR can be opened${NC}"
+            exit 1
+        fi
+        ;;
+esac
 
 # Main dependency checking
 echo ""
@@ -271,23 +459,19 @@ check_dependency "mbedtls" "$CURRENT_MBEDTLS" "web" \
     "https://api.github.com/repos/Mbed-TLS/mbedtls/releases?per_page=100" \
     'releases/download/mbedtls-(3\.6\.[0-9]+)/mbedtls-3\.6\.[0-9]+\.tar\.bz2' || true
 
-# musl toolchain versions are reference only (we use Bootlin prebuilt toolchains)
-# These checks are informational - actual toolchain versions come from Bootlin
+# The Linux toolchains are not checked here: they are Bootlin prebuilt releases,
+# selected by BOOTLIN_RELEASE in build-config.sh, which Renovate is configured to
+# keep current (.github/renovate.json)
 echo ""
-echo "ℹ️  Note: musl/gcc/binutils versions in build-config.sh are reference only"
-echo "   Actual toolchains come from Bootlin prebuilt stable releases"
-echo "   To update toolchains, see Bootlin releases: https://toolchains.bootlin.com/"
+echo "ℹ️  Note: the Linux toolchains (BOOTLIN_RELEASE in build-config.sh) are not checked here"
+echo "   Renovate is configured to keep BOOTLIN_RELEASE current (.github/renovate.json)"
+echo "   Bootlin releases: https://toolchains.bootlin.com/"
 
 echo ""
 
 # Report any failed checks
 if [ -s "$FAILED_CHECKS" ]; then
-    failed_count=$(wc -l < "$FAILED_CHECKS")
-    echo -e "${YELLOW}⚠️  Warning: $failed_count dependency check(s) failed:${NC}"
-    while read -r name; do
-        echo "  - $name (network error or version pattern mismatch)"
-    done < "$FAILED_CHECKS"
-    echo ""
+    report_failed_checks
 fi
 
 # Check if any updates were found
@@ -302,11 +486,13 @@ if [ ! -s "$UPDATES_FILE" ]; then
 fi
 
 # Process updates
-update_count=$(wc -l < "$UPDATES_FILE")
+update_count=$(wc -l < "$UPDATES_FILE" | tr -d ' ')
 echo -e "${YELLOW}$update_count update(s) found!${NC}"
 echo ""
 
-# Apply updates to build-config.sh
+# Apply updates to build-config.sh. update_version records each update it applies in
+# full (new version and its checksum) for the PR, and each one it cannot apply as a
+# failed check.
 while IFS='|' read -r name old new; do
     echo "Updating $name: $old -> $new"
     update_version "$name" "$old" "$new"
@@ -320,18 +506,27 @@ if [ "$DRY_RUN" = "1" ]; then
     exit 0
 fi
 
-# Create branch and PR
+# Nothing to commit if no update could be applied: no branch, commit or PR
+if [ ! -s "$APPLIED_FILE" ]; then
+    echo ""
+    report_failed_checks
+    echo -e "${RED}No update could be applied, so no PR was created${NC}"
+    exit 1
+fi
+
+# Create branch and PR for the updates that were applied
+applied_count=$(wc -l < "$APPLIED_FILE" | tr -d ' ')
 branch_name="dependabot/native/$(date +%Y%m%d)-updates"
 update_list=$(while IFS='|' read -r name old new; do
     echo "- Bump $name from $old to $new"
-done < "$UPDATES_FILE")
+done < "$APPLIED_FILE")
 
-if [ "$update_count" = "1" ]; then
-    first_update=$(head -1 "$UPDATES_FILE")
+if [ "$applied_count" = "1" ]; then
+    first_update=$(head -1 "$APPLIED_FILE")
     IFS='|' read -r name old new <<< "$first_update"
     pr_title="Bump native $name from $old to $new"
 else
-    pr_title="Bump $update_count native dependencies"
+    pr_title="Bump $applied_count native dependencies"
 fi
 
 # Git operations
@@ -372,10 +567,10 @@ $update_list
 ### Changes
 $(while IFS='|' read -r name old new; do
     echo "- **$name**: \`$old\` → \`$new\`"
-done < "$UPDATES_FILE")
+done < "$APPLIED_FILE")
 
 ### Build Configuration Updated
-- \`native/build-config.sh\` - Updated version variables
+- \`native/build-config.sh\` - Updated version and SHA256 checksum variables
 
 ### Testing
 CI will rebuild native libraries with updated versions and run tests on all platforms.
@@ -405,11 +600,13 @@ else
     exit 1
 fi
 
-# Exit with error if any checks failed (even though we created PRs for successful checks)
+# Exit with error if any checks failed, updates that could not be applied included
+# (even though we created a PR for the updates that were applied)
 if [ -s "$FAILED_CHECKS" ]; then
-    failed_count=$(wc -l < "$FAILED_CHECKS")
+    failed_count=$(wc -l < "$FAILED_CHECKS" | tr -d ' ')
     echo ""
+    report_failed_checks
     echo -e "${RED}⚠️  Exiting with error: $failed_count dependency check(s) failed${NC}"
-    echo "PR(s) were created for successful checks, but please investigate failures."
+    echo "A PR was created for the updates that were applied, but please investigate failures."
     exit 1
 fi

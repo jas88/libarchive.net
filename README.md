@@ -150,7 +150,7 @@ Native libraries for all supported platforms are included in the NuGet package.
 
 ## License
 
-BSD-2-Clause. See [LICENSE](LICENSE) for details.
+BSD-2-Clause. See [LICENSE](LICENSE.md) for details.
 
 ## Contributing
 

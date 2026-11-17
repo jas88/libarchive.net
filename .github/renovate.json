@@ -32,7 +32,7 @@
       "extractVersion": "^x86-64--musl--stable-(?<version>\\d{4}\\.\\d{2}-\\d+)\\.tar\\.xz$",
       "commitMessageTopic": "Bootlin musl toolchains",
       "prBodyNotes": [
-        "Updates the cross-compilers for all four Linux builds (x86-64, i686, armv7-eabihf, aarch64); CI downloads and builds with each one. Also update the release notes comment above BOOTLIN_RELEASE in native/build-config.sh."
+        "Updates the cross-compilers for all four Linux builds (x86-64, i686, armv7-eabihf, aarch64); CI downloads and builds with each one."
       ]
     }
   ],

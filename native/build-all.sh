@@ -4,8 +4,11 @@
 
 set -e
 
-SCRIPT_DIR="$(dirname "$0")"
+# Absolute, because the builds run after a cd into a temporary directory
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# Where the Linux and macOS scripts leave their libraries (OUTPUT_DIR in each)
+NATIVE_OUT="${HOME}/libarchive-native"
 
 # Color output helpers
 RED='\033[0;31m'
@@ -65,13 +68,14 @@ else
                 echo ""
                 echo "Options:"
                 echo "  --all       Build for all platforms and package"
-                echo "  --linux     Build for Linux x86-64"
+                echo "  --linux     Build for Linux (x64, ARMv7, ARM64)"
                 echo "  --macos     Build for macOS (universal binary)"
                 echo "  --windows   Build for Windows (x86, x64, arm64)"
                 echo "  --package   Create NuGet package after building"
                 echo "  --help      Show this help message"
                 echo ""
                 echo "If no options are specified, builds for current platform only."
+                echo "PACKAGE_VERSION sets the version --package uses (default: 0.0.0-dev)."
                 exit 0
                 ;;
             *)
@@ -85,27 +89,36 @@ fi
 
 # Create temporary build directory
 BUILD_DIR="$(mktemp -d)"
-trap "rm -rf $BUILD_DIR" EXIT
+trap 'rm -rf "$BUILD_DIR"' EXIT
 cd "$BUILD_DIR"
 log_info "Building in: $BUILD_DIR"
 
-# Copy native directory for builds
-cp -rl "$SCRIPT_DIR"/* .
+# Copy native directory for builds (a real copy: hard links cannot cross file systems)
+cp -R "$SCRIPT_DIR"/* .
 
 # Build for Linux
 if [ $BUILD_LINUX -eq 1 ]; then
-    log_info "Building for Linux x86-64..."
+    log_info "Building for Linux (x64, ARMv7, ARM64)..."
     if [ "$PLATFORM" != "linux" ]; then
         log_warn "Cross-compilation for Linux not yet supported on $PLATFORM"
         log_warn "Skipping Linux build"
     else
-        ./build-linux.sh
-        # Build uses musl-libc, so copy to both linux-x64 and linux-musl-x64
-        mkdir -p "$REPO_ROOT/LibArchive.Net/runtimes/linux-x64/native"
-        mkdir -p "$REPO_ROOT/LibArchive.Net/runtimes/linux-musl-x64/native"
-        cp libarchive.so "$REPO_ROOT/LibArchive.Net/runtimes/linux-x64/native/"
-        cp libarchive.so "$REPO_ROOT/LibArchive.Net/runtimes/linux-musl-x64/native/"
-        log_info "Linux library installed to LibArchive.Net/runtimes/linux-x64/native/ and linux-musl-x64/native/"
+        # build-linux.sh builds x64, build-linux-<arch>.sh the others; each leaves
+        # libarchive-linux-<arch>.so in $NATIVE_OUT. The libraries use musl-libc, so
+        # each one goes to both its linux-<arch> and its linux-musl-<arch> folder.
+        # No x86: LibArchive.Net never loads a Linux x86 library.
+        for arch in x64 arm arm64; do
+            if [ "$arch" = x64 ]; then
+                ./build-linux.sh
+            else
+                "./build-linux-$arch.sh"
+            fi
+            for rid in "linux-$arch" "linux-musl-$arch"; do
+                mkdir -p "$REPO_ROOT/LibArchive.Net/runtimes/$rid/native"
+                cp "$NATIVE_OUT/libarchive-linux-$arch.so" "$REPO_ROOT/LibArchive.Net/runtimes/$rid/native/libarchive.so"
+            done
+        done
+        log_info "Linux libraries installed to LibArchive.Net/runtimes/linux-<arch>/native/ and linux-musl-<arch>/native/"
     fi
 fi
 
@@ -120,8 +133,8 @@ if [ $BUILD_MACOS -eq 1 ]; then
         # Universal binary supports both x64 and arm64, so copy to both RID folders
         mkdir -p "$REPO_ROOT/LibArchive.Net/runtimes/osx-x64/native"
         mkdir -p "$REPO_ROOT/LibArchive.Net/runtimes/osx-arm64/native"
-        cp libarchive.dylib "$REPO_ROOT/LibArchive.Net/runtimes/osx-x64/native/"
-        cp libarchive.dylib "$REPO_ROOT/LibArchive.Net/runtimes/osx-arm64/native/"
+        cp "$NATIVE_OUT/libarchive.dylib" "$REPO_ROOT/LibArchive.Net/runtimes/osx-x64/native/"
+        cp "$NATIVE_OUT/libarchive.dylib" "$REPO_ROOT/LibArchive.Net/runtimes/osx-arm64/native/"
         log_info "macOS library installed to LibArchive.Net/runtimes/osx-x64/native/ and osx-arm64/native/"
     fi
 fi
@@ -148,14 +161,14 @@ if [ $BUILD_WINDOWS -eq 1 ]; then
 
         # Build x86
         log_info "Building Windows x86..."
-        rm -rf local-* {bzip2,libarchive,libxml2,lz4,lzokay,xz,zlib,zstd}-*
+        rm -rf local-* bzip2-* libarchive-* libxml2-* lz4-* lzokay-* xz-* zlib-* zstd-*
         ARCH=i686 ./build-windows.sh
         mkdir -p "$REPO_ROOT/LibArchive.Net/runtimes/win-x86/native"
         cp archive-x86.dll "$REPO_ROOT/LibArchive.Net/runtimes/win-x86/native/archive.dll"
 
         # Build arm64
         log_info "Building Windows arm64..."
-        rm -rf local-* {bzip2,libarchive,libxml2,lz4,lzokay,xz,zlib,zstd}-*
+        rm -rf local-* bzip2-* libarchive-* libxml2-* lz4-* lzokay-* xz-* zlib-* zstd-*
         ARCH=aarch64 ./build-windows.sh
         mkdir -p "$REPO_ROOT/LibArchive.Net/runtimes/win-arm64/native"
         cp archive-arm64.dll "$REPO_ROOT/LibArchive.Net/runtimes/win-arm64/native/archive.dll"
@@ -169,12 +182,8 @@ if [ $PACKAGE -eq 1 ]; then
     log_info "Creating NuGet package..."
     cd "$REPO_ROOT"
 
-    # Determine version
-    if [ -n "$1" ]; then
-        VERSION="$1"
-    else
-        VERSION="0.0.0-dev"
-    fi
+    # Determine version. Not from the command line: its arguments are all options.
+    VERSION="${PACKAGE_VERSION:-0.0.0-dev}"
 
     log_info "Building .NET project..."
     dotnet build --configuration Release --nologo
@@ -183,7 +192,7 @@ if [ $PACKAGE -eq 1 ]; then
     dotnet test --nologo --configuration Release
 
     log_info "Creating package version $VERSION..."
-    dotnet pack LibArchive.Net/LibArchive.Net.csproj -o . -p:PackageVersion=$VERSION --nologo --configuration Release
+    dotnet pack LibArchive.Net/LibArchive.Net.csproj -o . "-p:PackageVersion=$VERSION" --nologo --configuration Release
 
     log_info "Package created:"
     ls -lh LibArchive.Net.*.nupkg
