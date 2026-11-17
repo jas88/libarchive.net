@@ -77,12 +77,13 @@ public partial class LibArchiveReader
         }
         catch
         {
-            CleanupCallbacks();
-            _recordedChunks = null;
-            _replayChunks = null;
+            // Freed first: archive_read_free can call the close callback (see ReleaseHandle())
             if (handle != IntPtr.Zero)
                 archive_read_free(handle);
             handle = IntPtr.Zero;
+            CleanupCallbacks();
+            _recordedChunks = null;
+            _replayChunks = null;
             throw;
         }
     }

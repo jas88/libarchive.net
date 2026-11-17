@@ -270,8 +270,11 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     /// <returns>true if the handle is released successfully; otherwise, false.</returns>
     protected override bool ReleaseHandle()
     {
+        // archive_read_free calls a stream's close callback, so the callbacks must outlive it:
+        // a delegate collected before then would be called all the same
+        var result = archive_read_free(handle);
         CleanupCallbacks();
-        return archive_read_free(handle) == 0;
+        return result == 0;
     }
 
     /// <summary>
