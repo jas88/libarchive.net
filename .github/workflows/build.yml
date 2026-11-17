@@ -187,6 +187,13 @@ jobs:
           packages: ${{ matrix.kind == 'windows' && 'mingw-w64 g++-mingw-w64-i686-win32 g++-mingw-w64-x86-64-win32 pkg-config' || 'pkg-config' }}
           version: 1.0
           execute_install_scripts: true
+      # The arm and arm64 builds load-test the library under QEMU user-mode emulation
+      # (test_load_musl in native/build-linux-common.sh), and fail if it is missing.
+      - name: Install QEMU user-mode emulation
+        if: steps.native-cache.outputs.cache-hit != 'true' && (matrix.target == 'linux-arm' || matrix.target == 'linux-arm64')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-user
       - name: Install LLVM-MinGW for ARM64
         if: steps.native-cache.outputs.cache-hit != 'true' && matrix.target == 'win-arm64'
         run: |
