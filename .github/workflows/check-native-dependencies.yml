@@ -46,6 +46,8 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          echo "### Native Dependency Check Complete" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Check the job logs for details on any updates found." >> $GITHUB_STEP_SUMMARY
+          {
+            echo "### Native Dependency Check Complete"
+            echo ""
+            echo "Check the job logs for details on any updates found."
+          } >> "$GITHUB_STEP_SUMMARY"
