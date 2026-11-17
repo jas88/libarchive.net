@@ -154,9 +154,11 @@ For a library called `foo`:
   the `github` method. It uses `web` with a pattern that only matches release
   tarballs of the pinned LTS series, so no other series is ever proposed. Moving
   to another series means editing that pattern.
-- **Toolchains are not checked.** The script only prints a note: the musl, GCC and
-  binutils versions in `native/build-config.sh` are for reference, and the real
-  toolchains are Bootlin prebuilt releases (<https://toolchains.bootlin.com/>).
+- **Toolchains are not checked.** The Linux builds use Bootlin prebuilt toolchains
+  (<https://toolchains.bootlin.com/>), selected by `BOOTLIN_RELEASE` in
+  `native/build-config.sh`. The script does not check that release and only prints
+  a note saying so. Renovate is configured to keep it current
+  (`.github/renovate.json`).
 - **Authenticated requests do not follow redirects.** With a token, a GitHub API
   answer that redirects, as it does for a renamed repository, is reported as a
   failed check. Update the repository named in the script to fix it.

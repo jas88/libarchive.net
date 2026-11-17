@@ -392,12 +392,13 @@ check_dependency "mbedtls" "$CURRENT_MBEDTLS" "web" \
     "https://api.github.com/repos/Mbed-TLS/mbedtls/releases?per_page=100" \
     'releases/download/mbedtls-(3\.6\.[0-9]+)/mbedtls-3\.6\.[0-9]+\.tar\.bz2' || true
 
-# musl toolchain versions are reference only (we use Bootlin prebuilt toolchains)
-# These checks are informational - actual toolchain versions come from Bootlin
+# The Linux toolchains are not checked here: they are Bootlin prebuilt releases,
+# selected by BOOTLIN_RELEASE in build-config.sh, which Renovate is configured to
+# keep current (.github/renovate.json)
 echo ""
-echo "ℹ️  Note: musl/gcc/binutils versions in build-config.sh are reference only"
-echo "   Actual toolchains come from Bootlin prebuilt stable releases"
-echo "   To update toolchains, see Bootlin releases: https://toolchains.bootlin.com/"
+echo "ℹ️  Note: the Linux toolchains (BOOTLIN_RELEASE in build-config.sh) are not checked here"
+echo "   Renovate is configured to keep BOOTLIN_RELEASE current (.github/renovate.json)"
+echo "   Bootlin releases: https://toolchains.bootlin.com/"
 
 echo ""
 
