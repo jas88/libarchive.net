@@ -250,7 +250,7 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     /// <remarks>
     /// libarchive only accepts encryption settings before an archive is opened, and the archive is opened when
     /// the writer is created, so this method cannot enable, change or remove encryption. Pass the password to
-    /// the constructor or to <see cref="CreateMemoryWriter"/> instead.
+    /// the constructor or to <see cref="O:LibArchive.Net.LibArchiveWriter.CreateMemoryWriter"/> instead.
     /// </remarks>
     /// <param name="password">Password for encryption.</param>
     /// <param name="encryption">Encryption type (default: AES-256).</param>

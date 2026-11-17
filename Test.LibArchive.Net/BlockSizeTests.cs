@@ -3,8 +3,8 @@ using NUnit.Framework;
 
 namespace Test.LibArchive.Net;
 
-// The writers' blockSize sets the size of the blocks libarchive hands to the file or stream
-// (archive_write_set_bytes_per_block). The last block is never padded, so the block size must
+// The writers' blockSize sets the size of the blocks libarchive hands to the file, stream or
+// memory buffer (archive_write_set_bytes_per_block). The last block is never padded, so the block size must
 // not change an archive's size. The expected sizes follow from the formats' layouts:
 //
 // - ustar: a 512-byte header per entry, data rounded up to 512 bytes, then 1024 zero bytes;
@@ -43,12 +43,13 @@ public class BlockSizeTests
 
             Assert.That(new FileInfo(_path).Length, Is.EqualTo(expectedSize), $"file, blockSize {blockSize}");
             Assert.That(WriteToStream(format, blockSize, large: false).Length, Is.EqualTo(expectedSize), $"stream, blockSize {blockSize}");
+            Assert.That(WriteToMemory(format, blockSize, large: false).Length, Is.EqualTo(expectedSize), $"memory, blockSize {blockSize}");
         }
 
         using var memoryWriter = LibArchiveWriter.CreateMemoryWriter(format);
         memoryWriter.AddEntry("a.txt", Small, MTime);
         memoryWriter.Dispose();
-        Assert.That(memoryWriter.ToArray(), Has.Length.EqualTo(expectedSize), "memory");
+        Assert.That(memoryWriter.ToArray(), Has.Length.EqualTo(expectedSize), "memory, default block size");
     }
 
     [TestCase(ArchiveFormat.Tar)]
@@ -67,8 +68,14 @@ public class BlockSizeTests
                 writer.AddEntry("b.bin", Large, MTime);
             }
 
+            var stream = WriteToStream(format, blockSize, large: true);
+            var memory = WriteToMemory(format, blockSize, large: true);
+
             Assert.That(File.ReadAllBytes(_path), Has.Length.EqualTo(reference.Length), $"file, blockSize {blockSize}");
-            Assert.That(WriteToStream(format, blockSize, large: true), Has.Length.EqualTo(reference.Length), $"stream, blockSize {blockSize}");
+            Assert.That(stream, Has.Length.EqualTo(reference.Length), $"stream, blockSize {blockSize}");
+            Assert.That(memory, Has.Length.EqualTo(reference.Length), $"memory, blockSize {blockSize}");
+            // The memory writer is a stream writer with a MemoryStream of its own
+            Assert.That(memory, Is.EqualTo(stream), $"memory and stream, blockSize {blockSize}");
         }
     }
 
@@ -110,6 +117,38 @@ public class BlockSizeTests
         Assert.That(output.Writes.Last(), Is.InRange(1, (int)blockSize));
     }
 
+    // The memory writer's buffer shows the block size in its capacity. A MemoryStream created with no
+    // capacity allocates what its first write needs, then at least doubles its capacity whenever a
+    // write does not fit. So the 104960 bytes of a ustar archive leave a capacity of 131072 (512
+    // doubled 8 times) when written in 512-byte blocks, 163840 (10240 doubled 4 times) in 10240-byte
+    // blocks, and exactly 104960 in 1 MiB blocks, where the archive arrives in one write on closing.
+    [TestCase(512u, 131072)]
+    [TestCase(10240u, 163840)]
+    [TestCase(DefaultBlockSize, 103936 + 1024)]
+    public void TestMemoryWriterWritesInBlocks(uint blockSize, int expectedCapacity)
+    {
+        using var writer = LibArchiveWriter.CreateMemoryWriter(blockSize, ArchiveFormat.Ustar, initialCapacity: 0);
+        writer.AddEntry("a.txt", Small, MTime);
+        writer.AddEntry("b.bin", Large, MTime);
+        writer.Dispose();
+
+        var buffer = writer.ToMemoryStream();
+        Assert.That(buffer.Length, Is.EqualTo(103936 + 1024));
+        Assert.That(buffer.Capacity, Is.EqualTo(expectedCapacity));
+    }
+
+    // Without a block size, the memory writer writes in 1 MiB blocks, so this archive arrives in one write
+    [Test]
+    public void TestMemoryWriterWritesInOneMebibyteBlocksByDefault()
+    {
+        using var writer = LibArchiveWriter.CreateMemoryWriter(ArchiveFormat.Ustar, initialCapacity: 0);
+        writer.AddEntry("a.txt", Small, MTime);
+        writer.AddEntry("b.bin", Large, MTime);
+        writer.Dispose();
+
+        Assert.That(writer.ToMemoryStream().Capacity, Is.EqualTo(103936 + 1024));
+    }
+
     private static byte[] WriteToStream(ArchiveFormat format, uint blockSize, bool large)
     {
         using var output = new MemoryStream();
@@ -120,6 +159,16 @@ public class BlockSizeTests
                 writer.AddEntry("b.bin", Large, MTime);
         }
         return output.ToArray();
+    }
+
+    private static byte[] WriteToMemory(ArchiveFormat format, uint blockSize, bool large)
+    {
+        using var writer = LibArchiveWriter.CreateMemoryWriter(blockSize, format);
+        writer.AddEntry("a.txt", Small, MTime);
+        if (large)
+            writer.AddEntry("b.bin", Large, MTime);
+        writer.Dispose();
+        return writer.ToArray();
     }
 
     // Records the length of every write the writer makes

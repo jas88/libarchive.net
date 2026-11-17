@@ -210,6 +210,18 @@ using (var writer = LibArchiveWriter.CreateMemoryWriter(ArchiveFormat.Zip))
 return File(archiveBytes, "application/zip", "download.zip");
 ```
 
+By default the memory writer, like the other writers, hands the archive to its buffer in 1 MiB blocks. An
+overload takes the block size as its first argument:
+
+```csharp
+// libarchive collects 64 KiB, rather than 1 MiB, before copying it to the buffer
+using var writer = LibArchiveWriter.CreateMemoryWriter(64 * 1024, ArchiveFormat.Tar, CompressionType.Gzip);
+```
+
+The block size comes first so that existing calls such as `CreateMemoryWriter(ArchiveFormat.Zip, 0)` keep
+their meaning (no compression). To give it after the format, name every argument:
+`CreateMemoryWriter(format: ArchiveFormat.Zip, blockSize: 4096)`.
+
 ## Performance Tips
 
 ### 1. Choose the Right Format
@@ -399,7 +411,7 @@ public LibArchiveWriter(
     EncryptionType encryption = Default)      // Encryption type
 ```
 
-`blockSize` sets the size of the blocks libarchive hands to the file or stream (`archive_write_set_bytes_per_block`); `0` writes data as it is produced. The stream constructor takes the same parameter, and the memory writer uses the 1 MiB default. The last block is never padded (`archive_write_set_bytes_in_last_block(1)`), so the block size changes how an archive is written, not its size or contents: libarchive would otherwise pad tar and cpio archives written to a FIFO or device to a whole block.
+`blockSize` sets the size of the blocks libarchive hands to the file, stream or memory buffer (`archive_write_set_bytes_per_block`); `0` writes data as it is produced. The stream constructor takes the same parameter, and so does an overload of the memory writer, as its first parameter: `CreateMemoryWriter(blockSize, format, ...)`. The memory writer without it uses the 1 MiB default. The last block is never padded (`archive_write_set_bytes_in_last_block(1)`), so the block size changes how an archive is written, not its size or contents: libarchive would otherwise pad tar and cpio archives written to a FIFO or device to a whole block.
 
 ### Key Methods
 
