@@ -71,7 +71,7 @@ else
                 echo "  --linux     Build for Linux (x64, ARMv7, ARM64)"
                 echo "  --macos     Build for macOS (universal binary)"
                 echo "  --windows   Build for Windows (x86, x64, arm64)"
-                echo "  --package   Create NuGet package after building"
+                echo "  --package   Create and test NuGet package after building"
                 echo "  --help      Show this help message"
                 echo ""
                 echo "If no options are specified, builds for current platform only."
@@ -177,25 +177,76 @@ if [ $BUILD_WINDOWS -eq 1 ]; then
     fi
 fi
 
-# Create NuGet package
+# Create the NuGet package and test it, as CI does (the package and test-net462 jobs in
+# .github/workflows/build.yml): the tests run against the package, not the project
 if [ $PACKAGE -eq 1 ]; then
     log_info "Creating NuGet package..."
     cd "$REPO_ROOT"
 
     # Determine version. Not from the command line: its arguments are all options.
     VERSION="${PACKAGE_VERSION:-0.0.0-dev}"
+    # Packed into an empty directory of its own, so that it holds this package only
+    PACKAGE_DIR="$BUILD_DIR/package"
+    NUGET_TEST_DIR="$BUILD_DIR/package-test"
 
-    log_info "Building .NET project..."
-    dotnet build --configuration Release --nologo
-
-    log_info "Running tests..."
-    dotnet test --nologo --configuration Release
-
+    # MinVer sets the version from the git tags, over any PackageVersion given, so the
+    # version goes in as MinVer's own override (which must be a SemVer 2.0 version)
     log_info "Creating package version $VERSION..."
-    dotnet pack LibArchive.Net/LibArchive.Net.csproj -o . "-p:PackageVersion=$VERSION" --nologo --configuration Release
+    dotnet pack LibArchive.Net/LibArchive.Net.csproj -o "$PACKAGE_DIR" "-p:MinVerVersionOverride=$VERSION" --nologo --configuration Release
 
+    # The tests ask for the version as packed, read from the file name: it can differ
+    # from $VERSION (build metadata, after a +, is not part of a package version)
+    PACKAGE_FILE=""
+    for f in "$PACKAGE_DIR"/LibArchive.Net.*.nupkg; do
+        [ -f "$f" ] || continue
+        if [ -n "$PACKAGE_FILE" ]; then
+            log_error "dotnet pack created more than one package in $PACKAGE_DIR"
+            exit 1
+        fi
+        PACKAGE_FILE="$f"
+    done
+    if [ -z "$PACKAGE_FILE" ]; then
+        log_error "dotnet pack created no LibArchive.Net package in $PACKAGE_DIR"
+        exit 1
+    fi
+    PACKAGE_NAME="${PACKAGE_FILE##*/}"
+    PACKED_VERSION="${PACKAGE_NAME#LibArchive.Net.}"
+    PACKED_VERSION="${PACKED_VERSION%.nupkg}"
+
+    log_info "Testing package version $PACKED_VERSION..."
+    # LibArchive.Net may only come from $PACKAGE_DIR (not a cache or nuget.org); see the script
+    ./scripts/write-package-test-nuget-config.sh "$PACKAGE_DIR" "$NUGET_TEST_DIR"
+    dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --configfile "$NUGET_TEST_DIR/nuget.config" -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKED_VERSION"
+
+    # The modern .NET test target, from the project (scripts/generate-build-props.sh sets it for the SDK)
+    if ! TEST_TFMS=$(dotnet msbuild Test.LibArchive.Net/Test.LibArchive.Net.csproj -getProperty:TargetFrameworks \
+        -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKED_VERSION"); then
+        printf '%s\n' "$TEST_TFMS"
+        log_error "Could not read the TargetFrameworks of Test.LibArchive.Net/Test.LibArchive.Net.csproj"
+        exit 1
+    fi
+    TEST_TFMS=$(printf '%s\n' "$TEST_TFMS" | tail -1 | tr -d ' \r')
+    TEST_TFM=$(printf '%s\n' "$TEST_TFMS" | tr ';' '\n' | grep -E '^net[0-9]+\.[0-9]+$' | head -1)
+    if [ -z "$TEST_TFM" ]; then
+        log_error "No modern .NET target framework found in test project TargetFrameworks '$TEST_TFMS'"
+        exit 1
+    fi
+    log_info "Testing modern target framework: $TEST_TFM (from '$TEST_TFMS')"
+    dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework "$TEST_TFM" --configuration Release --no-restore --nologo -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKED_VERSION"
+    dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework "$TEST_TFM" --configuration Release --no-build --nologo -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKED_VERSION"
+
+    # The SDK runs .NET Framework tests on Windows only
+    if [ "$PLATFORM" = "windows" ]; then
+        log_info "Testing .NET Framework 4.6.2 (net462)..."
+        dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net462 --configuration Release --no-restore --nologo -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKED_VERSION"
+    else
+        log_info "Skipping the .NET Framework 4.6.2 (net462) tests, which run on Windows only"
+    fi
+
+    # Only a package that has passed the tests is put in the repository root
+    cp "$PACKAGE_FILE" .
     log_info "Package created:"
-    ls -lh LibArchive.Net.*.nupkg
+    ls -lh "$PACKAGE_NAME"
 fi
 
 log_info "Build complete!"

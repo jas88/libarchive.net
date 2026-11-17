@@ -82,7 +82,7 @@ This will automatically detect your platform and build the appropriate libraries
 ./build-all.sh --all --package
 ```
 
-`--linux` builds the Linux x64, ARMv7 and ARM64 libraries. On Linux, `--all` builds Linux and Windows, skipping macOS with a warning, and stops with an error if a MinGW cross-compiler is missing (see the [Windows requirements](#windows-x86-x64-arm64)). On macOS it builds macOS and skips Linux and Windows with a warning. Unless it has stopped, it then creates the package. `--package` packs version `$PACKAGE_VERSION`, or `0.0.0-dev` if it is not set (for example `PACKAGE_VERSION=1.2.3 ./build-all.sh --package`), into the repository root.
+`--linux` builds the Linux x64, ARMv7 and ARM64 libraries. On Linux, `--all` builds Linux and Windows, skipping macOS with a warning, and stops with an error if a MinGW cross-compiler is missing (see the [Windows requirements](#windows-x86-x64-arm64)). On macOS it builds macOS and skips Linux and Windows with a warning. Unless it has stopped, it then creates and tests the package. `--package` packs version `$PACKAGE_VERSION`, or `0.0.0-dev` if it is not set (for example `PACKAGE_VERSION=1.2.3 ./build-all.sh --package`), and runs the tests against that package as CI does, following [Testing a package locally](#testing-a-package-locally): on the test project's .NET target, and on Windows on .NET Framework 4.6.2 as well. A package that passes them is put in the repository root. The version must be a SemVer 2.0 version; build metadata (after a `+`) is not part of a package version, so `1.2.3+abc` is packed as `1.2.3`.
 
 ## Platform-Specific Requirements
 
@@ -338,6 +338,8 @@ dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net11.0 -
 ```
 
 `--framework` names the test project's .NET target, the first one in `Test.LibArchive.Net/Directory.Build.props`, which `scripts/generate-build-props.sh` writes for the installed SDK. On Windows, `--framework net462` runs the tests on .NET Framework, as the test-net462 job does. `artifacts/` is ignored by git.
+
+`./build-all.sh --package` (see [Quick Start](#quick-start)) runs these steps itself, with the version from `PACKAGE_VERSION`, the .NET target read from the test project as CI reads it, and net462 on Windows only. It packs into a temporary directory, which also holds the NuGet config and its packages folder and is deleted when the script ends, and copies the package to the repository root only if the tests pass.
 
 ### Cleaning Build Artifacts
 
