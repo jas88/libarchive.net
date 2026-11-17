@@ -16,9 +16,15 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Temporary files, all in one directory that is removed on exit
+# Temporary files, all in one directory that is removed on exit, together with any
+# temporary file replace_config has beside build-config.sh at that moment. A signal
+# ends the script through exit, so that the EXIT trap also runs then.
+CONFIG_TMP=""
 WORK_DIR=$(mktemp -d) || { echo -e "${RED}Error: could not create a temporary directory${NC}"; exit 1; }
-trap 'rm -rf "$WORK_DIR"' EXIT
+trap 'rm -rf "$WORK_DIR"; [ -z "$CONFIG_TMP" ] || rm -f "$CONFIG_TMP"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 UPDATES_FILE="$WORK_DIR/updates"   # name|old|new: every update found
 APPLIED_FILE="$WORK_DIR/applied"   # name|old|new: updates written to build-config.sh
 FAILED_CHECKS="$WORK_DIR/failed"   # name|reason: every failed check, failed updates included
@@ -210,6 +216,24 @@ config_sha256() {
     )
 }
 
+# Replace build-config.sh with the file $1 so that it is never half written. The new
+# content goes into a temporary file in the same directory, so that the rename cannot
+# cross file systems; cp -p gives that file build-config.sh's mode (portably, unlike
+# chmod --reference or stat), and mv -f then renames it over build-config.sh in one
+# step. If any step fails, the temporary file is removed and 1 is returned, with
+# build-config.sh exactly as it was. If the script is stopped meanwhile, the EXIT
+# trap removes the temporary file.
+replace_config() {
+    CONFIG_TMP=$(mktemp "${CONFIG_FILE%/*}/.build-config.sh.XXXXXX") || { CONFIG_TMP=""; return 1; }
+    if cp -p "$CONFIG_FILE" "$CONFIG_TMP" && cat "$1" > "$CONFIG_TMP" && mv -f "$CONFIG_TMP" "$CONFIG_FILE"; then
+        CONFIG_TMP=""
+        return 0
+    fi
+    rm -f "$CONFIG_TMP"
+    CONFIG_TMP=""
+    return 1
+}
+
 # Report and record an update that could not be applied
 update_failed() {
     echo -e "  ${RED}ERROR: $2${NC}"
@@ -282,10 +306,11 @@ update_version() {
         return 1
     fi
 
-    # Both are in place, so the copy replaces build-config.sh (cp keeps the file's
-    # mode). A failed write could leave the file half written, so it stops the script.
-    if ! cp "$candidate.sha256" "$CONFIG_FILE"; then
-        echo -e "  ${RED}ERROR: could not write $CONFIG_FILE${NC}"
+    # Both are in place, so the copy replaces build-config.sh, atomically (see
+    # replace_config). If that fails, build-config.sh is unchanged but cannot be
+    # updated at all, so the script stops before any branch or PR is created.
+    if ! replace_config "$candidate.sha256"; then
+        echo -e "  ${RED}ERROR: could not replace $CONFIG_FILE; it is unchanged${NC}"
         exit 1
     fi
     echo "  Updated $var_name: $new_ver"
