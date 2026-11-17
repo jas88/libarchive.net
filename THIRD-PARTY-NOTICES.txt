@@ -55,10 +55,12 @@ This file is written and updated by hand. Nothing generates it.
 
 * The toolchain sections (10 to 13) were checked against the native binaries
   of a package built by .github/workflows/build.yml before Mbed TLS was added
-  to the Linux builds. Each section says what was found in those binaries and
-  how, and says so plainly where something could not be established. The
-  copied licence texts in those sections were compared with the upstream
-  source releases named below. The binaries inspected were built with:
+  to the Linux builds, except for what section 11 says about the Linux
+  libraries, which rests on a fourth package (see below). Each section says
+  what was found in those binaries and how, and says so plainly where
+  something could not be established. The copied licence texts in those
+  sections were compared with the upstream source releases named below. The
+  binaries inspected were built with:
 
     Linux    Bootlin release stable-2026.08-1, whose manifest names GCC
              15.3.0 and musl 1.2.6
@@ -123,6 +125,27 @@ This file is written and updated by hand. Nothing generates it.
   When LZOKAY_COMMIT, native/lzo-shim or a build toolchain changes, repeat
   the checks that section 9 describes and update this record.
 
+* What section 11 says about the Linux libraries was checked against the
+  native binaries of a fourth package, built by the same workflow in run
+  43997057296 for commit 1597e17 of the branch that links each Linux library
+  with the toolchain's libgcc.a in one group with musl's libc.a. (The run
+  built 2475b72, the merge commit that GitHub made for the pull request,
+  which the package's metadata names; its files are those of 1597e17.) Its
+  four Linux libraries were built in that run, not taken from the
+  workflow's cache, and its linux-musl-* files are identical copies of them.
+  Only those statements of section 11 rest on this package; what section 10
+  says about the Linux libraries was checked again on it and holds for it as
+  well. Its Linux libraries were built with the Bootlin release named above
+  (as the compiler identification recorded in each of them shows), and their
+  code was compared with the libgcc.a of that release's toolchain archives,
+  checked against Bootlin's published checksums. The notices of the GCC
+  source files that section 11 names for the Linux libraries were read in
+  the GCC 15.3.0 release tarball, gcc-15.3.0.tar.xz from ftp.gnu.org, whose
+  signature was checked against the GNU keyring; it was made with one of
+  the keys that gcc.gnu.org lists for GCC releases. When the link command in
+  native/build-linux-common.sh or BOOTLIN_RELEASE changes, repeat the checks
+  that section 11 describes for the Linux libraries and update this record.
+
 
 Summary
 -------
@@ -139,8 +162,9 @@ Summary
       (libmbedcrypto)         Apache 2.0 or GPLv2 or later)
    9  lzokay                  MIT; parts as noted               all
   10  musl libc               MIT; parts as noted               Linux
-  11  GCC runtime (libgcc)    GPLv3 with GCC Runtime Library    Linux x86;
-                              Exception                         Windows x86, x64
+  11  GCC runtime (libgcc)    GPLv3 with GCC Runtime Library    Linux x86,
+                              Exception; parts as noted         arm, arm64;
+                                                                Windows x86, x64
   12  MinGW-w64 runtime       several; see its licensing file   Windows
   13  LLVM compiler-rt        Apache 2.0 with LLVM Exceptions   Windows arm64
 
@@ -1602,31 +1626,69 @@ obstacle to adoption, that text has been removed.
 11. GCC runtime library (libgcc)
 ==============================================================================
 
-Applies to:  Linux x86 (32-bit) native binary
+Applies to:  Linux x86 (32-bit), arm and arm64 native binaries, including
+             the copies shipped for the linux-musl-* RIDs (not the x64 one)
              Windows x86 and x64 native binaries
 Source:      https://gcc.gnu.org/
 Licence:     GNU General Public License version 3 with the GCC Runtime
              Library Exception version 3.1 (SPDX identifier of the exception:
-             GCC-exception-3.1)
+             GCC-exception-3.1); some files carry other terms, as set out
+             below.
 
-Linux x86: all four Linux scripts link with -nostdlib, and only
-native/build-linux-x86.sh also names the toolchain's libgcc on the link
-command (for the 64-bit division helpers). The Bootlin manifest described in
-section 10 records the GCC target runtime libraries as licensed under
+Linux: all four Linux scripts link libarchive.so with link_libarchive in
+native/build-linux-common.sh, which links with -nostdlib and names the
+toolchain's own libgcc.a on the link command, in one group with musl's
+libc.a, so that the helper routines that the compiled code and libc.a call
+are linked into the library. The Bootlin manifest described in section 10
+records the GCC target runtime libraries as licensed under
 "GPL-3.0-with-GCC-exception", with the licence file "COPYING.RUNTIME".
 
-Verified on the binaries inspected (see "How this file is maintained"): the
-x86 libarchive.so defines five libgcc routines (__udivdi3, __umoddi3,
-__divdi3, __moddi3 and __udivmoddi4), and their code is identical to that of
-the corresponding members of the toolchain's libgcc.a. They are compiled from
-libgcc/libgcc2.c. The x64, arm and arm64 libraries contain no libgcc code:
-their symbol tables are intact and define no global symbol of libgcc.a, no
-code of libgcc.a was found in them, and the helper routines that the arm and
-arm64 code calls (__aeabi_* and __*tf* names) are left undefined, to be
-supplied by the process that loads the library. The x86 library likewise
-leaves one helper, __divmoddi4, undefined. None of the four libraries
-contains GCC's start-up objects (crtbeginS.o, crtendS.o) or code from any
-other GCC library (libgcc_eh, libatomic, libstdc++ and others were checked).
+Verified on the binaries inspected (see "How this file is maintained"):
+libgcc code is inside the x86, arm and arm64 libarchive.so files, and not
+inside the x64 one. The libraries keep their symbol tables, which name the
+objects linked in and the functions that they define. The members of the
+toolchain's libgcc.a in each library were found from the functions that it
+defines. The code of each is identical to that of the member of the same
+name in the libgcc.a of the Bootlin toolchain for its architecture,
+downloaded and checked against Bootlin's published checksums, apart from
+the bytes that the linker fills in. These are the members, with the source
+files that their debugging information in libgcc.a names for all of their
+code:
+
+* x86: six 64-bit division routines (_divdi3, _moddi3, _divmoddi4,
+  _udivdi3, _umoddi3 and _udivmoddi4), from libgcc/libgcc2.c.
+* arm: six members. _udivsi3 and _divsi3 (the 32-bit division routines,
+  under their own and their __aeabi_ names) and _dvmd_lnx (the handler for
+  division by zero, which calls musl's raise) are from
+  libgcc/config/arm/lib1funcs.S; _aeabi_ldivmod and _aeabi_uldivmod (the
+  64-bit division routines of the ARM run-time ABI) are from bpabi.S in the
+  same directory, which lib1funcs.S includes; and _udivmoddi4, which those
+  two call, is from libgcc/libgcc2.c.
+* arm64: sixteen members. Fifteen are 128-bit floating point routines, from
+  the files of the same names in libgcc/soft-fp: addtf3, subtf3, multf3,
+  divtf3, eqtf2, getf2, letf2, fixtfsi, fixunstfsi, floatsitf, floatunsitf,
+  extendsftf2, extenddftf2, trunctfsf2 and trunctfdf2. musl's long double
+  code calls them (its printf, scanf and strtod families, fmodl, frexpl and
+  scalbnl), as long double is a 128-bit type on arm64. The sixteenth,
+  sfp-exceptions, from libgcc/config/aarch64/sfp-exceptions.c, is what
+  thirteen of them call to raise floating point exceptions.
+* x64: none. Its symbol table defines no global symbol of libgcc.a, and no
+  code of libgcc.a was found in it.
+
+No other member of libgcc.a is inside any of the libraries. They define no
+other global symbol of it (apart from the __x86.get_pc_thunk helpers in the
+x86 library, which GCC emits into every object that needs them), and a search
+of each library for the code of every member of its libgcc.a found no other
+member: the only further matches, for 34 short fixed-point members of the
+arm libgcc.a (12 to 28 bytes of code each), are inside three functions that
+the symbol table gives to LZ4 and to libarchive, of which those bytes are
+part. Members too short for that search would still be named in the symbol
+tables, and none of them is. The only undefined symbols left in the
+libraries are four weak references of zstd (ZSTD_trace_*), in the x86, x64
+and arm64 libraries, which resolve to null when nothing defines them. None
+of the four libraries contains GCC's start-up objects (crtbeginS.o,
+crtendS.o) or code from any other GCC library (libgcc_eh, libatomic,
+libstdc++ and others were checked).
 
 The exception grants additional permission to combine libgcc with
 independently written code, on the conditions that it sets out. It is
@@ -1735,13 +1797,63 @@ present and to find nothing from several GCC libraries that are not linked.
   recognised by their code. None was found by a looser search, but they
   cannot be ruled out. If present, they are libgcc code under the same terms.
 
-The source files of the members found (libgcc/libgcc2.c,
-libgcc/config/i386/cygwin.S, and cygming-crtbegin.c and cygming-crtend.c in
-the same directory) carry the licence named at the head of this section. The
-text above was compared with the COPYING.RUNTIME file at the release tag of
-each of the two GCC releases concerned (the one the Bootlin manifest names
-and the one behind the Ubuntu compilers) and is identical to both. Ubuntu's
+The source files of the members found carry the licence named at the head
+of this section, apart from the soft-fp files of the Linux arm64 library
+(see below): libgcc/libgcc2.c, libgcc/config/arm/lib1funcs.S and bpabi.S,
+libgcc/config/aarch64/sfp-exceptions.c, libgcc/config/i386/cygwin.S, and
+cygming-crtbegin.c and cygming-crtend.c in the same directory. So does
+libgcc/config/aarch64/sfp-machine.h, which soft-fp.h and sfp-exceptions.c
+include. The text above was compared with the COPYING.RUNTIME file at the
+release tag of each of the two GCC releases concerned (the one the Bootlin
+manifest names and the one behind the Ubuntu compilers) and is identical to
+both, and to the file in the release tarball of the first. Ubuntu's
 packaging does not change that file.
+
+The fifteen soft-fp members of the Linux arm64 library are compiled from
+files that carry other terms. Those files, and the headers of
+libgcc/soft-fp that they include (soft-fp.h, quad.h, single.h, double.h,
+op-common.h, op-1.h, op-2.h, op-4.h and op-8.h), come from the GNU C
+Library, as their notices say, and each of them carries the notice below:
+the GNU Lesser General Public License, version 2.1 or later, with unlimited
+permission to link the compiled file into combinations with other programs
+and to distribute those combinations, the permission that
+include/longlong.h also gives (see below). This file relies on that
+permission for the code of those files. The notice is copied from
+soft-fp.h in the GCC release that the Bootlin manifest names. In each of
+the other files it is word for word the same from its copyright line on,
+and differs only in the description of the file above that line. The GNU
+Lesser General Public License, version 2.1, is the file COPYING.LIB of the
+GCC source release, and is published at
+https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt
+
+----- BEGIN gcc: libgcc/soft-fp/soft-fp.h (notice) -----
+/* Software floating-point emulation.
+   Copyright (C) 1997-2022 Free Software Foundation, Inc.
+   This file is part of the GNU C Library.
+
+   The GNU C Library is free software; you can redistribute it and/or
+   modify it under the terms of the GNU Lesser General Public
+   License as published by the Free Software Foundation; either
+   version 2.1 of the License, or (at your option) any later version.
+
+   In addition to the permissions in the GNU Lesser General Public
+   License, the Free Software Foundation gives you unlimited
+   permission to link the compiled version of this file into
+   combinations with other programs, and to distribute those
+   combinations without any restriction coming from the use of this
+   file.  (The Lesser General Public License restrictions do apply in
+   other respects; for example, they cover modification of the file,
+   and distribution when not linked into a combine executable.)
+
+   The GNU C Library is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+   Lesser General Public License for more details.
+
+   You should have received a copy of the GNU Lesser General Public
+   License along with the GNU C Library; if not, see
+   <https://www.gnu.org/licenses/>.  */
+----- END gcc: libgcc/soft-fp/soft-fp.h (notice) -----
 
 Two further notices in the GCC sources bear on this code:
 
@@ -1756,10 +1868,14 @@ Two further notices in the GCC sources bear on this code:
   which carries the notice below: the GNU Lesser General Public License,
   version 2.1 or later, with unlimited permission to link the compiled file
   into combinations with other programs and to distribute those
-  combinations. That concerns the division routines in the Linux x86 library
-  and in the Windows x86 DLL. How much of their code derives from those
-  macros was not established. The notice is copied from the GCC release that
-  the Bootlin manifest names; in the release behind the Ubuntu compilers it
+  combinations. soft-fp.h includes longlong.h as well, as the AArch64
+  sfp-machine.h does not define umul_ppmm itself, and the multiplication
+  and division code for the 128-bit format uses its umul_ppmm and
+  udiv_qrnnd macros. That concerns the libgcc2.c routines in the Linux x86
+  and arm libraries and in the Windows x86 DLL, and the soft-fp routines in
+  the Linux arm64 library. How much of their code derives from those macros
+  was not established. The notice is copied from the GCC release that the
+  Bootlin manifest names; in the release behind the Ubuntu compilers it
   differs only in its second line, where the years are 1991-2023.
 
 ----- BEGIN gcc: include/longlong.h (notice) -----
