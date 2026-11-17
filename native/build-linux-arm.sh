@@ -18,7 +18,7 @@ cd "$BUILD_DIR"
 # Load shared configuration
 . "${SCRIPT_DIR}/build-config.sh"
 
-# Load the mbedTLS build and verification helpers shared by the Linux builds
+# Load the helpers shared by the Linux builds (mbedTLS build, final link, checks, load tests)
 # shellcheck source-path=SCRIPTDIR
 . "${SCRIPT_DIR}/build-linux-common.sh"
 
@@ -134,35 +134,19 @@ make -sj$NCPU install
 cd ..
 
 echo "Creating final shared library..."
-$CC -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/liblzo2.a local/lib/libzstd.a local/lib/liblz4.a local/lib/libmbedcrypto.a ${TOOLCHAIN_SYSROOT}/lib/libc.a -nostdlib
+# libarchive.a, the libraries it uses, libgcc (which supplies the integer division
+# helpers ARMv7 code calls) and musl's libc.a, failing on any unresolved symbol
+# (see build-linux-common.sh)
+link_libarchive libarchive.so
 
 # Fail the build unless the mbedTLS crypto backend was linked in (see build-linux-common.sh)
 verify_crypto_backend libarchive.so
 
-echo "Testing library..."
-cat > test.c <<EOT
-#include <stdio.h>
-#include <dlfcn.h>
-int main() {
-   printf("libarchive.so=%p\n",dlopen("./libarchive.so",RTLD_NOW));
-   return 0;
-}
-EOT
-gcc -o test test.c
-./test
+# Fail the build unless the library needs nothing at run time and loads in a process
+# that contains only musl, run under QEMU user-mode emulation (see build-linux-common.sh)
+verify_self_contained libarchive.so
+test_load_musl libarchive.so qemu-arm
 file libarchive.so
-
-echo "=== Checking dynamic library dependencies ==="
-ldd libarchive.so || echo "Statically linked (no dynamic dependencies)"
-
-echo "=== Inspecting symbols ==="
-# The toolchain's nm: only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
-NM="${AR%ar}nm"
-"$NM" -D libarchive.so | head -20 || true
-"$NM" libarchive.so | grep -c " T " | xargs echo "Defined symbols:"
-"$NM" libarchive.so | grep -c " U " | xargs echo "Undefined symbols:"
-
-echo "Skipping native test (cross-compilation - cannot run ARMv7 binary on x86_64 host)"
 
 # Fail the build unless lzop support was linked in and needs nothing the library lacks (see build-lzo-shim.sh)
 verify_lzo_support libarchive.so
