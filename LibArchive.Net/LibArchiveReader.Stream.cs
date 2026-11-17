@@ -21,9 +21,13 @@ public partial class LibArchiveReader
     private Queue<byte[]>? _replayChunks;
 
     // Callback delegates for stream reading
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int ArchiveOpenCallback(IntPtr archive, IntPtr clientData);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int ArchiveCloseCallback(IntPtr archive, IntPtr clientData);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate IntPtr ArchiveReadCallback(IntPtr archive, IntPtr clientData, out IntPtr buffer);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate long ArchiveSeekCallback(IntPtr archive, IntPtr clientData, long offset, int whence);
 
     // Delegate instances must be kept alive to prevent GC while native code holds references
@@ -280,11 +284,13 @@ public partial class LibArchiveReader
 
 #if NET7_0_OR_GREATER
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_read_set_seek_callback(
         IntPtr archive,
         [MarshalAs(UnmanagedType.FunctionPtr)] ArchiveSeekCallback seekCallback);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_read_open(
         IntPtr archive,
         IntPtr clientData,
@@ -292,12 +298,12 @@ public partial class LibArchiveReader
         [MarshalAs(UnmanagedType.FunctionPtr)] ArchiveReadCallback? readCallback,
         [MarshalAs(UnmanagedType.FunctionPtr)] ArchiveCloseCallback? closeCallback);
 #else
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_read_set_seek_callback(
         IntPtr archive,
         [MarshalAs(UnmanagedType.FunctionPtr)] ArchiveSeekCallback seekCallback);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_read_open(
         IntPtr archive,
         IntPtr clientData,

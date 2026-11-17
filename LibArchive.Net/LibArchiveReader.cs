@@ -165,8 +165,10 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         if (handle == IntPtr.Zero)
             throw new ApplicationException("Failed to create archive reader");
 
-        archive_read_support_filter_all(handle);
-        archive_read_support_format_all(handle);
+        // These register what they can and only warn when a filter needs an external
+        // program, which libarchive then reports when it is used; their results are ignored.
+        _ = archive_read_support_filter_all(handle);
+        _ = archive_read_support_format_all(handle);
         if (rawFormat && archive_read_support_format_raw(handle) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
             Throw();
 
@@ -185,12 +187,12 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
             case SourceType.File:
             {
                 using var uName = new SafeStringBuffer(_filename!);
-                return archive_read_open_filename(handle, uName.Ptr, (int)_blockSize);
+                return archive_read_open_filename(handle, uName.Ptr, _blockSize);
             }
             case SourceType.MultiVolume:
             {
                 using var names = new DisposableStringArray(_filenames!);
-                return archive_read_open_filenames(handle, names.Ptr, (int)_blockSize);
+                return archive_read_open_filenames(handle, names.Ptr, _blockSize);
             }
             default:
                 return OpenStream();
@@ -471,10 +473,20 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         {
             // Once EOF is reached, return 0 without calling native code again
             // (libarchive throws if archive_read_data is called after EOF)
+            if (buffer == null)
+                throw new ArgumentNullException(nameof(buffer));
+            if (offset < 0 || offset > buffer.Length)
+                throw new ArgumentOutOfRangeException(nameof(offset));
+            if (count < 0 || count > buffer.Length - offset)
+                throw new ArgumentOutOfRangeException(nameof(count));
+
             if (_eof)
                 return 0;
 
-            nint result = archive_read_data(archiveHandle, ref buffer[offset], count);
+            if (count == 0)
+                return 0;
+
+            nint result = archive_read_data(archiveHandle, ref buffer[offset], (nuint)count);
             if (result < 0)
             {
                 // Negative return indicates error (e.g., wrong password, encryption not supported)
@@ -553,108 +565,139 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     // P/Invoke declarations for libarchive
     // Use LibraryImport for .NET 7+ (AOT-friendly, source-generated)
+    // libarchive's __LA_MODE_T is unsigned short on Windows and mode_t elsewhere, which is
+    // 16 bits on macOS and 32 bits on Linux
+    private static readonly bool ModeTIs32Bits = RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
+
+    private static int archive_entry_filetype(IntPtr entry)
+        => ModeTIs32Bits ? (int)archive_entry_filetype_u32(entry) : archive_entry_filetype_u16(entry);
+
     // Use DllImport for older frameworks (runtime marshalling)
 #if NET7_0_OR_GREATER
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial IntPtr archive_read_new();
 
     [LibraryImport("archive")]
-    private static partial void archive_read_support_filter_all(IntPtr a);
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    private static partial int archive_read_support_filter_all(IntPtr a);
 
     [LibraryImport("archive")]
-    private static partial void archive_read_support_format_all(IntPtr a);
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    private static partial int archive_read_support_format_all(IntPtr a);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_read_support_format_raw(IntPtr a);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_filter_count(IntPtr a);
 
     [LibraryImport("archive")]
-    private static partial int archive_read_open_filename(IntPtr a, IntPtr filename, int blocksize);
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    private static partial int archive_read_open_filename(IntPtr a, IntPtr filename, nuint blockSize);
 
     [LibraryImport("archive")]
-    private static partial int archive_read_open_filenames(IntPtr a, IntPtr filename, int blocksize);
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    private static partial int archive_read_open_filenames(IntPtr a, IntPtr filename, nuint blockSize);
 
     [LibraryImport("archive")]
-    private static partial nint archive_read_data(IntPtr a, ref byte buff, nint size);
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    private static partial nint archive_read_data(IntPtr a, ref byte buff, nuint size);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_read_next_header(IntPtr a, out IntPtr entry);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial IntPtr archive_entry_pathname(IntPtr entry);
 
-    [LibraryImport("archive")]
-    private static partial int archive_entry_filetype(IntPtr entry);
+    [LibraryImport("archive", EntryPoint = "archive_entry_filetype")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    private static partial ushort archive_entry_filetype_u16(IntPtr entry);
+
+    [LibraryImport("archive", EntryPoint = "archive_entry_filetype")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    private static partial uint archive_entry_filetype_u32(IntPtr entry);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial long archive_entry_size(IntPtr entry);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_entry_size_is_set(IntPtr entry);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_read_free(IntPtr a);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial IntPtr archive_error_string(IntPtr a);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_read_add_passphrase(IntPtr a, IntPtr passphrase);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_read_has_encrypted_entries(IntPtr a);
 #else
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr archive_read_new();
 
-    [DllImport("archive")]
-    private static extern void archive_read_support_filter_all(IntPtr a);
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int archive_read_support_filter_all(IntPtr a);
 
-    [DllImport("archive")]
-    private static extern void archive_read_support_format_all(IntPtr a);
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int archive_read_support_format_all(IntPtr a);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_read_support_format_raw(IntPtr a);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_filter_count(IntPtr a);
 
-    [DllImport("archive")]
-    private static extern int archive_read_open_filename(IntPtr a, IntPtr filename, int blocksize);
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int archive_read_open_filename(IntPtr a, IntPtr filename, nuint blockSize);
 
-    [DllImport("archive")]
-    private static extern int archive_read_open_filenames(IntPtr a, IntPtr filename, int blocksize);
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int archive_read_open_filenames(IntPtr a, IntPtr filename, nuint blockSize);
 
-    [DllImport("archive")]
-    private static extern nint archive_read_data(IntPtr a, ref byte buff, nint size);
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
+    private static extern nint archive_read_data(IntPtr a, ref byte buff, nuint size);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_read_next_header(IntPtr a, out IntPtr entry);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr archive_entry_pathname(IntPtr entry);
 
-    [DllImport("archive")]
-    private static extern int archive_entry_filetype(IntPtr entry);
+    [DllImport("archive", EntryPoint = "archive_entry_filetype", CallingConvention = CallingConvention.Cdecl)]
+    private static extern ushort archive_entry_filetype_u16(IntPtr entry);
 
-    [DllImport("archive")]
+    [DllImport("archive", EntryPoint = "archive_entry_filetype", CallingConvention = CallingConvention.Cdecl)]
+    private static extern uint archive_entry_filetype_u32(IntPtr entry);
+
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern long archive_entry_size(IntPtr entry);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_entry_size_is_set(IntPtr entry);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_read_free(IntPtr a);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr archive_error_string(IntPtr a);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_read_add_passphrase(IntPtr a, IntPtr passphrase);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_read_has_encrypted_entries(IntPtr a);
 #endif
 

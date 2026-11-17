@@ -50,7 +50,7 @@ public partial class LibArchiveWriter
                     int remaining = data.Length;
                     while (remaining > 0)
                     {
-                        nint written = archive_write_data(handle, ptr + offset, remaining);
+                        nint written = archive_write_data(handle, ptr + offset, (nuint)remaining);
                         if (written < 0)
                             Throw();
                         if (written == 0)
@@ -268,7 +268,7 @@ public partial class LibArchiveWriter
                 int remaining = buffer.Length;
                 while (remaining > 0)
                 {
-                    nint written = archive_write_data(handle, ptr + offset, remaining);
+                    nint written = archive_write_data(handle, ptr + offset, (nuint)remaining);
                     if (written < 0)
                         Throw();
                     if (written == 0)
@@ -316,7 +316,7 @@ public partial class LibArchiveWriter
                             // Validate entire write range is within buffer bounds before pointer arithmetic
                             if (writeOffset < 0 || writeRemaining < 0 || writeOffset + writeRemaining > bytesRead)
                                 throw new InvalidOperationException("Write range out of bounds");
-                            nint written = archive_write_data(handle, ptr + writeOffset, writeRemaining);
+                            nint written = archive_write_data(handle, ptr + writeOffset, (nuint)writeRemaining);
                             if (written < 0)
                                 Throw();
                             if (written == 0)
@@ -365,7 +365,7 @@ public partial class LibArchiveWriter
                 int chunkRemaining = chunkSize;
                 while (chunkRemaining > 0)
                 {
-                    nint written = archive_write_data(handle, ptr + offset + chunkOffset, chunkRemaining);
+                    nint written = archive_write_data(handle, ptr + offset + chunkOffset, (nuint)chunkRemaining);
                     if (written < 0)
                         Throw();
                     if (written == 0)
@@ -419,7 +419,7 @@ public partial class LibArchiveWriter
                         // Explicit writeOffset >= bufferSize check satisfies CodeQL taint sanitizer detection
                         if (writeOffset < 0 || writeOffset >= bufferSize || writeRemaining < 0 || writeOffset + writeRemaining > bufferSize)
                             throw new InvalidOperationException("Write range out of bounds");
-                        nint written = archive_write_data(handle, ptr + writeOffset, writeRemaining);
+                        nint written = archive_write_data(handle, ptr + writeOffset, (nuint)writeRemaining);
                         if (written < 0)
                             Throw();
                         if (written == 0)

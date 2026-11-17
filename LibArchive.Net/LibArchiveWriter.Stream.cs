@@ -12,9 +12,12 @@ public partial class LibArchiveWriter
     private GCHandle? callbackHandle;
 
     // Callback delegates for stream writing
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int ArchiveOpenCallback(IntPtr archive, IntPtr clientData);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int ArchiveCloseCallback(IntPtr archive, IntPtr clientData);
-    private delegate IntPtr ArchiveWriteCallback(IntPtr archive, IntPtr clientData, IntPtr buffer, IntPtr length);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate IntPtr ArchiveWriteCallback(IntPtr archive, IntPtr clientData, IntPtr buffer, UIntPtr length);
 
     // Delegate instances must be kept alive to prevent GC while native code holds references
     private ArchiveOpenCallback? _openCallback;
@@ -136,7 +139,7 @@ public partial class LibArchiveWriter
         return (int)ARCHIVE_RESULT.ARCHIVE_OK;
     }
 
-    private unsafe IntPtr OnWrite(IntPtr archive, IntPtr clientData, IntPtr buffer, IntPtr length)
+    private unsafe IntPtr OnWrite(IntPtr archive, IntPtr clientData, IntPtr buffer, UIntPtr length)
     {
         try
         {
@@ -144,14 +147,14 @@ public partial class LibArchiveWriter
             if (stream == null || !stream.CanWrite)
                 return new IntPtr(-1); // Signal error to libarchive
 
-            int len = length.ToInt32();
+            int len = checked((int)length.ToUInt64());
 
             // Copy data from native buffer to managed byte array and write to stream
             var managedBuffer = new byte[len];
             Marshal.Copy(buffer, managedBuffer, 0, len);
             stream.Write(managedBuffer, 0, len);
 
-            return length;
+            return new IntPtr(len);
         }
         catch
         {
@@ -248,6 +251,7 @@ public partial class LibArchiveWriter
 
 #if NET7_0_OR_GREATER
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_open(
         IntPtr archive,
         IntPtr clientData,
@@ -255,7 +259,7 @@ public partial class LibArchiveWriter
         [MarshalAs(UnmanagedType.FunctionPtr)] ArchiveWriteCallback? writeCallback,
         [MarshalAs(UnmanagedType.FunctionPtr)] ArchiveCloseCallback? closeCallback);
 #else
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_open(
         IntPtr archive,
         IntPtr clientData,
