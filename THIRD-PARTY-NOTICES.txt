@@ -52,12 +52,12 @@ This file is written and updated by hand. Nothing generates it.
   system DLLs named on the link command, such as kernel32, ws2_32 and bcrypt,
   and the system C runtime).
 
-* The toolchain sections (8 to 11) were checked against the native binaries
-  of a package built by .github/workflows/build.yml. Each section says what
-  was found in those binaries and how, and says so plainly where something
-  could not be established. The copied licence texts in those sections were
-  compared with the upstream source releases named below. The binaries
-  inspected were built with:
+* The toolchain sections (9 to 12) were checked against the native binaries
+  of a package built by .github/workflows/build.yml before Mbed TLS was added
+  to the Linux builds. Each section says what was found in those binaries and
+  how, and says so plainly where something could not be established. The
+  copied licence texts in those sections were compared with the upstream
+  source releases named below. The binaries inspected were built with:
 
     Linux    Bootlin release stable-2026.08-1, whose manifest names GCC
              15.3.0 and musl 1.2.6
@@ -72,11 +72,24 @@ This file is written and updated by hand. Nothing generates it.
 
   This records what was inspected, not what is built today. When
   native/build-config.sh or .github/workflows/build.yml names a different
-  toolchain, repeat the checks that sections 8 to 11 describe and update this
+  toolchain, repeat the checks that sections 9 to 12 describe and update this
   record. The compilers that build the Windows x86 and x64 DLLs come from the
   build machine's package repository and are not pinned by this repository,
-  so check sections 9 and 10 again when the build image in
+  so check sections 10 and 11 again when the build image in
   .github/workflows/build.yml changes.
+
+* The Mbed TLS section (8) was checked against the native binaries of a later
+  package, built by the same workflow after Mbed TLS was added to the Linux
+  builds; that section says what was found in them and how. Only section 8
+  rests on that package: the toolchain sections were not checked again on it.
+  Its Linux libraries were built from Mbed TLS 3.6.8 (the version number that
+  mbedtls_version_get_number returns in each of them), configured by
+  native/mbedtls-config.h, with the Bootlin release named above (as the
+  compiler identification recorded in each of them shows). The text copied in
+  section 8 is from the Mbed TLS 3.6.8 release tarball at the address that
+  native/build-config.sh gives, whose SHA-256 checksum matches the one pinned
+  there. When MBEDTLS_VERSION or native/mbedtls-config.h changes, repeat the
+  checks that section 8 describes and update this record.
 
 
 Summary
@@ -90,11 +103,13 @@ Summary
    5  Zstandard (libzstd)     BSD (chosen from BSD or GPLv2)    all
    6  LZ4 (liblz4)            BSD 2-Clause                      all
    7  libxml2                 MIT                               all
-   8  musl libc               MIT; parts as noted               Linux
-   9  GCC runtime (libgcc)    GPLv3 with GCC Runtime Library    Linux x86;
+   8  Mbed TLS                Apache 2.0 (chosen from           Linux
+      (libmbedcrypto)         Apache 2.0 or GPLv2 or later)
+   9  musl libc               MIT; parts as noted               Linux
+  10  GCC runtime (libgcc)    GPLv3 with GCC Runtime Library    Linux x86;
                               Exception                         Windows x86, x64
-  10  MinGW-w64 runtime       several; see its licensing file   Windows
-  11  LLVM compiler-rt        Apache 2.0 with LLVM Exceptions   Windows arm64
+  11  MinGW-w64 runtime       several; see its licensing file   Windows
+  12  LLVM compiler-rt        Apache 2.0 with LLVM Exceptions   Windows arm64
 
 
 ==============================================================================
@@ -655,7 +670,335 @@ with different Copyright notices". These are their notices:
 
 
 ==============================================================================
-8. musl libc
+8. Mbed TLS (libmbedcrypto)
+==============================================================================
+
+Applies to:  Linux native binaries only (all four architectures, including
+             the copies shipped for the linux-musl-* RIDs)
+Source:      https://github.com/Mbed-TLS/mbedtls (release pinned in
+             native/build-config.sh)
+Licence:     Apache License, Version 2.0 (SPDX identifier: Apache-2.0),
+             chosen from the dual licence "Apache-2.0 OR GPL-2.0-or-later"
+
+Mbed TLS is the cryptography library of the Linux builds. libarchive uses it
+for ZIP AES encryption (the AES block cipher, PBKDF2 and HMAC) and for the
+MD5, RIPEMD-160, SHA-1, SHA-256, SHA-384 and SHA-512 digests. Only its crypto
+library, libmbedcrypto.a, is built and linked in; its TLS and X.509 libraries
+are not built. The macOS and Windows libraries use the operating system's
+cryptography instead (CommonCrypto on macOS, CNG on Windows):
+native/build-macos.sh and native/build-windows.sh do not build Mbed TLS, and
+download_all_libraries in native/build-config.sh does not download it.
+
+Mbed TLS is dual-licensed. Its LICENSE file opens with the statement below,
+which lets users choose between the Apache License, Version 2.0 and the GNU
+General Public License, version 2 or later. LibArchive.Net takes Mbed TLS
+under the Apache License, reproduced below in full from the same file. The
+GPL alternative is not relied on, and the text of the GNU General Public
+License, version 2, which follows the Apache License in LICENSE, is not
+reproduced.
+
+----- BEGIN mbedtls: LICENSE (the statement of the dual licence) -----
+Mbed TLS files are provided under a dual [Apache-2.0](https://spdx.org/licenses/Apache-2.0.html)
+OR [GPL-2.0-or-later](https://spdx.org/licenses/GPL-2.0-or-later.html) license.
+This means that users may choose which of these licenses they take the code
+under.
+----- END mbedtls: LICENSE (the statement of the dual licence) -----
+
+----- BEGIN mbedtls: LICENSE (the Apache License, Version 2.0) -----
+                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+   1. Definitions.
+
+      "License" shall mean the terms and conditions for use, reproduction,
+      and distribution as defined by Sections 1 through 9 of this document.
+
+      "Licensor" shall mean the copyright owner or entity authorized by
+      the copyright owner that is granting the License.
+
+      "Legal Entity" shall mean the union of the acting entity and all
+      other entities that control, are controlled by, or are under common
+      control with that entity. For the purposes of this definition,
+      "control" means (i) the power, direct or indirect, to cause the
+      direction or management of such entity, whether by contract or
+      otherwise, or (ii) ownership of fifty percent (50%) or more of the
+      outstanding shares, or (iii) beneficial ownership of such entity.
+
+      "You" (or "Your") shall mean an individual or Legal Entity
+      exercising permissions granted by this License.
+
+      "Source" form shall mean the preferred form for making modifications,
+      including but not limited to software source code, documentation
+      source, and configuration files.
+
+      "Object" form shall mean any form resulting from mechanical
+      transformation or translation of a Source form, including but
+      not limited to compiled object code, generated documentation,
+      and conversions to other media types.
+
+      "Work" shall mean the work of authorship, whether in Source or
+      Object form, made available under the License, as indicated by a
+      copyright notice that is included in or attached to the work
+      (an example is provided in the Appendix below).
+
+      "Derivative Works" shall mean any work, whether in Source or Object
+      form, that is based on (or derived from) the Work and for which the
+      editorial revisions, annotations, elaborations, or other modifications
+      represent, as a whole, an original work of authorship. For the purposes
+      of this License, Derivative Works shall not include works that remain
+      separable from, or merely link (or bind by name) to the interfaces of,
+      the Work and Derivative Works thereof.
+
+      "Contribution" shall mean any work of authorship, including
+      the original version of the Work and any modifications or additions
+      to that Work or Derivative Works thereof, that is intentionally
+      submitted to Licensor for inclusion in the Work by the copyright owner
+      or by an individual or Legal Entity authorized to submit on behalf of
+      the copyright owner. For the purposes of this definition, "submitted"
+      means any form of electronic, verbal, or written communication sent
+      to the Licensor or its representatives, including but not limited to
+      communication on electronic mailing lists, source code control systems,
+      and issue tracking systems that are managed by, or on behalf of, the
+      Licensor for the purpose of discussing and improving the Work, but
+      excluding communication that is conspicuously marked or otherwise
+      designated in writing by the copyright owner as "Not a Contribution."
+
+      "Contributor" shall mean Licensor and any individual or Legal Entity
+      on behalf of whom a Contribution has been received by Licensor and
+      subsequently incorporated within the Work.
+
+   2. Grant of Copyright License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      copyright license to reproduce, prepare Derivative Works of,
+      publicly display, publicly perform, sublicense, and distribute the
+      Work and such Derivative Works in Source or Object form.
+
+   3. Grant of Patent License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      (except as stated in this section) patent license to make, have made,
+      use, offer to sell, sell, import, and otherwise transfer the Work,
+      where such license applies only to those patent claims licensable
+      by such Contributor that are necessarily infringed by their
+      Contribution(s) alone or by combination of their Contribution(s)
+      with the Work to which such Contribution(s) was submitted. If You
+      institute patent litigation against any entity (including a
+      cross-claim or counterclaim in a lawsuit) alleging that the Work
+      or a Contribution incorporated within the Work constitutes direct
+      or contributory patent infringement, then any patent licenses
+      granted to You under this License for that Work shall terminate
+      as of the date such litigation is filed.
+
+   4. Redistribution. You may reproduce and distribute copies of the
+      Work or Derivative Works thereof in any medium, with or without
+      modifications, and in Source or Object form, provided that You
+      meet the following conditions:
+
+      (a) You must give any other recipients of the Work or
+          Derivative Works a copy of this License; and
+
+      (b) You must cause any modified files to carry prominent notices
+          stating that You changed the files; and
+
+      (c) You must retain, in the Source form of any Derivative Works
+          that You distribute, all copyright, patent, trademark, and
+          attribution notices from the Source form of the Work,
+          excluding those notices that do not pertain to any part of
+          the Derivative Works; and
+
+      (d) If the Work includes a "NOTICE" text file as part of its
+          distribution, then any Derivative Works that You distribute must
+          include a readable copy of the attribution notices contained
+          within such NOTICE file, excluding those notices that do not
+          pertain to any part of the Derivative Works, in at least one
+          of the following places: within a NOTICE text file distributed
+          as part of the Derivative Works; within the Source form or
+          documentation, if provided along with the Derivative Works; or,
+          within a display generated by the Derivative Works, if and
+          wherever such third-party notices normally appear. The contents
+          of the NOTICE file are for informational purposes only and
+          do not modify the License. You may add Your own attribution
+          notices within Derivative Works that You distribute, alongside
+          or as an addendum to the NOTICE text from the Work, provided
+          that such additional attribution notices cannot be construed
+          as modifying the License.
+
+      You may add Your own copyright statement to Your modifications and
+      may provide additional or different license terms and conditions
+      for use, reproduction, or distribution of Your modifications, or
+      for any such Derivative Works as a whole, provided Your use,
+      reproduction, and distribution of the Work otherwise complies with
+      the conditions stated in this License.
+
+   5. Submission of Contributions. Unless You explicitly state otherwise,
+      any Contribution intentionally submitted for inclusion in the Work
+      by You to the Licensor shall be under the terms and conditions of
+      this License, without any additional terms or conditions.
+      Notwithstanding the above, nothing herein shall supersede or modify
+      the terms of any separate license agreement you may have executed
+      with Licensor regarding such Contributions.
+
+   6. Trademarks. This License does not grant permission to use the trade
+      names, trademarks, service marks, or product names of the Licensor,
+      except as required for reasonable and customary use in describing the
+      origin of the Work and reproducing the content of the NOTICE file.
+
+   7. Disclaimer of Warranty. Unless required by applicable law or
+      agreed to in writing, Licensor provides the Work (and each
+      Contributor provides its Contributions) on an "AS IS" BASIS,
+      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+      implied, including, without limitation, any warranties or conditions
+      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+      PARTICULAR PURPOSE. You are solely responsible for determining the
+      appropriateness of using or redistributing the Work and assume any
+      risks associated with Your exercise of permissions under this License.
+
+   8. Limitation of Liability. In no event and under no legal theory,
+      whether in tort (including negligence), contract, or otherwise,
+      unless required by applicable law (such as deliberate and grossly
+      negligent acts) or agreed to in writing, shall any Contributor be
+      liable to You for damages, including any direct, indirect, special,
+      incidental, or consequential damages of any character arising as a
+      result of this License or out of the use or inability to use the
+      Work (including but not limited to damages for loss of goodwill,
+      work stoppage, computer failure or malfunction, or any and all
+      other commercial damages or losses), even if such Contributor
+      has been advised of the possibility of such damages.
+
+   9. Accepting Warranty or Additional Liability. While redistributing
+      the Work or Derivative Works thereof, You may choose to offer,
+      and charge a fee for, acceptance of support, warranty, indemnity,
+      or other liability obligations and/or rights consistent with this
+      License. However, in accepting such obligations, You may act only
+      on Your own behalf and on Your sole responsibility, not on behalf
+      of any other Contributor, and only if You agree to indemnify,
+      defend, and hold each Contributor harmless for any liability
+      incurred by, or claims asserted against, such Contributor by reason
+      of your accepting any such warranty or additional liability.
+
+   END OF TERMS AND CONDITIONS
+
+   APPENDIX: How to apply the Apache License to your work.
+
+      To apply the Apache License to your work, attach the following
+      boilerplate notice, with the fields enclosed by brackets "[]"
+      replaced with your own identifying information. (Don't include
+      the brackets!)  The text should be enclosed in the appropriate
+      comment syntax for the file format. We also recommend that a
+      file or class name and description of purpose be included on the
+      same "printed page" as the copyright notice for easier
+      identification within third-party archives.
+
+   Copyright [yyyy] [name of copyright owner]
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+----- END mbedtls: LICENSE (the Apache License, Version 2.0) -----
+
+The release contains no NOTICE file, nor any other file with "notice" in its
+name, so there are no NOTICE contents to pass on under section 4(d) of the
+Apache License.
+
+LICENSE does not name the copyright holders of Mbed TLS; its source files do.
+Every source file and header in the release's "library" and "include"
+directories, which hold all those of libmbedcrypto.a apart from the ones in
+"3rdparty", names "The Mbed TLS Contributors" as the copyright holder and
+carries the SPDX identifier "Apache-2.0 OR GPL-2.0-or-later". This is the
+notice of library/aes.c, one of the files whose code is in the libraries:
+
+----- BEGIN mbedtls: library/aes.c (notice) -----
+/*
+ *  FIPS-197 compliant AES implementation
+ *
+ *  Copyright The Mbed TLS Contributors
+ *  SPDX-License-Identifier: Apache-2.0 OR GPL-2.0-or-later
+ */
+----- END mbedtls: library/aes.c (notice) -----
+
+The other nine such files (listed below) carry the same two lines under their
+own descriptions; library/md.c and library/pkcs5.c also name an author.
+
+Section 4(b) of the Apache License concerns modified files. The build changes
+one file of the release: before building libmbedcrypto.a, build_mbedtls in
+native/build-linux-common.sh copies this repository's native/mbedtls-config.h
+over the release's configuration header, include/mbedtls/mbedtls_config.h,
+so that only the modules that libarchive calls are enabled. The release's
+README calls that header "the place where features can be selected" and says
+that it "can be edited manually". The replacement says at its head what it
+is and that it is copied over that header. No other file of the release is
+changed; the compiler options are given on the make command line.
+
+The release's README says that code from other projects is kept in its
+"3rdparty" directory (code from Project Everest and from p256-m). The build
+compiles those files into libmbedcrypto.a as well, but their code is
+conditional on options that native/mbedtls-config.h does not set, and none
+of them is in the libraries. One of the ten files whose code is in the
+libraries also credits outside work: a comment in library/sha512.c says that
+its accelerated SHA-512 code for Arm processors was "originally written by
+Simon Tatham for PuTTY, under the MIT licence; dual-licensed as Apache 2 with
+his kind permission". That code too is conditional on options that
+native/mbedtls-config.h does not set, and it is not in the libraries either.
+No other such credit was found in the ten files or in the headers they
+include.
+
+Verified on the binaries inspected (see "How this file is maintained"): Mbed
+TLS code is inside all four libarchive.so files, and the same parts of it in
+each. The libraries keep their symbol tables, which record the source file
+names of the objects linked in. In each library the objects taken from
+libmbedcrypto.a are those of ten files of the release's "library" directory:
+aes.c, md.c, md5.c, pkcs5.c, platform_util.c, ripemd160.c, sha1.c, sha256.c,
+sha512.c and version.c. Their names come together, directly after those of
+the liblz4 objects, which precede libmbedcrypto.a on the link command, and
+the static functions and tables listed under them are those of the files of
+the same names. Each library defines the same 83 symbols whose names begin
+with "mbedtls_" and none whose names begin with "psa_", and leaves no symbol
+with either prefix undefined. None of the 83 is exported, as the build
+compiles Mbed TLS with -fvisibility=hidden. Each of them is defined by one of
+the ten files when the release is compiled, for this check, with
+native/mbedtls-config.h. Compiled that way, only two other source files of
+libmbedcrypto.a define anything (constant_time.c and version_features.c), and
+neither is in the libraries. No file or symbol name from "3rdparty" is in
+them, and the arm64 library contains no SHA-512 instruction, so the
+accelerated SHA-512 code is not in it. This was established from the symbol
+tables and the disassembly; the code was not compared with objects built by
+the build's own compilers.
+
+Mbed TLS is not inside the macOS library or the three Windows DLLs. The macOS
+library keeps its symbol table: neither of its halves defines a symbol whose
+name begins with mbedtls_ or psa_, and it leaves its MD5, SHA-1 and SHA-2
+digests, HMAC, PBKDF2 and AES to CommonCrypto in /usr/lib/libSystem.B.dylib
+(CC_SHA256_Init, CCHmacInit, CCKeyDerivationPBKDF, CCCryptorCreateWithMode
+and others). The DLLs are stripped, so they were searched instead for three
+things that the Mbed TLS code in the Linux libraries contains: the round
+constants of library/sha512.c and of library/sha256.c, and "RIPEMD160", one
+of the digest names in library/md.c. The search finds all three in every
+Linux library, the two tables at the addresses that the symbol tables give
+for them, and the SHA-256 constants a second time, in liblzma's SHA-256 code
+(section 4). It finds no SHA-512 constants and no "RIPEMD160" in the DLLs or
+in the macOS library, and the SHA-256 constants only once in each DLL and
+once in each half of the macOS library, whose symbol table names that copy
+as liblzma's. The DLLs take their cryptography from bcrypt.dll (CNG). In the
+DLLs and in both halves of the macOS library, libarchive's function
+archive_mbedtls_version returns a null pointer, which libarchive's source has
+it do when libarchive is built without Mbed TLS; in the Linux libraries it
+calls Mbed TLS's mbedtls_version_get_string.
+
+
+==============================================================================
+9. musl libc
 ==============================================================================
 
 Applies to:  Linux native binaries only (all four architectures, including
@@ -884,7 +1227,7 @@ obstacle to adoption, that text has been removed.
 
 
 ==============================================================================
-9. GCC runtime library (libgcc)
+10. GCC runtime library (libgcc)
 ==============================================================================
 
 Applies to:  Linux x86 (32-bit) native binary
@@ -897,7 +1240,7 @@ Licence:     GNU General Public License version 3 with the GCC Runtime
 Linux x86: all four Linux scripts link with -nostdlib, and only
 native/build-linux-x86.sh also names the toolchain's libgcc on the link
 command (for the 64-bit division helpers). The Bootlin manifest described in
-section 8 records the GCC target runtime libraries as licensed under
+section 9 records the GCC target runtime libraries as licensed under
 "GPL-3.0-with-GCC-exception", with the licence file "COPYING.RUNTIME".
 
 Verified on the binaries inspected (see "How this file is maintained"): the
@@ -1079,7 +1422,7 @@ Two further notices in the GCC sources bear on this code:
 
 
 ==============================================================================
-10. MinGW-w64 runtime
+11. MinGW-w64 runtime
 ==============================================================================
 
 Applies to:  Windows native binaries (x86, x64, arm64)
@@ -1455,7 +1798,7 @@ DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-11. LLVM compiler-rt
+12. LLVM compiler-rt
 ==============================================================================
 
 Applies to:  Windows arm64 native binary
