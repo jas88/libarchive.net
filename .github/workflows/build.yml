@@ -74,14 +74,17 @@ jobs:
       - name: Cache library downloads
         uses: actions/cache@v6.1.0
         with:
-          path: ~/downloads
+          # DOWNLOAD_CACHE in native/build-config.sh: this path unless XDG_CACHE_HOME
+          # names another directory (the build log prints the one in use)
+          path: ~/.cache/libarchive-net/downloads
           key: library-downloads-${{ hashFiles('native/build-config.sh') }}
           restore-keys: |
             library-downloads-
       - name: Cache configure results
         uses: actions/cache@v6.1.0
         with:
-          path: ~/config-cache
+          # CONFIG_CACHE_DIR in native/build-config.sh (see the download cache above)
+          path: ~/.cache/libarchive-net/config-cache
           # Exact match only: a configure cache from another toolchain or flag set makes
           # autoconf abort ("`CC' has changed since the previous run").
           key: config-cache-macos-${{ env.NATIVE_CACHE_VERSION }}-${{ hashFiles('native/build-*.sh') }}
@@ -165,7 +168,9 @@ jobs:
         if: steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache@v6.1.0
         with:
-          path: ~/downloads
+          # DOWNLOAD_CACHE in native/build-config.sh: this path unless XDG_CACHE_HOME
+          # names another directory (the build log prints the one in use)
+          path: ~/.cache/libarchive-net/downloads
           key: library-downloads-${{ hashFiles('native/build-config.sh') }}
           restore-keys: |
             library-downloads-
@@ -173,7 +178,8 @@ jobs:
         if: steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache@v6.1.0
         with:
-          path: ~/config-cache
+          # CONFIG_CACHE_DIR in native/build-config.sh (see the download cache above)
+          path: ~/.cache/libarchive-net/config-cache
           # Exact match only: a configure cache from another toolchain or flag set makes
           # autoconf abort ("`CC' has changed since the previous run").
           key: ${{ steps.cache-key.outputs.config-key }}

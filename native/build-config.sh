@@ -88,11 +88,22 @@ sha256_check() {
 # Common build settings
 export PREFIX="${PREFIX:-$(pwd)/local}"
 
+# Persistent caches, shared by every build on this machine, in a directory of their own
+# under the user's cache directory: $XDG_CACHE_HOME, or ~/.cache when that is unset or
+# not an absolute path (as the XDG Base Directory specification requires). A generic
+# name directly in the home directory can be a folder of the user's own: the download
+# cache used to be ~/downloads, which on macOS's default case-insensitive file system
+# is the user's Downloads folder. .github/workflows/build.yml caches the same paths.
+case "${XDG_CACHE_HOME:-}" in
+    /*) LIBARCHIVE_NET_CACHE_DIR="${XDG_CACHE_HOME}/libarchive-net" ;;
+    *)  LIBARCHIVE_NET_CACHE_DIR="${HOME}/.cache/libarchive-net" ;;
+esac
+
 # Download cache directory (persistent across builds)
-export DOWNLOAD_CACHE="${HOME}/downloads"
+export DOWNLOAD_CACHE="${LIBARCHIVE_NET_CACHE_DIR}/downloads"
 
 # Configure cache directory (persistent across builds, shared per host triplet)
-export CONFIG_CACHE_DIR="${HOME}/config-cache"
+export CONFIG_CACHE_DIR="${LIBARCHIVE_NET_CACHE_DIR}/config-cache"
 
 # Get the config.cache file path for a given host triplet
 # Usage: get_config_cache [host-triplet]
@@ -330,3 +341,5 @@ echo "  bzip2: ${BZIP2_VERSION}"
 echo "  Bootlin toolchains (Linux): ${BOOTLIN_RELEASE}"
 echo "  CPUs: ${NCPU}"
 echo "  PREFIX: ${PREFIX}"
+echo "  Download cache: ${DOWNLOAD_CACHE}"
+echo "  Configure cache: ${CONFIG_CACHE_DIR}"

@@ -214,6 +214,8 @@ LibArchive.Net/runtimes/
 
 Run on their own, the Linux and macOS scripts leave their library in `~/libarchive-native/`, and `build-windows.sh` leaves its DLL in the current directory.
 
+All the scripts keep two caches between builds, in a directory of their own, `$XDG_CACHE_HOME/libarchive-net/` (`~/.cache/libarchive-net/` when `XDG_CACHE_HOME` is unset): `downloads/` holds the downloaded source and toolchain tarballs, and `config-cache/` the configure results. Set `XDG_CACHE_HOME` to move them. CI caches the same two directories.
+
 ## Updating Library Versions
 
 A weekly workflow runs `scripts/check-native-updates.sh`, which looks for new releases and opens a pull request that updates their version and checksum variables; see [scripts/README.md](../scripts/README.md). To update library versions by hand:
@@ -247,7 +249,7 @@ The built libraries are cached between runs, keyed on the contents of `native/**
 **Problem:** "Failed to download ... toolchain" or "Toolchain compiler not found"
 - Check internet connectivity to toolchains.bootlin.com (the scripts download a prebuilt Bootlin musl toolchain)
 - Check that `BOOTLIN_RELEASE` in `build-config.sh` names a published Bootlin release
-- Delete the toolchain tarball from the download cache (`~/downloads`) if an earlier download was cut short: a cached tarball is reused without being checked
+- Delete the toolchain tarball from the download cache (`~/.cache/libarchive-net/downloads`) if an earlier download was cut short: a cached tarball is reused without being checked
 
 ### macOS Build Issues
 
@@ -300,7 +302,7 @@ unzip -l ../LibArchive.Net.*.nupkg | grep runtimes
 # Clean downloaded sources and build artifacts
 rm -rf local* {bzip2,libarchive,libxml2,lz4,lzokay,mbedtls,xz,zlib,zstd}-*
 # Linux and macOS build directories, their output, and the configure cache
-rm -rf ~/libarchive-linux-* ~/libarchive-macos ~/libarchive-native ~/config-cache
+rm -rf ~/libarchive-linux-* ~/libarchive-macos ~/libarchive-native "${XDG_CACHE_HOME:-$HOME/.cache}/libarchive-net/config-cache"
 rm -f *.so *.dylib *.dll test nativetest
 ```
 
@@ -314,7 +316,7 @@ Build times on GitHub Actions runners (approximate):
 
 Optimization strategies:
 - Use ccache and sccache (already enabled in workflow)
-- Cache `~/config-cache` between runs (already enabled)
+- Cache the download and configure caches (`~/.cache/libarchive-net/`) between runs (already enabled)
 - Pre-built Bootlin musl toolchains (already used)
 
 ## License
