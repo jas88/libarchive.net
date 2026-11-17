@@ -1,0 +1,40 @@
+Bounds checks for lzokay's decompressor.
+
+Applied by build_lzo_shim (native/build-lzo-shim.sh) to the lzokay.cpp of the commit
+pinned in native/build-config.sh. It applies with no offset; if a new pin makes it
+fail, check whether upstream has fixed these and rework or drop the patch.
+
+lzokay::decompress is handed data from untrusted archives, and as published it trusts
+that data in two places:
+
+1. CONSUME_ZERO_BYTE_LENGTH skips a run of zero bytes without looking for the end of
+   the input. Whenever the input ends inside such a run it reads on past the buffer,
+   until it meets a non-zero byte or unmapped memory.
+
+2. NEEDS_IN and NEEDS_OUT compare "pointer + count" with the end of the buffer. A
+   length can be up to 255 times the number of zero bytes in front of it, so where
+   pointers are 32 bits wide a few megabytes of zeros make "pointer + count" wrap
+   around and pass the check. The copy that follows then runs far outside both the
+   input and the output buffer.
+
+The checks below compare the count with the space that is left instead, which cannot
+wrap, and stop the zero-byte scan at the end of the input. The compressor uses
+NEEDS_OUT as well and is checked the same way.
+
+--- a/lzokay.cpp
++++ b/lzokay.cpp
+@@ -40,3 +40,3 @@
+ #define NEEDS_IN(count) \
+-  if (inp + (count) > inp_end) { \
++  if (std::size_t(inp_end - inp) < std::size_t(count)) { \
+     dst_size = outp - dst; \
+@@ -46,3 +46,3 @@
+ #define NEEDS_OUT(count) \
+-  if (outp + (count) > outp_end) { \
++  if (std::size_t(outp_end - outp) < std::size_t(count)) { \
+     dst_size = outp - dst; \
+@@ -55,3 +55,3 @@
+     const uint8_t *old_inp = inp; \
+-    while (*inp == 0) ++inp; \
++    while (inp < inp_end && *inp == 0) ++inp; \
+     offset = inp - old_inp; \

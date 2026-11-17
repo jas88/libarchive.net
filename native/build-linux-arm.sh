@@ -95,6 +95,11 @@ cp libbz2.a $PREFIX/lib/
 cp bzlib.h $PREFIX/include/
 cd ..
 
+# lzop (LZO1X) support: lzokay behind the liblzo2 API, in place of the GPL-licensed liblzo2
+# shellcheck source-path=SCRIPTDIR disable=SC1091
+. "${SCRIPT_DIR}/build-lzo-shim.sh"
+build_lzo_shim "${SCRIPT_DIR}/lzo-shim" "lzokay-${LZOKAY_COMMIT}" "$CXXFLAGS"
+
 echo "Building zlib ${ZLIB_VERSION}..."
 cd zlib-${ZLIB_VERSION}
 CHOST=arm-linux ./configure --static --prefix=$PREFIX
@@ -124,12 +129,12 @@ export LIBXML2_PC_LIBS=-L$PREFIX
 # --without-xml2 --without-expat: keep XAR disabled, as it was while no MD5/SHA-1
 # implementation was available. With digests present it would otherwise be enabled
 # and need libxml2 and its dependencies resolved in the final link.
-./configure --cache-file=$(get_config_cache arm-linux) --build=x86_64-pc-linux-gnu --host=arm-linux --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-sysroot --without-lzo2 --disable-shared --enable-static --with-mbedtls --without-openssl --without-xml2 --without-expat
+./configure --cache-file=$(get_config_cache arm-linux) --build=x86_64-pc-linux-gnu --host=arm-linux --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2 --disable-shared --enable-static --with-mbedtls --without-openssl --without-xml2 --without-expat
 make -sj$NCPU install
 cd ..
 
 echo "Creating final shared library..."
-$CC -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/libzstd.a local/lib/liblz4.a local/lib/libmbedcrypto.a ${TOOLCHAIN_SYSROOT}/lib/libc.a -nostdlib
+$CC -shared -o libarchive.so -Wl,--whole-archive local/lib/libarchive.a -Wl,--no-whole-archive local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/liblzo2.a local/lib/libzstd.a local/lib/liblz4.a local/lib/libmbedcrypto.a ${TOOLCHAIN_SYSROOT}/lib/libc.a -nostdlib
 
 # Fail the build unless the mbedTLS crypto backend was linked in (see build-linux-common.sh)
 verify_crypto_backend libarchive.so
@@ -158,6 +163,10 @@ NM="${AR%ar}nm"
 "$NM" libarchive.so | grep -c " U " | xargs echo "Undefined symbols:"
 
 echo "Skipping native test (cross-compilation - cannot run ARMv7 binary on x86_64 host)"
+
+# Fail the build unless lzop support was linked in and needs nothing the library lacks (see build-lzo-shim.sh)
+verify_lzo_support libarchive.so
+verify_lzo_shim_resolved libarchive.so
 
 echo "Copying output to ${OUTPUT_DIR}..."
 cp libarchive.so "${OUTPUT_DIR}/libarchive-linux-arm.so"

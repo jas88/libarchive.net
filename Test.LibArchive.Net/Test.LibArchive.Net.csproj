@@ -30,6 +30,8 @@
 
     <ItemGroup>
         <None Update="7ztest.7z" CopyToOutputDirectory="PreserveNewest" />
+        <!-- Written by the reference lzop tool; see LzopTests.cs -->
+        <None Update="lzoptest.tar.lzo" CopyToOutputDirectory="PreserveNewest" />
         <None Update="rartest.part00001.rar" CopyToOutputDirectory="PreserveNewest" />
         <None Update="rartest.part00002.rar" CopyToOutputDirectory="PreserveNewest" />
         <None Update="rartest.part00003.rar" CopyToOutputDirectory="PreserveNewest" />

@@ -52,7 +52,7 @@ This file is written and updated by hand. Nothing generates it.
   system DLLs named on the link command, such as kernel32, ws2_32 and bcrypt,
   and the system C runtime).
 
-* The toolchain sections (9 to 12) were checked against the native binaries
+* The toolchain sections (10 to 13) were checked against the native binaries
   of a package built by .github/workflows/build.yml before Mbed TLS was added
   to the Linux builds. Each section says what was found in those binaries and
   how, and says so plainly where something could not be established. The
@@ -72,10 +72,10 @@ This file is written and updated by hand. Nothing generates it.
 
   This records what was inspected, not what is built today. When
   native/build-config.sh or .github/workflows/build.yml names a different
-  toolchain, repeat the checks that sections 9 to 12 describe and update this
+  toolchain, repeat the checks that sections 10 to 13 describe and update this
   record. The compilers that build the Windows x86 and x64 DLLs come from the
   build machine's package repository and are not pinned by this repository,
-  so check sections 10 and 11 again when the build image in
+  so check sections 11 and 12 again when the build image in
   .github/workflows/build.yml changes.
 
 * The Mbed TLS section (8) was checked against the native binaries of a later
@@ -105,11 +105,12 @@ Summary
    7  libxml2                 MIT                               all
    8  Mbed TLS                Apache 2.0 (chosen from           Linux
       (libmbedcrypto)         Apache 2.0 or GPLv2 or later)
-   9  musl libc               MIT; parts as noted               Linux
-  10  GCC runtime (libgcc)    GPLv3 with GCC Runtime Library    Linux x86;
+   9  lzokay                  MIT                               all
+  10  musl libc               MIT; parts as noted               Linux
+  11  GCC runtime (libgcc)    GPLv3 with GCC Runtime Library    Linux x86;
                               Exception                         Windows x86, x64
-  11  MinGW-w64 runtime       several; see its licensing file   Windows
-  12  LLVM compiler-rt        Apache 2.0 with LLVM Exceptions   Windows arm64
+  12  MinGW-w64 runtime       several; see its licensing file   Windows
+  13  LLVM compiler-rt        Apache 2.0 with LLVM Exceptions   Windows arm64
 
 
 ==============================================================================
@@ -998,7 +999,63 @@ calls Mbed TLS's mbedtls_version_get_string.
 
 
 ==============================================================================
-9. musl libc
+9. lzokay
+==============================================================================
+
+Applies to:  all native binaries (Linux, macOS, Windows)
+Source:      https://github.com/AxioDL/lzokay (commit pinned in
+             native/build-config.sh)
+Licence:     MIT licence (SPDX identifier: MIT)
+
+lzokay implements the LZO1X compression format, which libarchive needs to
+read and write lzop data. It is what the liblzo2.a named on the link commands
+is built from: liblzo2 itself, which is under the GNU General Public License,
+is not part of the native binaries. libarchive reaches lzokay through
+interface code in native/lzo-shim, which belongs to this repository and is
+covered by LICENSE.md. lzokay is compiled with the changes in
+native/lzo-shim/lzokay-bounds-checks.patch applied.
+
+----- BEGIN lzokay: LICENSE -----
+The MIT License
+
+Copyright (c) 2018 Jack Andersen
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+----- END lzokay: LICENSE -----
+
+lzokay and the interface code are C++. The native binaries are not linked
+against a C++ runtime library, and every build script checks that the object
+files need none. They are, however, compiled with the C++ standard library
+headers of each build toolchain: GNU libstdc++ for the Linux binaries and the
+Windows x86 and x64 binaries, LLVM libc++ for the macOS binary and the Windows
+arm64 binary. Code that those headers define inline or as templates is
+compiled into the object files where lzokay uses it. The libstdc++ headers
+are distributed under the GNU General Public License version 3 with the GCC
+Runtime Library Exception, the exception reproduced in section 11. libc++ is
+part of the LLVM project, whose licence is reproduced in section 13. Not
+verified: which header code each compiler leaves in the object files, and
+that the copies of those two texts in sections 11 and 13 match the ones the
+toolchains' C++ libraries were released with.
+
+
+==============================================================================
+10. musl libc
 ==============================================================================
 
 Applies to:  Linux native binaries only (all four architectures, including
@@ -1227,7 +1284,7 @@ obstacle to adoption, that text has been removed.
 
 
 ==============================================================================
-10. GCC runtime library (libgcc)
+11. GCC runtime library (libgcc)
 ==============================================================================
 
 Applies to:  Linux x86 (32-bit) native binary
@@ -1240,7 +1297,7 @@ Licence:     GNU General Public License version 3 with the GCC Runtime
 Linux x86: all four Linux scripts link with -nostdlib, and only
 native/build-linux-x86.sh also names the toolchain's libgcc on the link
 command (for the 64-bit division helpers). The Bootlin manifest described in
-section 9 records the GCC target runtime libraries as licensed under
+section 10 records the GCC target runtime libraries as licensed under
 "GPL-3.0-with-GCC-exception", with the licence file "COPYING.RUNTIME".
 
 Verified on the binaries inspected (see "How this file is maintained"): the
@@ -1422,7 +1479,7 @@ Two further notices in the GCC sources bear on this code:
 
 
 ==============================================================================
-11. MinGW-w64 runtime
+12. MinGW-w64 runtime
 ==============================================================================
 
 Applies to:  Windows native binaries (x86, x64, arm64)
@@ -1798,7 +1855,7 @@ DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-12. LLVM compiler-rt
+13. LLVM compiler-rt
 ==============================================================================
 
 Applies to:  Windows arm64 native binary

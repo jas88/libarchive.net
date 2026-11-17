@@ -6,11 +6,11 @@
 
 ### Overview
 
-LibArchive.Net is a .NET wrapper for the native libarchive compression library, providing read-only access to a wide variety of archive and compression formats including: zip, rar, 7zip, tar, gzip, bzip2, and lzma.
+LibArchive.Net is a .NET wrapper for the native libarchive compression library, providing read-only access to a wide variety of archive and compression formats including: zip, rar, 7zip, tar, gzip, bzip2, lzop, and lzma.
 
 ### Key Features
 
-- **Multi-Format Support**: Read archives in zip, rar, 7zip, tar, gzip, bzip2, lzma formats
+- **Multi-Format Support**: Read archives in zip, rar, 7zip, tar, gzip, bzip2, lzop, lzma formats
 - **Cross-Platform**: Native libraries included for:
   - Windows: x86, x64, ARM64
   - Linux: x64, musl-x64
@@ -97,6 +97,7 @@ The package is annotated with trim analysis attributes to ensure safe trimming b
 - **Compression libraries included**:
   - lz4 1.9.4
   - zstd 1.5.6
+  - lzokay (commit db2df1f; provides lzop support in place of the GPL-licensed liblzo2)
   - libxml2 2.12.6
   - zlib 1.3.1
   - xz 5.4.6

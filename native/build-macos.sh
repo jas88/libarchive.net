@@ -44,6 +44,15 @@ make -j$NCPU -sC lz4-${LZ4_VERSION} install PREFIX=$PREFIX CFLAGS="$CFLAGS"
 echo "Building bzip2 ${BZIP2_VERSION}..."
 make -j$NCPU -sC bzip2-${BZIP2_VERSION} install PREFIX=$PREFIX CFLAGS="$CFLAGS"
 
+# lzop (LZO1X) support: lzokay behind the liblzo2 API, in place of the GPL-licensed liblzo2.
+# This script sets no C++ compiler of its own (CI exports CXX="ccache clang++"), so fall
+# back to the clang++ that belongs to the clang of the final link - for this one command
+# only, so that the configure runs below see the same environment as before.
+# CFLAGS is passed because it carries the two -arch flags that make the objects universal.
+# shellcheck source-path=SCRIPTDIR disable=SC1091
+. "${SCRIPT_DIR}/build-lzo-shim.sh"
+CXX="${CXX:-clang++}" build_lzo_shim "${SCRIPT_DIR}/lzo-shim" "lzokay-${LZOKAY_COMMIT}" "$CFLAGS"
+
 echo "Building zlib ${ZLIB_VERSION}..."
 cd zlib-${ZLIB_VERSION}
 ./configure --static --prefix=$PREFIX
@@ -76,16 +85,20 @@ cd libarchive-${LIBARCHIVE_VERSION}
 # with "libtool: Version mismatch error" once the runner's libtool outpaces it.
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
 export LIBXML2_PC_LIBS="-L$PREFIX -lxml2"
-./configure --cache-file=$(get_config_cache darwin-universal) --prefix=$PREFIX --enable-silent-rules --disable-dependency-tracking --enable-static --disable-shared --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-rpath --enable-posix-regex-lib=libc --enable-xattr --enable-acl --enable-largefile --with-pic --with-zlib --with-bz2lib --with-libb2 --with-iconv --with-lz4 --with-zstd --with-lzma --without-lzo2 --with-cng
+./configure --cache-file=$(get_config_cache darwin-universal) --prefix=$PREFIX --enable-silent-rules --disable-dependency-tracking --enable-static --disable-shared --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-rpath --enable-posix-regex-lib=libc --enable-xattr --enable-acl --enable-largefile --with-pic --with-zlib --with-bz2lib --with-libb2 --with-iconv --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-cng
 make -sj$NCPU install
 cd ..
 
 echo "Creating universal binary..."
-clang -arch arm64 -arch x86_64 -dynamiclib -shared -o libarchive.dylib -Wl,-force_load local/lib/libarchive.a local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/libzstd.a local/lib/liblz4.a -liconv
+clang -arch arm64 -arch x86_64 -dynamiclib -shared -o libarchive.dylib -Wl,-force_load local/lib/libarchive.a local/lib/libbz2.a local/lib/libz.a local/lib/libxml2.a local/lib/liblzma.a local/lib/liblzo2.a local/lib/libzstd.a local/lib/liblz4.a -liconv
 
 echo "Testing library..."
 file libarchive.dylib
 otool -L libarchive.dylib
+
+# Fail the build unless both halves of the universal library have lzop support (see build-lzo-shim.sh)
+verify_lzo_support libarchive.dylib -arch arm64
+verify_lzo_support libarchive.dylib -arch x86_64
 
 echo "Building native test..."
 gcc -o nativetest "${SCRIPT_DIR}/nativetest.c" local/lib/libarchive.a -Llocal/lib -Ilocal/include -llz4 -lzstd -llzma -lz -liconv -lbz2
