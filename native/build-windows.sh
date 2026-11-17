@@ -39,8 +39,23 @@ esac
 
 echo "Building for Windows ${ARCH} using ${MINGW_PREFIX}..."
 
+# The compilers. Debian and Ubuntu install each MinGW GCC in two thread models,
+# <prefix>-gcc-win32 and <prefix>-gcc-posix, and point <prefix>-gcc at one of them
+# through update-alternatives. Use the win32 ones by name where they exist: that fixes
+# the thread model (see THIRD-PARTY-NOTICES.txt), and the build does not depend on the
+# alternatives links, which a package cache restored without the packages' install
+# scripts lacks. Elsewhere (other distributions, LLVM-MinGW) use the plain names.
+MINGW_CC="${MINGW_PREFIX}-gcc"
+MINGW_CXX="${MINGW_PREFIX}-g++"
+if command -v "${MINGW_CC}-win32" >/dev/null 2>&1; then
+    MINGW_CC="${MINGW_CC}-win32"
+fi
+if command -v "${MINGW_CXX}-win32" >/dev/null 2>&1; then
+    MINGW_CXX="${MINGW_CXX}-win32"
+fi
+
 # Check if MinGW is installed
-if ! command -v ${MINGW_PREFIX}-gcc >/dev/null 2>&1; then
+if ! command -v "${MINGW_CC}" >/dev/null 2>&1; then
     echo "Error: ${MINGW_PREFIX}-gcc not found"
     echo "Please install MinGW cross-compiler for ${ARCH}"
     echo "  Ubuntu/Debian: sudo apt-get install mingw-w64"
@@ -48,7 +63,7 @@ if ! command -v ${MINGW_PREFIX}-gcc >/dev/null 2>&1; then
     exit 1
 fi
 # The lzop shim is C++: GCC's g++ for x86 and x64, LLVM-MinGW's Clang wrapper for arm64
-if ! command -v "${MINGW_PREFIX}-g++" >/dev/null 2>&1; then
+if ! command -v "${MINGW_CXX}" >/dev/null 2>&1; then
     echo "Error: ${MINGW_PREFIX}-g++ not found"
     echo "Please install the MinGW C++ cross-compiler for ${ARCH}"
     echo "  Ubuntu/Debian: sudo apt-get install mingw-w64"
@@ -58,12 +73,13 @@ fi
 
 # Windows-specific build settings
 if command -v sccache >/dev/null 2>&1; then
-    export CC="sccache ${MINGW_PREFIX}-gcc"
-    export CXX="sccache ${MINGW_PREFIX}-g++"
+    export CC="sccache ${MINGW_CC}"
+    export CXX="sccache ${MINGW_CXX}"
 else
-    export CC="${MINGW_PREFIX}-gcc"
-    export CXX="${MINGW_PREFIX}-g++"
+    export CC="${MINGW_CC}"
+    export CXX="${MINGW_CXX}"
 fi
+echo "C compiler: ${MINGW_CC}; C++ compiler: ${MINGW_CXX}"
 export AR="${MINGW_PREFIX}-ar"
 export RANLIB="${MINGW_PREFIX}-ranlib"
 export RC="${MINGW_PREFIX}-windres"
