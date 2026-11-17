@@ -317,6 +317,27 @@ Also add it to the update checker: see "Adding a library" in [scripts/README.md]
 unzip -l ../LibArchive.Net.*.nupkg | grep runtimes
 ```
 
+### Testing a package locally
+
+CI packs the libraries of all eleven runtimes and runs the tests against that package rather than the project (the package and test-net462 jobs in `.github/workflows/build.yml`). To do the same locally, first put native libraries in `LibArchive.Net/runtimes/<rid>/native/`, laid out as in [Directory Structure](#directory-structure): `build-all.sh` puts there what it builds, and libraries built elsewhere, such as the artifacts of a CI run, can be copied in. Git ignores those folders, so none of them can be committed by accident. The tests load the library of the machine's own runtime, so the package needs at least that one. A pack that lacks the library of any runtime warns (`LIBARCHIVENET001`) and names those runtimes: the package installs on them, but fails there at run time.
+
+Then, from the repository root:
+
+```bash
+VERSION=0.0.0-local
+# MinVer sets the version from the git tags, overriding PackageVersion; MinVerVersionOverride
+# fixes it, so that the tests can ask for that version
+dotnet pack LibArchive.Net/LibArchive.Net.csproj -c Release -o artifacts/package "-p:MinVerVersionOverride=$VERSION"
+# A NuGet config under which LibArchive.Net comes from artifacts/package only, never from a
+# cache or nuget.org. Run it again after every pack: it empties the packages folder it sets up
+./scripts/write-package-test-nuget-config.sh artifacts/package artifacts/package-test
+# Restore, build and run the tests against the package (UseLocalPackage) instead of the project
+dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --configfile artifacts/package-test/nuget.config -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$VERSION"
+dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net11.0 -c Release --no-restore -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$VERSION"
+```
+
+`--framework` names the test project's .NET target, the first one in `Test.LibArchive.Net/Directory.Build.props`, which `scripts/generate-build-props.sh` writes for the installed SDK. On Windows, `--framework net462` runs the tests on .NET Framework, as the test-net462 job does. `artifacts/` is ignored by git.
+
 ### Cleaning Build Artifacts
 
 ```bash

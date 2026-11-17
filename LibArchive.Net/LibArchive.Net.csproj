@@ -69,4 +69,25 @@
       <TargetPath>%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
     </ContentWithTargetPath>
   </ItemGroup>
+
+  <!--
+    Warn, when packing only, if the native library of any runtime the package supports
+    is missing from runtimes/: such a package installs anywhere but fails at run time on
+    those runtimes. The list is what the "Assemble native runtimes" step of
+    .github/workflows/build.yml puts there, so keep the two in step. It is a warning, not
+    an error, because a package packed locally for testing legitimately has only the
+    libraries built on that machine (see "Testing a package locally" in native/BUILD.md).
+  -->
+  <Target Name="_LibArchiveWarnMissingNativeLibraries" BeforeTargets="GenerateNuspec">
+    <ItemGroup>
+      <_LibArchiveNativeLibrary Include="linux-x64;linux-musl-x64;linux-arm;linux-musl-arm;linux-arm64;linux-musl-arm64" Library="libarchive.so" />
+      <_LibArchiveNativeLibrary Include="osx-x64;osx-arm64" Library="libarchive.dylib" />
+      <_LibArchiveNativeLibrary Include="win-x86;win-x64;win-arm64" Library="archive.dll" />
+      <_LibArchiveMissingNativeLibrary Include="@(_LibArchiveNativeLibrary)"
+                                       Condition="!Exists('$(MSBuildProjectDirectory)/runtimes/%(_LibArchiveNativeLibrary.Identity)/native/%(_LibArchiveNativeLibrary.Library)')" />
+    </ItemGroup>
+    <Warning Code="LIBARCHIVENET001"
+             Condition="'@(_LibArchiveMissingNativeLibrary)' != ''"
+             Text="The package has no native library for @(_LibArchiveMissingNativeLibrary->'%(Identity)', ', '), so it will not work on those runtimes. Before packing, put runtimes/&lt;rid&gt;/native/libarchive.so (linux-*), libarchive.dylib (osx-*) or archive.dll (win-*) in the project directory for each runtime: see &quot;Testing a package locally&quot; in native/BUILD.md." />
+  </Target>
 </Project>
