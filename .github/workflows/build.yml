@@ -137,12 +137,30 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { target: linux-x64,   kind: linux,   script: build-linux.sh,       output: libarchive-linux-x64.so }
-          - { target: linux-arm64, kind: linux,   script: build-linux-arm64.sh, output: libarchive-linux-arm64.so }
-          - { target: linux-arm,   kind: linux,   script: build-linux-arm.sh,   output: libarchive-linux-arm.so }
-          - { target: win-x86,     kind: windows, arch: x86,                    output: archive-x86.dll }
-          - { target: win-x64,     kind: windows, arch: x64,                    output: archive-x64.dll }
-          - { target: win-arm64,   kind: windows, arch: arm64,                  output: archive-arm64.dll }
+          - target: linux-x64
+            kind: linux
+            script: build-linux.sh
+            output: libarchive-linux-x64.so
+          - target: linux-arm64
+            kind: linux
+            script: build-linux-arm64.sh
+            output: libarchive-linux-arm64.so
+          - target: linux-arm
+            kind: linux
+            script: build-linux-arm.sh
+            output: libarchive-linux-arm.so
+          - target: win-x86
+            kind: windows
+            arch: x86
+            output: archive-x86.dll
+          - target: win-x64
+            kind: windows
+            arch: x64
+            output: archive-x64.dll
+          - target: win-arm64
+            kind: windows
+            arch: arm64
+            output: archive-arm64.dll
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
