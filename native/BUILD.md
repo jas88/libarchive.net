@@ -109,6 +109,27 @@ linked into it, so the same file loads in glibc and musl processes.
 - All dependencies are statically linked
 - Build time: ~20-30 minutes (the musl toolchain is a Bootlin prebuilt release, downloaded rather than built)
 
+**Bootlin toolchains:** each script downloads its toolchain (`TOOLCHAIN_*_URL` in
+`build-config.sh`, release `BOOTLIN_RELEASE`) with `download_toolchain`, which verifies
+it against the `<release>.sha256` file that Bootlin publishes beside each
+`<release>.tar.xz`:
+- The tarball is downloaded to a temporary file in the download cache, checked, and
+  only then renamed into place, so a download that fails or is cut short is never
+  used. An interrupted download can leave a `*.tmp.XXXXXX` file behind; nothing reads
+  it, and it can be deleted.
+- The checksum file is kept beside the tarball, so a cached tarball, including one
+  restored by CI's cache, is checked again on every use without a download. One that
+  does not match is deleted and downloaded again.
+- This catches a truncated or corrupted download, an error page served in place of the
+  tarball, and a damaged cache. It does not protect against a compromise of
+  toolchains.bootlin.com, which serves the checksum as well as the tarball.
+- Pinning the hashes in `build-config.sh` would close that gap, but Renovate updates
+  `BOOTLIN_RELEASE` (`.github/renovate.json`), and its datasource, Bootlin's listing
+  page, gives it release names and no hashes. Every toolchain update would then need
+  three hashes added by hand, and fail CI without them, so they are not pinned. The
+  library sources, whose updates (`scripts/check-native-updates.sh`) compute their
+  hashes, are pinned.
+
 **How the library is linked and tested** (all three Linux scripts use the functions
 in `build-linux-common.sh`):
 - `link_libarchive` links all of `libarchive.a` with the other static libraries,
@@ -249,7 +270,7 @@ The built libraries are cached between runs, keyed on the contents of `native/**
 **Problem:** "Failed to download ... toolchain" or "Toolchain compiler not found"
 - Check internet connectivity to toolchains.bootlin.com (the scripts download a prebuilt Bootlin musl toolchain)
 - Check that `BOOTLIN_RELEASE` in `build-config.sh` names a published Bootlin release
-- Delete the toolchain tarball from the download cache (`~/.cache/libarchive-net/downloads`) if an earlier download was cut short: a cached tarball is reused without being checked
+- A cached toolchain is checked on every use, and downloaded again if it does not match Bootlin's checksum (see "Bootlin toolchains" above). If every attempt reports that the download does not match, the server is serving a tarball that differs from its own published checksum: try again later rather than working around the check
 
 ### macOS Build Issues
 

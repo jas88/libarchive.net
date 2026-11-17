@@ -188,49 +188,132 @@ download_library() {
     esac
 }
 
-# Function to download toolchain to cache (does not unpack)
-# Returns the cache file path for the build script to unpack
+# Print the SHA256 that a checksum file in sha256sum format ("<hash>  <file name>")
+# gives for the file named $1. Fails, printing nothing, unless the first line of the
+# checksum file $2 holds a well-formed hash and names that file.
+# Usage: sha256_for <file-name> <checksum-file>
+sha256_for() {
+    local wanted="$1"
+    local sum_file="$2"
+    local hash=""
+    local file=""
+    [ -f "$sum_file" ] || return 1
+    # read fails at a missing final newline, but has still set the fields
+    read -r hash file < "$sum_file" || [ -n "$hash" ] || return 1
+    [ "${#hash}" -eq 64 ] || return 1
+    case "$hash" in
+        *[!0-9a-fA-F]*) return 1 ;;
+    esac
+    # A leading "*" marks a hash computed in binary mode
+    [ "${file#\*}" = "$wanted" ] || return 1
+    printf '%s\n' "$hash" | tr 'A-F' 'a-f'
+}
+
+# Succeed if the file $2 has the SHA256 $1; otherwise say on stderr what it has
+# Usage: sha256_verify <expected-sha256> <file>
+sha256_verify() {
+    local actual
+    actual=$(sha256_compute "$2") || return 1
+    [ "$1" = "$actual" ] && return 0
+    echo "WARNING: SHA256 mismatch for ${2}" >&2
+    echo "Expected: $1" >&2
+    echo "Got:      ${actual}" >&2
+    return 1
+}
+
+# Download a URL to a file by way of a temporary file beside it, which is renamed to
+# the file only once the given command, run with the temporary file as its last
+# argument, accepts it. The file therefore never exists half written or unverified: a
+# download that fails, is rejected or is interrupted leaves at most a "<file>.tmp.XXXXXX"
+# file, which nothing reads (an interrupted one is left behind, and can be deleted).
+# The command's standard output is discarded.
+# Usage: download_verified <url> <file> <command> [<argument>...]
+download_verified() {
+    local url="$1"
+    local dest="$2"
+    local tmp
+    shift 2
+    tmp=$(mktemp "${dest}.tmp.XXXXXX") || return 1
+    if curl -fsSL "$url" -o "$tmp" && "$@" "$tmp" >/dev/null && mv -f "$tmp" "$dest"; then
+        return 0
+    fi
+    rm -f "$tmp"
+    return 1
+}
+
+# Download a Bootlin toolchain to the download cache (does not unpack), verified against
+# the checksum file Bootlin publishes beside each tarball (<release>.sha256 beside
+# <release>.tar.xz). Prints the path of the cached tarball, the only thing written to
+# stdout, for the build script to unpack.
+#
+# The checksum file is cached beside the tarball, so a cached tarball, including one
+# restored by CI's download cache, is verified again on every use without a download.
+# A cached tarball that does not match is deleted and downloaded again, and a new
+# download only replaces it once verified (see download_verified).
+#
+# What the published checksum protects against: a download that was cut short or
+# corrupted, an error page or other wrong content served in the tarball's place, and a
+# cached file damaged since it was downloaded. What it does not protect against: a
+# compromise of toolchains.bootlin.com itself, since the checksum comes from the same
+# server as the tarball, and whoever can replace one can replace the other. Hashes
+# pinned in this file would close that gap, but Renovate bumps BOOTLIN_RELEASE
+# (.github/renovate.json) and cannot compute them: see "Bootlin toolchains" in BUILD.md.
+# Usage: download_toolchain <url> <name>
 download_toolchain() {
     local url="$1"
     local name="$2"
-
-    # Extract archive filename from URL
     local archive_name="${url##*/}"
     local cache_file="${DOWNLOAD_CACHE}/${archive_name}"
+    local sum_url="${url%.tar.*}.sha256"
+    local sum_file="${cache_file}.sha256"
+    local max_retries=3
+    local attempt=1
+    local expected
 
-    # Create cache directory if it doesn't exist
-    mkdir -p "$DOWNLOAD_CACHE"
+    mkdir -p "$DOWNLOAD_CACHE" || return 1
 
-    # Download to cache if not already present
-    if [ ! -f "$cache_file" ]; then
-        echo "Downloading ${name} toolchain to cache..." >&2
-        local max_retries=3
-        local retry=0
-        local downloaded=false
-
-        while [ $retry -lt $max_retries ] && [ "$downloaded" = "false" ]; do
-            if curl -fsSL "$url" -o "$cache_file"; then
-                echo "Toolchain download successful" >&2
-                downloaded=true
-            else
-                retry=$((retry + 1))
-                if [ $retry -lt $max_retries ]; then
-                    echo "Toolchain download failed, retrying ($retry/$max_retries)..." >&2
-                    sleep $((retry * 2))
-                fi
+    while :; do
+        # Bootlin's checksum of the tarball: the cached copy if it is well formed and
+        # names this tarball, otherwise a fresh download (an unusable copy is replaced)
+        if ! expected=$(sha256_for "$archive_name" "$sum_file"); then
+            rm -f "$sum_file"
+            echo "Downloading Bootlin's checksum of the ${name} toolchain..." >&2
+            if ! download_verified "$sum_url" "$sum_file" sha256_for "$archive_name" \
+                || ! expected=$(sha256_for "$archive_name" "$sum_file"); then
+                echo "WARNING: no usable checksum of ${archive_name} at ${sum_url}" >&2
+                expected=""
             fi
-        done
+        fi
 
-        if [ "$downloaded" = "false" ]; then
-            echo "ERROR: Failed to download ${name} toolchain after $max_retries attempts" >&2
-            echo "URL: $url" >&2
+        if [ -n "$expected" ]; then
+            if [ -f "$cache_file" ]; then
+                if sha256_verify "$expected" "$cache_file"; then
+                    echo "Using cached ${name} toolchain (matches Bootlin's checksum)" >&2
+                    break
+                fi
+                echo "WARNING: the cached ${name} toolchain does not match Bootlin's checksum: downloading it again" >&2
+                rm -f "$cache_file"
+            fi
+            echo "Downloading ${name} toolchain to cache (attempt ${attempt}/${max_retries})..." >&2
+            if download_verified "$url" "$cache_file" sha256_verify "$expected"; then
+                echo "Toolchain download verified against Bootlin's checksum" >&2
+                break
+            fi
+            # A mismatch can also come from a stale cached checksum: fetch it again too
+            rm -f "$sum_file"
+        fi
+
+        if [ "$attempt" -ge "$max_retries" ]; then
+            echo "ERROR: Failed to download and verify the ${name} toolchain after ${max_retries} attempts" >&2
+            echo "URL: ${url}" >&2
+            echo "Checksum URL: ${sum_url}" >&2
             return 1
         fi
-    else
-        echo "Using cached ${name} toolchain..." >&2
-    fi
+        attempt=$((attempt + 1))
+        echo "Retrying the ${name} toolchain download..." >&2
+        sleep $((attempt * 2))
+    done
 
-    # Return the cache file path (only thing written to stdout)
     echo "$cache_file"
 }
 
