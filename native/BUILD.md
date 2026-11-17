@@ -52,7 +52,8 @@ it, so libarchive itself is not patched.
   (`verify_lzo_support`). The Linux scripts also fail, naming the symbols, if the library does
   not define everything the shim needs or leaves a C++ runtime symbol unresolved
   (`verify_lzo_shim_resolved`). The link itself and `verify_self_contained` reject any
-  unresolved symbol as well (see "How the library is linked and tested" below).
+  strong (non-weak) unresolved symbol as well (see "How the library is linked and
+  tested" below).
 
 ## Quick Start
 
@@ -112,10 +113,10 @@ in `build-linux-common.sh`):
   libgcc supplies the helper routines that compiled code calls (integer division on
   x86 and ARMv7, 128-bit floating point on ARM64). musl's `libc.a` calls those
   helpers and libgcc calls back into `libc.a`, so the archives are linked as one
-  `--start-group`/`--end-group`. `-Wl,-z,defs` makes the link fail on any
-  unresolved symbol: the toolchain links with `-z now` (BIND_NOW), so a symbol left
-  for the loader to find would make the library fail to load in any process that
-  does not happen to define it.
+  `--start-group`/`--end-group`. `-Wl,-z,defs` makes the link fail on any strong
+  (non-weak) unresolved symbol: the toolchain links with `-z now` (BIND_NOW), so such
+  a symbol left for the loader to find would make the library fail to load in any
+  process that does not happen to define it.
 - `verify_self_contained` then fails the build if the library has a DT_NEEDED
   entry or a strong undefined dynamic symbol. Weak undefined symbols, such as
   zstd's optional `ZSTD_trace_*` hooks, are allowed: they resolve to null.
