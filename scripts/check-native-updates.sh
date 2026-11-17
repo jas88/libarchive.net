@@ -130,7 +130,8 @@ check_github_release() {
     version=$(fetch_url "$url" -H "Accept: application/vnd.github.v3+json" | \
                     jq -r '.tag_name // empty' | sed 's/^v//')
 
-    echo "$version"
+    # printf, not echo: a tag such as "-n" must reach the version check unchanged
+    printf '%s\n' "$version"
 }
 
 # Function to check web page for version
@@ -157,6 +158,26 @@ version_gt() {
 
     # Use sort -V to compare versions
     [ "$ver2" = "$(echo -e "$ver1\n$ver2" | sort -V | head -n1)" ] && [ "$ver1" != "$ver2" ]
+}
+
+# True if $1 is a plain dotted number of at most MAX_VERSION_LENGTH characters.
+# A version taken from upstream is written into build-config.sh, which this script
+# and every build source as shell code, and goes into sed expressions, the PR and the
+# commit, so a release tag such as 1.0$(cmd) must never get that far. The digits are
+# listed rather than written as a range, so that no locale can widen the set.
+MAX_VERSION_LENGTH=32
+valid_version() {
+    local re='^[0123456789]+(\.[0123456789]+)*$'
+    [ ${#1} -le "$MAX_VERSION_LENGTH" ] && [[ $1 =~ $re ]]
+}
+
+# Print a value from upstream quoted for the log: cut to 64 characters, then
+# printf %q in the C locale, which escapes every byte that is not printable ASCII,
+# so the value cannot inject terminal escapes or start a new log line.
+log_quote() {
+    local value=$1
+    [ ${#value} -le 64 ] || value="${value:0:64}..."
+    ( export LC_ALL=C; printf '%q' "$value" )
 }
 
 # Print the value that the copy of build-config.sh in $1 gives the variable named $2.
@@ -289,20 +310,35 @@ check_dependency() {
         gnome)
             # Check for newer major.minor first
             local base_url="https://download.gnome.org/sources/libxml2/"
-            local latest_mm=$(curl -sf "$base_url" | \
+            local latest_mm
+            latest_mm=$(curl -sf "$base_url" | \
                 grep -oE 'href="([0-9]+\.[0-9]+)/"' | \
                 sed 's/href="//;s/\/"//g' | \
                 sort -V | tail -1)
 
-            local url="$base_url$latest_mm/"
-            local pattern="${check_args[0]}"
-            latest=$(check_web_version "$url" "$pattern")
+            # The directory name goes into a URL, so it must pass the version check
+            # too. If it does not (or is empty), it is what gets reported below.
+            if valid_version "$latest_mm"; then
+                local url="$base_url$latest_mm/"
+                local pattern="${check_args[0]}"
+                latest=$(check_web_version "$url" "$pattern")
+            else
+                latest="$latest_mm"
+            fi
             ;;
     esac
 
     if [ -z "$latest" ]; then
         echo -e "${RED}ERROR${NC}"
         record_failure "$name" "network error or version pattern mismatch"
+        return 1
+    fi
+
+    # Every method's result is checked here, before it is compared, printed or
+    # recorded as an update: anything else is a failed check, quoted for the log
+    if ! valid_version "$latest"; then
+        echo -e "${RED}ERROR${NC}"
+        record_failure "$name" "unexpected version string $(log_quote "$latest")"
         return 1
     fi
 

@@ -20,7 +20,12 @@ SHA256 checksums, so neither is repeated here.
    stops before changing anything, so that it cannot open a second pull request.
 2. **Compare versions.** It reads each current version from
    `native/build-config.sh` and finds the latest upstream version with one of the
-   [check methods](#check-methods). A version that sorts higher under `sort -V`
+   [check methods](#check-methods). Only a plain dotted number of at most 32
+   characters (`^[0-9]+(\.[0-9]+)*$`, after the `github` method has removed a
+   leading `v`) is accepted as a version, because versions are written into a file
+   that this script and every build source as shell code; anything else is
+   reported as a failed check ("unexpected version string", escaped for the log)
+   and is never compared or written. A version that sorts higher under `sort -V`
    is an update. A check that finds no version (network error or pattern mismatch)
    is reported as failed, and the remaining checks still run.
 3. **Update the pins.** For each update it rewrites the `<NAME>_VERSION` line
@@ -74,7 +79,8 @@ check_dependency <name> <current-version> <method> <method-arguments>
   are two of the libraries checked this way.
 - `gnome <pattern>` only works for libxml2, because its GNOME download directory
   is hard-coded. It finds the newest `<major>.<minor>` directory there and applies
-  the `web` method to that directory.
+  the `web` method to that directory. The directory name must pass the same
+  version check.
 
 ## Running it locally
 
