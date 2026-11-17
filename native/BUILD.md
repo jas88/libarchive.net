@@ -7,7 +7,8 @@ This directory contains the unified build system for building libarchive native 
 The build system consists of:
 - **build-config.sh**: Central configuration file with all library versions and URLs
 - **build-lzo-shim.sh**: Builds and verifies lzop support from lzokay (see "lzop support" below)
-- **build-linux.sh**: Linux x86-64 build script (using musl-libc)
+- **build-linux.sh**, **build-linux-x86.sh**, **build-linux-arm.sh**, **build-linux-arm64.sh**: Linux x64, x86, ARMv7 and ARM64 build scripts (using musl-libc)
+- **build-linux-common.sh**: Steps shared by the Linux scripts: the mbedTLS build, the final link, and the checks and load tests of the linked library
 - **build-macos.sh**: macOS universal binary build script (x86_64 + arm64)
 - **build-windows.sh**: Windows build script (x86, x64, arm64 via MinGW)
 - **build-all.sh**: Unified orchestrator for building all platforms
@@ -48,8 +49,10 @@ it, so libarchive itself is not patched.
 - The shim is C++, so every build needs a C++ compiler (`CXX`) and the `patch` program. It is
   compiled so that it needs no C++ runtime, because the Linux libraries are linked without one.
 - Every build script fails if lzop support did not reach the library it linked
-  (`verify_lzo_support`). The Linux scripts also fail if the shim left a symbol unresolved
-  (`verify_lzo_shim_resolved`), since such a library would link but never load.
+  (`verify_lzo_support`). The Linux scripts also fail, naming the symbols, if the library does
+  not define everything the shim needs or leaves a C++ runtime symbol unresolved
+  (`verify_lzo_shim_resolved`). The link itself and `verify_self_contained` reject any
+  unresolved symbol as well (see "How the library is linked and tested" below).
 
 ## Quick Start
 
@@ -80,21 +83,52 @@ This will automatically detect your platform and build the appropriate libraries
 
 ## Platform-Specific Requirements
 
-### Linux (x86-64)
+### Linux (x64, x86, ARMv7, ARM64)
 
 **Requirements:**
+- An x86-64 Linux build machine (the Bootlin toolchains are x86-64 Linux programs)
 - bash
 - curl
 - gcc
 - make
 - unzip
+- For the ARMv7 and ARM64 load tests: QEMU user-mode emulation (`qemu-arm`,
+  `qemu-aarch64`; Debian/Ubuntu package `qemu-user`)
 
-**Output:** `libarchive.so` (fully static, no external dependencies except glibc)
+**Output:** `libarchive.so`, one per architecture, which needs no other library at
+run time (it has no DT_NEEDED entry): the C library (musl) and every dependency are
+linked into it, so the same file loads in glibc and musl processes.
 
 **Notes:**
 - Uses musl-libc cross-compiler for maximum portability
 - All dependencies are statically linked
 - Build time: ~20-30 minutes (includes building musl toolchain)
+
+**How the library is linked and tested** (all four Linux scripts use the functions
+in `build-linux-common.sh`):
+- `link_libarchive` links all of `libarchive.a` with the other static libraries,
+  the toolchain's own `libgcc.a` (`$CC -print-libgcc-file-name`) and musl's static
+  `libc.a`, with `-nostdlib`. No shared library is linked, not even `libgcc_s`.
+  libgcc supplies the helper routines that compiled code calls (integer division on
+  x86 and ARMv7, 128-bit floating point on ARM64). musl's `libc.a` calls those
+  helpers and libgcc calls back into `libc.a`, so the archives are linked as one
+  `--start-group`/`--end-group`. `-Wl,-z,defs` makes the link fail on any
+  unresolved symbol: the toolchain links with `-z now` (BIND_NOW), so a symbol left
+  for the loader to find would make the library fail to load in any process that
+  does not happen to define it.
+- `verify_self_contained` then fails the build if the library has a DT_NEEDED
+  entry or a strong undefined dynamic symbol. Weak undefined symbols, such as
+  zstd's optional `ZSTD_trace_*` hooks, are allowed: they resolve to null.
+- `test_load_musl` builds a small dynamically linked musl program with the target
+  toolchain and runs it with the musl dynamic loader from the toolchain's sysroot,
+  so that the process contains nothing but musl and the library: natively for x64
+  and x86, and under QEMU user-mode emulation for ARMv7 and ARM64. The program
+  loads `./libarchive.so` with `RTLD_NOW`, calls a few of its functions (including
+  reading an empty archive) and fails the build on any error. If QEMU is missing,
+  the ARMv7 and ARM64 tests fail the build under GitHub Actions and are skipped
+  with a warning elsewhere.
+- The x64 build also loads the library in the same program built with the host's
+  `gcc` and C library (glibc on the CI runners).
 
 ### macOS (Universal Binary)
 
@@ -225,7 +259,7 @@ Currently, Windows builds are pre-built and checked into the repository. To enab
 2. Add download URL to `build-config.sh`
 3. Update `download_all_libraries()` function
 4. Add build steps to each platform script
-5. Update linker commands to include the new library
+5. Update linker commands to include the new library (for Linux, the archive list in `link_libarchive` in `build-linux-common.sh`)
 6. Test on all platforms
 
 ### Testing Changes
