@@ -433,5 +433,5 @@ BSD-2-Clause
 ## See Also
 
 - [LibArchive.Net README](../README.md)
-- [Native Library Building](../native/README.md)
+- [Native Library Building](../native/BUILD.md)
 - [Test Examples](../Test.LibArchive.Net/)
