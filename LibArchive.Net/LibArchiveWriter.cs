@@ -107,10 +107,20 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
 
             SetBlockSize();
 
-            // Open the file for writing
-            using var filenameBuffer = new SafeStringBuffer(filename);
-            if (archive_write_open_filename(handle, filenameBuffer.Ptr) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-                Throw();
+            // Open the file for writing. On Windows libarchive would convert a narrow name from the
+            // ANSI code page, so it gets UTF-16 there; elsewhere the UTF-8 bytes go to open(2)
+            // unchanged (see LibArchiveReader.UseWideFileNames).
+            if (LibArchiveReader.UseWideFileNames)
+            {
+                if (archive_write_open_filename_w(handle, filename) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+                    Throw();
+            }
+            else
+            {
+                using var filenameBuffer = new SafeStringBuffer(filename);
+                if (archive_write_open_filename(handle, filenameBuffer.Ptr) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+                    Throw();
+            }
         }
         catch
         {
@@ -389,6 +399,11 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_open_filename(IntPtr archive, IntPtr filename);
 
+    // Windows only, where wchar_t is UTF-16
+    [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    private static partial int archive_write_open_filename_w(IntPtr archive, [MarshalAs(UnmanagedType.LPWStr)] string filename);
+
     [LibraryImport("archive")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_close(IntPtr archive);
@@ -426,6 +441,10 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
 
     [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_open_filename(IntPtr archive, IntPtr filename);
+
+    // Windows only, where wchar_t is UTF-16
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int archive_write_open_filename_w(IntPtr archive, [MarshalAs(UnmanagedType.LPWStr)] string filename);
 
     [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_close(IntPtr archive);

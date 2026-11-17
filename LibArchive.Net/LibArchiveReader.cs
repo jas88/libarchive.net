@@ -180,17 +180,32 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         }
     }
 
+    // libarchive's narrow-character open functions take the name in the C library's current
+    // locale. On Windows they convert it to UTF-16 with the locale's code page (the ANSI code
+    // page, as .NET never calls setlocale), so a UTF-8 name would be misread there: Windows gets
+    // the UTF-16 (_w) variants instead. Elsewhere the bytes go to open(2) unchanged, and UTF-8 is
+    // what .NET itself uses for file names; the _w variants there would convert through the "C"
+    // locale and reject any non-ASCII name.
+    internal static readonly bool UseWideFileNames = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+
     private int OpenSource()
     {
         switch (_sourceType)
         {
             case SourceType.File:
             {
+                if (UseWideFileNames)
+                    return archive_read_open_filename_w(handle, _filename!, _blockSize);
                 using var uName = new SafeStringBuffer(_filename!);
                 return archive_read_open_filename(handle, uName.Ptr, _blockSize);
             }
             case SourceType.MultiVolume:
             {
+                if (UseWideFileNames)
+                {
+                    using var wideNames = new DisposableWideStringArray(_filenames!);
+                    return archive_read_open_filenames_w(handle, wideNames.Ptr, _blockSize);
+                }
                 using var names = new DisposableStringArray(_filenames!);
                 return archive_read_open_filenames(handle, names.Ptr, _blockSize);
             }
@@ -602,6 +617,16 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_read_open_filenames(IntPtr a, IntPtr filename, nuint blockSize);
 
+    // Windows only: wchar_t is UTF-16 there, and libarchive exports
+    // archive_read_open_filenames_w on Windows alone
+    [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    private static partial int archive_read_open_filename_w(IntPtr a, [MarshalAs(UnmanagedType.LPWStr)] string filename, nuint blockSize);
+
+    [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    private static partial int archive_read_open_filenames_w(IntPtr a, IntPtr filenames, nuint blockSize);
+
     [LibraryImport("archive")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial nint archive_read_data(IntPtr a, ref byte buff, nuint size);
@@ -666,6 +691,14 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_read_open_filenames(IntPtr a, IntPtr filename, nuint blockSize);
+
+    // Windows only: wchar_t is UTF-16 there, and libarchive exports
+    // archive_read_open_filenames_w on Windows alone
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int archive_read_open_filename_w(IntPtr a, [MarshalAs(UnmanagedType.LPWStr)] string filename, nuint blockSize);
+
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int archive_read_open_filenames_w(IntPtr a, IntPtr filenames, nuint blockSize);
 
     [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern nint archive_read_data(IntPtr a, ref byte buff, nuint size);

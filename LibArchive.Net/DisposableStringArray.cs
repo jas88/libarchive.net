@@ -43,3 +43,44 @@ public sealed class DisposableStringArray : IDisposable
             s.Dispose();
     }
 }
+
+/// <summary>
+/// A null-terminated array of pointers to null-terminated UTF-16 strings, as a <c>const wchar_t **</c>
+/// on Windows, where <c>wchar_t</c> is 16 bits.
+/// </summary>
+internal sealed class DisposableWideStringArray : IDisposable
+{
+    private readonly IntPtr[] backing;
+    private readonly GCHandle handle;
+
+    public DisposableWideStringArray(string[] a)
+    {
+        backing = new IntPtr[a.Length + 1];
+        try
+        {
+            for (int i = 0; i < a.Length; i++)
+                backing[i] = Marshal.StringToCoTaskMemUni(a[i] ?? throw new ArgumentNullException(nameof(a)));
+        }
+        catch
+        {
+            FreeStrings();
+            throw;
+        }
+        handle = GCHandle.Alloc(backing, GCHandleType.Pinned);
+    }
+
+    public IntPtr Ptr => handle.AddrOfPinnedObject();
+
+    public void Dispose()
+    {
+        handle.Free();
+        FreeStrings();
+    }
+
+    private void FreeStrings()
+    {
+        foreach (var p in backing)
+            if (p != IntPtr.Zero)
+                Marshal.FreeCoTaskMem(p);
+    }
+}
