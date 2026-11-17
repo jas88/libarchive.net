@@ -31,16 +31,17 @@ SHA256 checksums, so neither is repeated here.
 3. **Update the pins.** For each update it rewrites the `<NAME>_VERSION` line
    (`<NAME>` being the library's name in upper case) in a copy of that file,
    downloads the new tarball from the `<NAME>_URL` that the copy sets, and
-   rewrites the copy's `<NAME>_SHA256` line with that tarball's checksum. Only then
-   does the copy replace the file, in one step: it is written to a temporary file
-   in `native/`, which takes the file's mode and is renamed over it with `mv -f`.
-   If any of this fails (a line cannot be rewritten, `<NAME>_URL` is not set, the
-   download fails or no SHA256 can be computed), the file keeps that library's
-   current version and checksum, and the library is left out of the pull request
-   and reported as a failed check. If the replacement itself fails, the temporary
-   file is removed and the script stops before step 4 with exit status 1, leaving
-   the file as it was before that update (updates applied earlier in the run stay
-   in it).
+   rewrites the copy's `<NAME>_SHA256` line with that tarball's checksum. If any
+   of this fails (a line cannot be rewritten, `<NAME>_URL` is not set, the download
+   fails or no SHA256 can be computed), the file keeps that library's current
+   version and checksum, and the library is left out of the pull request and
+   reported as a failed check. Otherwise the update is first recorded for the pull
+   request, and only then does the copy replace the file, in one step: it is
+   written to a temporary file in `native/`, which takes the file's mode and is
+   renamed over it with `mv -f`. If the record cannot be written or the
+   replacement fails, the script removes any temporary file and stops before step
+   4 with exit status 1, leaving the file as it was before that update (updates
+   applied earlier in the run stay in it).
 4. **Open a pull request.** If at least one update was applied, it creates the
    branch `dependabot/native/<YYYYMMDD>-updates` from the commit that is checked
    out, commits `native/build-config.sh`, pushes the branch to `origin` and opens
@@ -63,9 +64,11 @@ temporary files, if it cannot replace `native/build-config.sh` (step 3), if the 
 request lookup in step 1 fails outside a dry run, if a `git` or `gh` command in
 step 4 fails, or if any check failed, an update that could not be applied included.
 In the last case any pull request for the other updates is still opened first, and
-a dry run that found updates exits 0 regardless. A run stopped by SIGHUP, SIGINT or
-SIGTERM removes its temporary files and exits 129, 130 or 143. In every other case
-it exits 0.
+a dry run that found updates exits 0 regardless. If, during step 3, a record cannot
+be written to its temporary files or the file cannot be replaced, the script stops
+there, before step 4, and the update it was applying is not in
+`native/build-config.sh`. A run stopped by SIGHUP, SIGINT or SIGTERM removes its
+temporary files and exits 129, 130 or 143. In every other case it exits 0.
 
 ## Check methods
 

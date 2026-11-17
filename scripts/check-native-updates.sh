@@ -243,9 +243,10 @@ update_failed() {
 
 # Function to update a library's version and SHA256 checksum in build-config.sh.
 # Both go into a copy of the file first, and the copy replaces build-config.sh only
-# once it holds the new version and the checksum of the new version's tarball. If any
-# step fails, build-config.sh is left exactly as it was, the failure is recorded as a
-# failed check, and 1 is returned so that the library is left out of the PR.
+# once it holds the new version and the checksum of the new version's tarball, and the
+# update has been recorded for the PR (APPLIED_FILE; this is the only place that does).
+# If any step fails, build-config.sh is left exactly as it was, the failure is recorded
+# as a failed check, and 1 is returned so that the library is left out of the PR.
 update_version() {
     local dep_name=$1
     local old_ver=$2
@@ -306,9 +307,13 @@ update_version() {
         return 1
     fi
 
-    # Both are in place, so the copy replaces build-config.sh, atomically (see
-    # replace_config). If that fails, build-config.sh is unchanged but cannot be
-    # updated at all, so the script stops before any branch or PR is created.
+    # Both are in place. Record the update for the PR first, so that a record that
+    # cannot be written stops the script (add_line) before build-config.sh is touched.
+    # Then the copy replaces build-config.sh, atomically (see replace_config). If that
+    # fails, build-config.sh is unchanged but cannot be updated at all, so the script
+    # stops; the record left behind is harmless, as this exits before any branch or
+    # PR is created.
+    add_line "$APPLIED_FILE" "$dep_name|$old_ver|$new_ver"
     if ! replace_config "$candidate.sha256"; then
         echo -e "  ${RED}ERROR: could not replace $CONFIG_FILE; it is unchanged${NC}"
         exit 1
@@ -491,13 +496,12 @@ update_count=$(wc -l < "$UPDATES_FILE" | tr -d ' ')
 echo -e "${YELLOW}$update_count update(s) found!${NC}"
 echo ""
 
-# Apply updates to build-config.sh. Only the updates applied in full (new version and
-# its checksum) are recorded for the PR; update_version records the others as failed.
+# Apply updates to build-config.sh. update_version records each update it applies in
+# full (new version and its checksum) for the PR, and each one it cannot apply as a
+# failed check.
 while IFS='|' read -r name old new; do
     echo "Updating $name: $old -> $new"
-    if update_version "$name" "$old" "$new"; then
-        add_line "$APPLIED_FILE" "$name|$old|$new"
-    fi
+    update_version "$name" "$old" "$new"
 done < "$UPDATES_FILE"
 
 # Create PR if not dry run
