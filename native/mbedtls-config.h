@@ -17,7 +17,7 @@
  * makes it unloadable. Nothing that would need an entropy source, the PSA crypto
  * core, threads, time, file or network I/O is enabled, nor any CPU-specific
  * acceleration (AES-NI, ARMv8 crypto extensions): the same portable C builds for
- * x86, x64, arm and arm64, and no unused TLS, X.509 or public-key code is linked in.
+ * x64, arm and arm64, and no unused TLS, X.509 or public-key code is linked in.
  *
  * Do not define MBEDTLS_DEPRECATED_REMOVED: libarchive calls
  * mbedtls_pkcs5_pbkdf2_hmac(), which Mbed TLS 3.x keeps only as a deprecated function.

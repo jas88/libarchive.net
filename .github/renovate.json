@@ -9,7 +9,7 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Bootlin stable musl toolchain release used for all four Linux builds",
+      "description": "Bootlin stable musl toolchain release used for all three Linux builds",
       "managerFilePatterns": ["/^native/build-config\\.sh$/"],
       "matchStrings": [
         "BOOTLIN_RELEASE=\"stable-(?<currentValue>\\d{4}\\.\\d{2}-\\d+)\""
@@ -21,7 +21,7 @@
   ],
   "customDatasources": {
     "bootlin-toolchains": {
-      "description": "Bootlin x86-64 toolchain tarball listing. All four architectures share the stable release name, so one listing is enough to detect releases.",
+      "description": "Bootlin x86-64 toolchain tarball listing. All three architectures share the stable release name, so one listing is enough to detect releases.",
       "defaultRegistryUrlTemplate": "https://toolchains.bootlin.com/downloads/releases/toolchains/x86-64/tarballs/",
       "format": "html"
     }
@@ -32,7 +32,7 @@
       "extractVersion": "^x86-64--musl--stable-(?<version>\\d{4}\\.\\d{2}-\\d+)\\.tar\\.xz$",
       "commitMessageTopic": "Bootlin musl toolchains",
       "prBodyNotes": [
-        "Updates the cross-compilers for all four Linux builds (x86-64, i686, armv7-eabihf, aarch64); CI downloads and builds with each one."
+        "Updates the cross-compilers for all three Linux builds (x86-64, armv7-eabihf, aarch64); CI downloads and builds with each one."
       ]
     }
   ],

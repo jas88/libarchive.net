@@ -50,10 +50,8 @@ build_mbedtls() {
 # The archives after libarchive.a are linked as one group (--start-group ...
 # --end-group), which makes ld scan them repeatedly until no more symbols resolve.
 # A single left-to-right pass cannot be relied on: musl's libc.a calls libgcc's helper
-# routines (integer division on x86 and arm, 128-bit floating point on arm64), and
-# libgcc.a calls back into libc.a (on arm, its division-by-zero handler calls raise).
-# One pass over libgcc.a and then libc.a, as the x86 build used to link them, left the
-# __divmoddi4 that libc.a's lldiv needs undefined.
+# routines (integer division on arm, 128-bit floating point on arm64), and libgcc.a
+# calls back into libc.a (on arm, its division-by-zero handler calls raise).
 #
 # -z defs makes the link fail on any strong (non-weak) unresolved symbol. Without it ld
 # leaves the symbol to be found when the library is loaded, and since the toolchain
@@ -346,9 +344,9 @@ EOF
 # program built with the target toolchain as a dynamically linked musl executable, run
 # by the musl dynamic loader from the toolchain's sysroot. No glibc and no libgcc_s is
 # present, so nothing else can supply a symbol the library lacks, and it then fails to
-# load. Runs natively (x64, and x86 on an x86-64 kernel), or under the named QEMU
-# user-mode emulator for another architecture. If that emulator is not installed, the
-# test fails the build under GitHub Actions and is skipped with a warning elsewhere.
+# load. Runs natively (x64), or under the named QEMU user-mode emulator for another
+# architecture. If that emulator is not installed, the test fails the build under
+# GitHub Actions and is skipped with a warning elsewhere.
 # Usage: test_load_musl <library> [qemu-binary]
 # Uses CC, and AR to find the toolchain's readelf.
 test_load_musl() {
