@@ -11,7 +11,7 @@
 - **Write** archives: ZIP, 7-Zip, TAR, Ustar, PAX, CPIO, ISO 9660, XAR
 - **Compression**: Gzip, Bzip2, XZ, LZMA, LZ4, Zstd, Compress, LZIP
 - **Encryption**: ZIP only. Writing supports AES-128, AES-256 and traditional PKWARE; reading also handles AES-192. 7-Zip encryption is not supported by libarchive
-- **Platform support**: Windows, Linux, macOS (x64, ARM64, ARM, x86)
+- **Platform support**: Windows (x86, x64, ARM64), Linux (x64, ARM64, ARM), macOS (x64, ARM64)
 - **Native AOT** and trimming compatible (.NET 10+)
 - **.NET Standard 2.0** support for .NET Framework 4.6.1+
 

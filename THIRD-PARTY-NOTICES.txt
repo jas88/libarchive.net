@@ -42,7 +42,7 @@ This file is written and updated by hand. Nothing generates it.
 
 * Each section says which native binaries it applies to:
 
-    Linux    runtimes/linux-*/native/libarchive.so (x86, x64, arm, arm64; the
+    Linux    runtimes/linux-*/native/libarchive.so (x64, arm, arm64; the
              same files are also shipped for the linux-musl-* RIDs)
     macOS    runtimes/osx-*/native/libarchive.dylib (universal x64 + arm64)
     Windows  runtimes/win-*/native/archive.dll (x86, x64, arm64)
@@ -131,7 +131,7 @@ This file is written and updated by hand. Nothing generates it.
   with the toolchain's libgcc.a in one group with musl's libc.a. (The run
   built 2475b72, the merge commit that GitHub made for the pull request,
   which the package's metadata names; its files are those of 1597e17.) Its
-  four Linux libraries were built in that run, not taken from the
+  Linux libraries were all built in that run, not taken from the
   workflow's cache, and its linux-musl-* files are identical copies of them.
   Only those statements of section 11 rest on this package; what section 10
   says about the Linux libraries was checked again on it and holds for it as
@@ -145,6 +145,14 @@ This file is written and updated by hand. Nothing generates it.
   the keys that gcc.gnu.org lists for GCC releases. When the link command in
   native/build-linux-common.sh or BOOTLIN_RELEASE changes, repeat the checks
   that section 11 describes for the Linux libraries and update this record.
+
+* Each of the four packages described above also held a Linux x86 (32-bit)
+  library. Linux x86 is no longer built or shipped, and this file no longer
+  describes that library or what was found in it: the Linux libraries that
+  the sections below describe are the x64, arm and arm64 ones. In none of
+  the binaries that are shipped were all 13 functions of lzokay and the
+  interface code found identical to those of the objects compiled for the
+  check in section 9; that was found only in the x86 library.
 
 
 Summary
@@ -162,8 +170,8 @@ Summary
       (libmbedcrypto)         Apache 2.0 or GPLv2 or later)
    9  lzokay                  MIT; parts as noted               all
   10  musl libc               MIT; parts as noted               Linux
-  11  GCC runtime (libgcc)    GPLv3 with GCC Runtime Library    Linux x86,
-                              Exception; parts as noted         arm, arm64;
+  11  GCC runtime (libgcc)    GPLv3 with GCC Runtime Library    Linux arm,
+                              Exception; parts as noted         arm64;
                                                                 Windows x86, x64
   12  MinGW-w64 runtime       several; see its licensing file   Windows
   13  LLVM compiler-rt        Apache 2.0 with LLVM Exceptions   Windows arm64
@@ -770,7 +778,7 @@ any Linux library.
 8. Mbed TLS (libmbedcrypto)
 ==============================================================================
 
-Applies to:  Linux native binaries only (all four architectures, including
+Applies to:  Linux native binaries only (all three architectures, including
              the copies shipped for the linux-musl-* RIDs)
 Source:      https://github.com/Mbed-TLS/mbedtls (release pinned in
              native/build-config.sh)
@@ -1052,7 +1060,7 @@ No other such credit was found in the ten files or in the headers they
 include.
 
 Verified on the binaries inspected (see "How this file is maintained"): Mbed
-TLS code is inside all four libarchive.so files, and the same parts of it in
+TLS code is inside all three libarchive.so files, and the same parts of it in
 each. The libraries keep their symbol tables, which record the source file
 names of the objects linked in. In each library the objects taken from
 libmbedcrypto.a are those of ten files of the release's "library" directory:
@@ -1313,11 +1321,11 @@ embeds into an object form to be redistributed in that form without
 complying with sections 4(a), 4(b) and 4(d) of the Apache License.
 
 Verified on the binaries inspected (see "How this file is maintained"):
-lzokay and the interface code are inside every native binary, the four
+lzokay and the interface code are inside every native binary, the three
 Linux libraries, both halves of the macOS library and the three DLLs, and
 none of their symbols is exported.
 
-* Linux (all four; the linux-musl-* files are identical copies): the symbol
+* Linux (all three; the linux-musl-* files are identical copies): the symbol
   tables name the objects lzo-shim.cpp and lzokay.cpp, one after the other,
   between those of liblzma and libzstd, the libraries before and after
   liblzo2.a on the link command. Each library defines lzokay::decompress,
@@ -1329,14 +1337,12 @@ none of their symbols is exported.
   objects compiled for this check show. All of them are local to the
   library: the only exported names that contain "lzo" are libarchive's own
   archive_liblzo2_version, archive_read_support_filter_lzop and
-  archive_write_add_filter_lzop. In the x86 library these 13 functions are
-  identical to those of the objects compiled for this check with the
-  headers of the Bootlin toolchain, apart from the bytes that the linker
-  fills in, so that library contains exactly the libstdc++ header code
-  listed above. For the x64 and arm64 libraries the compilers used for this
-  check make slightly different code for some of the functions (9 and 6 of
-  the 13 are identical in the same way), and the arm library was not
-  compared, as no compiler for it was at hand.
+  archive_write_add_filter_lzop. For the x64 and arm64 libraries the
+  compilers used for this check make slightly different code for some of
+  these 13 functions: 9 and 6 of the 13 are identical to those of the
+  objects compiled for this check with the headers of the Bootlin
+  toolchain, apart from the bytes that the linker fills in. The arm library
+  was not compared, as no compiler for it was at hand.
 * macOS (both halves): the same functions of lzokay.cpp, apart from the
   static one, and the eight functions with lzo names, none of them exported
   (nm describes each as "was a private external"); kEndOfStream, a constant
@@ -1383,10 +1389,9 @@ none of their symbols is exported.
   (libstdc++.a and libsupc++.a of the Ubuntu packages; libc++.a,
   libc++abi.a and libunwind.a of LLVM-MinGW).
 
-Not verified: that the code of the other Linux libraries, of the DLLs and of
-the macOS library is exactly what their own build compilers make of the two
-files and the headers named above; only in the Linux x86 library were all of
-the functions found identical. The SDK of the Xcode that built the macOS
+Not verified: that the code of the Linux libraries, of the DLLs and of the
+macOS library is exactly what their own build compilers make of the two
+files and the headers named above. The SDK of the Xcode that built the macOS
 library was not available for this check: what is said above of its libc++
 headers rests on the newer SDK that was read instead and on the ABI tag in the
 library. As section 13 says, the LLVM-MinGW download is not pinned by a
@@ -1397,7 +1402,7 @@ checksum.
 10. musl libc
 ==============================================================================
 
-Applies to:  Linux native binaries only (all four architectures, including
+Applies to:  Linux native binaries only (all three architectures, including
              the copies shipped for the linux-musl-* RIDs)
 Source:      https://musl.libc.org/
 Licence:     MIT licence for musl as a whole; some parts carry other
@@ -1412,7 +1417,7 @@ The text below is the COPYRIGHT file of the musl source release of the
 version that manifest names. Check it again whenever BOOTLIN_RELEASE changes.
 
 Verified on the binaries inspected (see "How this file is maintained"): musl
-code is inside all four libarchive.so files. None of them names a C library,
+code is inside all three libarchive.so files. None of them names a C library,
 or any other library, as a run-time dependency (they have no DT_NEEDED
 entry), and each defines more than 400 of musl's global symbols. Several
 hundred code sections of the toolchain's libc.a were found unchanged inside
@@ -1626,8 +1631,8 @@ obstacle to adoption, that text has been removed.
 11. GCC runtime library (libgcc)
 ==============================================================================
 
-Applies to:  Linux x86 (32-bit), arm and arm64 native binaries, including
-             the copies shipped for the linux-musl-* RIDs (not the x64 one)
+Applies to:  Linux arm and arm64 native binaries, including the copies
+             shipped for the linux-musl-* RIDs (not the x64 one)
              Windows x86 and x64 native binaries
 Source:      https://gcc.gnu.org/
 Licence:     GNU General Public License version 3 with the GCC Runtime
@@ -1635,7 +1640,7 @@ Licence:     GNU General Public License version 3 with the GCC Runtime
              GCC-exception-3.1); some files carry other terms, as set out
              below.
 
-Linux: all four Linux scripts link libarchive.so with link_libarchive in
+Linux: all three Linux scripts link libarchive.so with link_libarchive in
 native/build-linux-common.sh, which links with -nostdlib and names the
 toolchain's own libgcc.a on the link command, in one group with musl's
 libc.a, so that the helper routines that the compiled code and libc.a call
@@ -1644,7 +1649,7 @@ records the GCC target runtime libraries as licensed under
 "GPL-3.0-with-GCC-exception", with the licence file "COPYING.RUNTIME".
 
 Verified on the binaries inspected (see "How this file is maintained"):
-libgcc code is inside the x86, arm and arm64 libarchive.so files, and not
+libgcc code is inside the arm and arm64 libarchive.so files, and not
 inside the x64 one. The libraries keep their symbol tables, which name the
 objects linked in and the functions that they define. The members of the
 toolchain's libgcc.a in each library were found from the functions that it
@@ -1655,8 +1660,6 @@ the bytes that the linker fills in. These are the members, with the source
 files that their debugging information in libgcc.a names for all of their
 code:
 
-* x86: six 64-bit division routines (_divdi3, _moddi3, _divmoddi4,
-  _udivdi3, _umoddi3 and _udivmoddi4), from libgcc/libgcc2.c.
 * arm: six members. _udivsi3 and _divsi3 (the 32-bit division routines,
   under their own and their __aeabi_ names) and _dvmd_lnx (the handler for
   division by zero, which calls musl's raise) are from
@@ -1676,19 +1679,17 @@ code:
   code of libgcc.a was found in it.
 
 No other member of libgcc.a is inside any of the libraries. They define no
-other global symbol of it (apart from the __x86.get_pc_thunk helpers in the
-x86 library, which GCC emits into every object that needs them), and a search
-of each library for the code of every member of its libgcc.a found no other
-member: the only further matches, for 34 short fixed-point members of the
-arm libgcc.a (12 to 28 bytes of code each), are inside three functions that
-the symbol table gives to LZ4 and to libarchive, of which those bytes are
-part. Members too short for that search would still be named in the symbol
-tables, and none of them is. The only undefined symbols left in the
-libraries are four weak references of zstd (ZSTD_trace_*), in the x86, x64
-and arm64 libraries, which resolve to null when nothing defines them. None
-of the four libraries contains GCC's start-up objects (crtbeginS.o,
-crtendS.o) or code from any other GCC library (libgcc_eh, libatomic,
-libstdc++ and others were checked).
+other global symbol of it, and a search of each library for the code of
+every member of its libgcc.a found no other member: the only further
+matches, for 34 short fixed-point members of the arm libgcc.a (12 to 28
+bytes of code each), are inside three functions that the symbol table gives
+to LZ4 and to libarchive, of which those bytes are part. Members too short
+for that search would still be named in the symbol tables, and none of them
+is. The only undefined symbols left in the libraries are four weak
+references of zstd (ZSTD_trace_*), in the x64 and arm64 libraries, which
+resolve to null when nothing defines them. None of the three libraries
+contains GCC's start-up objects (crtbeginS.o, crtendS.o) or code from any
+other GCC library (libgcc_eh, libatomic, libstdc++ and others were checked).
 
 The exception grants additional permission to combine libgcc with
 independently written code, on the conditions that it sets out. It is
@@ -1871,12 +1872,12 @@ Two further notices in the GCC sources bear on this code:
   combinations. soft-fp.h includes longlong.h as well, as the AArch64
   sfp-machine.h does not define umul_ppmm itself, and the multiplication
   and division code for the 128-bit format uses its umul_ppmm and
-  udiv_qrnnd macros. That concerns the libgcc2.c routines in the Linux x86
-  and arm libraries and in the Windows x86 DLL, and the soft-fp routines in
-  the Linux arm64 library. How much of their code derives from those macros
-  was not established. The notice is copied from the GCC release that the
-  Bootlin manifest names; in the release behind the Ubuntu compilers it
-  differs only in its second line, where the years are 1991-2023.
+  udiv_qrnnd macros. That concerns the libgcc2.c routines in the Linux arm
+  library and in the Windows x86 DLL, and the soft-fp routines in the Linux
+  arm64 library. How much of their code derives from those macros was not
+  established. The notice is copied from the GCC release that the Bootlin
+  manifest names; in the release behind the Ubuntu compilers it differs
+  only in its second line, where the years are 1991-2023.
 
 ----- BEGIN gcc: include/longlong.h (notice) -----
 /* longlong.h -- definitions for mixed size 32/64 bit arithmetic.

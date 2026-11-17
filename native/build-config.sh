@@ -38,7 +38,6 @@ BOOTLIN_RELEASE="stable-2026.08-1"
 
 # Bootlin toolchain URLs (exported for use in build scripts)
 TOOLCHAIN_BASE_URL="https://toolchains.bootlin.com/downloads/releases/toolchains"
-export TOOLCHAIN_X86_URL="${TOOLCHAIN_BASE_URL}/x86-i686/tarballs/x86-i686--musl--${BOOTLIN_RELEASE}.tar.xz"
 export TOOLCHAIN_X64_URL="${TOOLCHAIN_BASE_URL}/x86-64/tarballs/x86-64--musl--${BOOTLIN_RELEASE}.tar.xz"
 export TOOLCHAIN_ARM_URL="${TOOLCHAIN_BASE_URL}/armv7-eabihf/tarballs/armv7-eabihf--musl--${BOOTLIN_RELEASE}.tar.xz"
 export TOOLCHAIN_ARM64_URL="${TOOLCHAIN_BASE_URL}/aarch64/tarballs/aarch64--musl--${BOOTLIN_RELEASE}.tar.xz"

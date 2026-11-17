@@ -129,7 +129,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { target: linux-x86,   kind: linux,   script: build-linux-x86.sh,   output: libarchive-linux-x86.so }
           - { target: linux-x64,   kind: linux,   script: build-linux.sh,       output: libarchive-linux-x64.so }
           - { target: linux-arm64, kind: linux,   script: build-linux-arm64.sh, output: libarchive-linux-arm64.so }
           - { target: linux-arm,   kind: linux,   script: build-linux-arm.sh,   output: libarchive-linux-arm.so }
@@ -342,10 +341,10 @@ jobs:
       - name: Assemble native runtimes
         run: |
           R=LibArchive.Net/runtimes
-          mkdir -p "$R"/{osx-x64,osx-arm64,linux-x86,linux-musl-x86,linux-x64,linux-musl-x64,linux-arm,linux-musl-arm,linux-arm64,linux-musl-arm64,win-x86,win-x64,win-arm64}/native
+          mkdir -p "$R"/{osx-x64,osx-arm64,linux-x64,linux-musl-x64,linux-arm,linux-musl-arm,linux-arm64,linux-musl-arm64,win-x86,win-x64,win-arm64}/native
 
           # Linux (musl-linked, so the same binary serves glibc and musl RIDs)
-          for arch in x86 x64 arm64 arm; do
+          for arch in x64 arm64 arm; do
             cp "native-out/libarchive-linux-$arch.so" "$R/linux-$arch/native/libarchive.so"
             cp "native-out/libarchive-linux-$arch.so" "$R/linux-musl-$arch/native/libarchive.so"
           done
