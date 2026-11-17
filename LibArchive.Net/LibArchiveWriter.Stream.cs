@@ -30,7 +30,9 @@ public partial class LibArchiveWriter
     /// <param name="compressionLevel">Compression level 0-9, where 9 is maximum compression (default: 6).</param>
     /// <param name="password">Optional password for encryption. libarchive can only encrypt ZIP archives.</param>
     /// <param name="encryption">Encryption type when a password is provided (default: AES-256).</param>
-    /// <param name="blockSize">Block size in bytes for writing (default: 1 MiB).</param>
+    /// <param name="blockSize">Size in bytes of the blocks libarchive writes the archive in (default: 1 MiB);
+    /// 0 writes data as it is produced. The last block is not padded, so the block size changes how the
+    /// archive is written, not its size or contents.</param>
     /// <exception cref="NotSupportedException">
     /// A password was supplied for a format other than ZIP (unless the encryption type is
     /// <see cref="EncryptionType.None"/>, which ignores the password), or with an encryption type that libarchive
@@ -96,13 +98,7 @@ public partial class LibArchiveWriter
         // Keep the stream reference alive
         callbackHandle = GCHandle.Alloc(outputStream);
 
-        // Configure block size settings before opening (required for callback-based writing)
-        // This matches what archive_write_open_filename does internally
-        if (archive_write_set_bytes_per_block(handle, (int)blockSize) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-            Throw();
-        // Set to 1 to minimize padding in the last block (important for compressed formats)
-        if (archive_write_set_bytes_in_last_block(handle, 1) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-            Throw();
+        SetBlockSize();
 
         // Open archive with callbacks
         var result = archive_write_open(

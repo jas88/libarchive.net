@@ -62,7 +62,9 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     /// <param name="format">Archive format to use.</param>
     /// <param name="compression">Compression algorithm to apply (default: None).</param>
     /// <param name="compressionLevel">Compression level 0-9, where 9 is maximum compression (default: 6).</param>
-    /// <param name="blockSize">Block size in bytes for writing (default: 1 MiB).</param>
+    /// <param name="blockSize">Size in bytes of the blocks libarchive writes the archive in (default: 1 MiB);
+    /// 0 writes data as it is produced. The last block is not padded, so the block size changes how the
+    /// archive is written, not its size or contents.</param>
     /// <param name="password">Optional password for encryption. libarchive can only encrypt ZIP archives.</param>
     /// <param name="encryption">Encryption type when a password is provided (default: AES-256).</param>
     /// <exception cref="NotSupportedException">
@@ -103,9 +105,11 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
             if (encryptionOption != null)
                 ConfigureEncryption(encryptionOption, password!);
 
+            SetBlockSize();
+
             // Open the file for writing
             using var filenameBuffer = new SafeStringBuffer(filename);
-            if (archive_write_open_filename(handle, filenameBuffer.Ptr, (int)blockSize) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+            if (archive_write_open_filename(handle, filenameBuffer.Ptr) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
                 Throw();
         }
         catch
@@ -282,6 +286,25 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
         throw new ApplicationException(GetErrorMessage());
     }
 
+    /// <summary>
+    /// Makes libarchive hand the archive to the file or stream in blocks of <see cref="blockSize"/>
+    /// bytes, before the archive is opened.
+    /// </summary>
+    /// <remarks>
+    /// libarchive pads the last block to the full block size by default, and pads tar and cpio
+    /// archives written to a FIFO or device that way. With a 1 MiB block size, that would pad every
+    /// small archive to 1 MiB, so the last block is never padded: the archive ends where its format
+    /// ends, as archive_write_open_filename and archive_write_open_memory leave regular files and
+    /// memory.
+    /// </remarks>
+    private void SetBlockSize()
+    {
+        if (archive_write_set_bytes_per_block(handle, (int)blockSize) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+            Throw();
+        if (archive_write_set_bytes_in_last_block(handle, 1) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+            Throw();
+    }
+
     private string GetErrorMessage()
     {
         return PtrToStringUTF8(archive_error_string(handle)) ?? "Unknown error";
@@ -362,7 +385,7 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     private static partial IntPtr archive_write_new();
 
     [LibraryImport("archive")]
-    private static partial int archive_write_open_filename(IntPtr archive, IntPtr filename, int blockSize);
+    private static partial int archive_write_open_filename(IntPtr archive, IntPtr filename);
 
     [LibraryImport("archive")]
     private static partial int archive_write_close(IntPtr archive);
@@ -392,7 +415,7 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     private static extern IntPtr archive_write_new();
 
     [DllImport("archive")]
-    private static extern int archive_write_open_filename(IntPtr archive, IntPtr filename, int blockSize);
+    private static extern int archive_write_open_filename(IntPtr archive, IntPtr filename);
 
     [DllImport("archive")]
     private static extern int archive_write_close(IntPtr archive);

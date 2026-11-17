@@ -394,10 +394,12 @@ public LibArchiveWriter(
     ArchiveFormat format,                     // Archive format
     CompressionType compression = None,       // Compression algorithm
     int compressionLevel = 6,                 // Compression level (0-9)
-    uint blockSize = 1048576,                 // Block size (1 MB default)
+    uint blockSize = 1048576,                 // Size of libarchive's writes (1 MiB default)
     string? password = null,                  // Optional password (ZIP only)
     EncryptionType encryption = Default)      // Encryption type
 ```
+
+`blockSize` sets the size of the blocks libarchive hands to the file or stream (`archive_write_set_bytes_per_block`); `0` writes data as it is produced. The stream constructor takes the same parameter, and the memory writer uses the 1 MiB default. The last block is never padded (`archive_write_set_bytes_in_last_block(1)`), so the block size changes how an archive is written, not its size or contents: libarchive would otherwise pad tar and cpio archives written to a FIFO or device to a whole block.
 
 ### Key Methods
 
