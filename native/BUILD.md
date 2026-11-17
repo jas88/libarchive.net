@@ -98,6 +98,7 @@ This will automatically detect your platform and build the appropriate libraries
 - autoconf, automake, libtool and pkg-config (libxml2 is built with its `autogen.sh`)
 - tar, gzip, xz and bzip2, which unpack the downloads (`.tar.gz`, `.tar.xz` and `.tar.bz2` archives)
 - file (each script runs it on the library it built)
+- unzip, to list a package's contents (see [Testing Changes](#testing-changes))
 - For the ARMv7 and ARM64 load tests: QEMU user-mode emulation (`qemu-arm`,
   `qemu-aarch64`; Debian/Ubuntu package `qemu-user`)
 
@@ -334,10 +335,12 @@ dotnet pack LibArchive.Net/LibArchive.Net.csproj -c Release -o artifacts/package
 ./scripts/write-package-test-nuget-config.sh artifacts/package artifacts/package-test
 # Restore, build and run the tests against the package (UseLocalPackage) instead of the project
 dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --configfile artifacts/package-test/nuget.config -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$VERSION"
-dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net11.0 -c Release --no-restore -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$VERSION"
+# The test project's .NET target: the first netN.N in its TargetFrameworks (see below)
+TFM=$(dotnet msbuild Test.LibArchive.Net/Test.LibArchive.Net.csproj -getProperty:TargetFrameworks | tr -d '\r' | tr ';' '\n' | grep -m1 -E '^net[0-9]+\.[0-9]+$')
+dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework "$TFM" -c Release --no-restore -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$VERSION"
 ```
 
-`--framework` names the test project's .NET target, the first one in `Test.LibArchive.Net/Directory.Build.props`, which `scripts/generate-build-props.sh` writes for the installed SDK. On Windows, `--framework net462` runs the tests on .NET Framework, as the test-net462 job does. `artifacts/` is ignored by git.
+`TFM` is the test project's .NET target, the first one in `Test.LibArchive.Net/Directory.Build.props`, which `scripts/generate-build-props.sh` writes for the installed SDK. On Windows, `--framework net462` runs the tests on .NET Framework, as the test-net462 job does. `artifacts/` is ignored by git.
 
 `./build-all.sh --package` (see [Quick Start](#quick-start)) runs these steps itself, with the version from `PACKAGE_VERSION`, the .NET target read from the test project as CI reads it, and net462 on Windows only. It packs into a temporary directory, which also holds the NuGet config and its packages folder and is deleted when the script ends, and copies the package to the repository root only if the tests pass.
 
@@ -346,8 +349,11 @@ dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net11.0 -
 ```bash
 # Clean downloaded sources and build artifacts
 rm -rf local* {bzip2,libarchive,libxml2,lz4,lzokay,mbedtls,xz,zlib,zstd}-*
-# Linux and macOS build directories, their output, and the configure cache
-rm -rf ~/libarchive-linux-* ~/libarchive-macos ~/libarchive-native "${XDG_CACHE_HOME:-$HOME/.cache}/libarchive-net/config-cache"
+# Linux and macOS build directories, their output, and the configure cache. The cache
+# directory is chosen as build-config.sh chooses it: XDG_CACHE_HOME if it is an absolute
+# path, ~/.cache otherwise
+case "${XDG_CACHE_HOME:-}" in /*) cache_home=$XDG_CACHE_HOME ;; *) cache_home=$HOME/.cache ;; esac
+rm -rf ~/libarchive-linux-* ~/libarchive-macos ~/libarchive-native "$cache_home/libarchive-net/config-cache"
 rm -f *.so *.dylib *.dll test nativetest
 ```
 
