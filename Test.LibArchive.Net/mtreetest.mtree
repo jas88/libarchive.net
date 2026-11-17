@@ -1,0 +1,4 @@
+#mtree
+./dir type=dir
+./dir/file.txt type=file size=12
+./dir/link type=link link=file.txt

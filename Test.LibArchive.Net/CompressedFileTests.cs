@@ -22,11 +22,15 @@ namespace Test.LibArchive.Net;
 //     lzop -9 -c rawtest.txt > rawtest.txt.lzo
 //     COPYFILE_DISABLE=1 tar --format=ustar --no-xattrs --no-mac-metadata --no-acls \
 //         --uid 0 --gid 0 --numeric-owner -cf - rawtest.txt | gzip -9 -n > rawtest.tar.gz
+//     COPYFILE_DISABLE=1 tar --format=pax --no-xattrs --no-mac-metadata --no-acls \
+//         --uid 0 --gid 0 --numeric-owner -cf - rawtest.txt | head -c 520 | gzip -9 -n > rawtest-truncated.tar.gz
 //
 // gzip -n stores neither the file name nor the time; without it gzip stores both, and
-// libarchive then names the entry after the stored name. rawtest.txt itself is the
-// uncompressed file that is not an archive. Bare "seq 1 1000" would not do: libarchive's mtree
-// reader claims text whose lines each hold a single word, and then fails on the first header.
+// libarchive then names the entry after the stored name. rawtest-truncated.tar.gz ends eight
+// bytes into the extended header of its first entry, so that header cannot be read.
+// rawtest.txt itself is the uncompressed file that is not an archive. Bare "seq 1 1000" would
+// not do for it: libarchive's mtree reader claims text whose lines each hold a single word,
+// which then opens and fails only at the first header (see MtreeTextTests.cs).
 [TestFixture]
 public class CompressedFileTests
 {
@@ -142,13 +146,33 @@ public class CompressedFileTests
         using var stream = fromStream ? File.OpenRead("rawtest.tar.gz") : null;
         using var reader = stream is null ? new LibArchiveReader("rawtest.tar.gz") : new LibArchiveReader(stream);
 
-        var entries = reader.Entries().Select(e => (e.Name, e.Type, e.LengthBytes, Content: e.ReadAllBytes())).ToList();
+        AssertTarEntries(reader);
+    }
 
-        Assert.That(entries, Has.Count.EqualTo(1));
-        Assert.That(entries[0].Name, Is.EqualTo(PlainFile));
-        Assert.That(entries[0].Type, Is.EqualTo(EntryType.RegularFile));
-        Assert.That(entries[0].LengthBytes, Is.EqualTo(Expected.Length));
-        Assert.That(entries[0].Content, Is.EqualTo(Expected));
+    // For compressed data, a non-seekable stream keeps the bytes it has given up until the first
+    // header has been read (see MtreeTextTests.cs); an archive's entries read as before.
+    [Test]
+    public void TestTarGzFromNonSeekableStream([Values(1u << 20, 16u)] uint blockSize)
+    {
+        using var stream = new ReaderApiTests.NonSeekableStream(new MemoryStream(File.ReadAllBytes("rawtest.tar.gz")));
+        using var reader = new LibArchiveReader(stream, blockSize: blockSize);
+
+        AssertTarEntries(reader);
+    }
+
+    // Only text that libarchive's mtree reader claimed is read again as raw data when its first
+    // header fails: a compressed archive whose first header fails reports its own error.
+    [Test]
+    public void TestTruncatedTarGzStillFailsAtFirstHeader([Values] bool fromStream)
+    {
+        const string fixture = "rawtest-truncated.tar.gz";
+        using var stream = fromStream
+            ? new ReaderApiTests.NonSeekableStream(new MemoryStream(File.ReadAllBytes(fixture)))
+            : null;
+        using var reader = stream is null ? new LibArchiveReader(fixture) : new LibArchiveReader(stream);
+
+        var ex = Assert.Throws<ApplicationException>(() => reader.FirstEntry());
+        Assert.That(ex!.Message, Is.EqualTo("Truncated tar archive detected while reading pax attribute name"));
     }
 
     // Data that is neither an archive nor compressed fails as it did before the raw format
@@ -187,6 +211,17 @@ public class CompressedFileTests
         Assert.That(entries[0].Name, Is.EqualTo(expectedName));
         Assert.That(entries[0].Type, Is.EqualTo(EntryType.RegularFile));
         Assert.That(entries[0].LengthBytes, Is.Null, "The decompressed size is not known in advance");
+        Assert.That(entries[0].Content, Is.EqualTo(Expected));
+    }
+
+    private static void AssertTarEntries(LibArchiveReader reader)
+    {
+        var entries = reader.Entries().Select(e => (e.Name, e.Type, e.LengthBytes, Content: e.ReadAllBytes())).ToList();
+
+        Assert.That(entries, Has.Count.EqualTo(1));
+        Assert.That(entries[0].Name, Is.EqualTo(PlainFile));
+        Assert.That(entries[0].Type, Is.EqualTo(EntryType.RegularFile));
+        Assert.That(entries[0].LengthBytes, Is.EqualTo(Expected.Length));
         Assert.That(entries[0].Content, Is.EqualTo(Expected));
     }
 

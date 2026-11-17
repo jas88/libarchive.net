@@ -28,6 +28,25 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         ARCHIVE_FATAL=-30
     }
 
+    // Format codes, as archive_format() reports them and archive_read_set_format() takes them (archive.h)
+    private const int ARCHIVE_FORMAT_BASE_MASK = 0xff0000;
+    private const int ARCHIVE_FORMAT_MTREE = 0x80000;
+    private const int ARCHIVE_FORMAT_RAW = 0x90000;
+
+    // The formats a native reader is given: see Open() and ReadNextHeader()
+    private enum ReaderFormats
+    {
+        // Every archive format
+        All,
+        // Every archive format, and the raw format, which bids only when none of them does
+        AllAndRaw,
+        // The raw format alone, set as the reader's format, so that formats do not bid at all
+        RawOnly
+    }
+
+    // Set by Open(), and cleared once the first header has been read: see ReadNextHeader()
+    private bool _firstHeaderPending;
+
     // Fields to store constructor parameters for Reset() support
     private readonly string? _filename;
     private readonly string[]? _filenames;
@@ -162,40 +181,55 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     /// any data, and libarchive only reports the format it chose once a header has been read: data
     /// that is neither an archive nor compressed would then open without error. Such data still
     /// fails here with libarchive's own error, "Unrecognized archive format".
+    /// Compressed text can also be claimed by the mtree format and fail only at its first header;
+    /// <see cref="ReadNextHeader"/> then reads it as raw data.
     /// </remarks>
     private void Open()
     {
-        CreateNativeReader(rawFormat: false);
-        if (OpenSource() == (int)ARCHIVE_RESULT.ARCHIVE_OK)
-            return;
-
-        var error = ErrorString();
-        if (IsCompressed())
+        CreateNativeReader(ReaderFormats.All);
+        if (OpenSource() != (int)ARCHIVE_RESULT.ARCHIVE_OK)
         {
-            archive_read_free(handle);
-            handle = IntPtr.Zero;
-            if (RewindSource())
-            {
-                CreateNativeReader(rawFormat: true);
-                if (OpenSource() == (int)ARCHIVE_RESULT.ARCHIVE_OK && IsCompressed())
-                    return;
-            }
+            var error = ErrorString();
+            if (!IsCompressed() || !ReopenCompressed(ReaderFormats.AllAndRaw))
+                throw new ApplicationException(error);
         }
-        throw new ApplicationException(error);
+        _firstHeaderPending = true;
     }
 
-    private void CreateNativeReader(bool rawFormat)
+    // Frees the native reader and opens the source again from its start, with the given formats.
+    // True when it opens, and as compressed data, as it did the first time.
+    private bool ReopenCompressed(ReaderFormats formats)
+    {
+        archive_read_free(handle);
+        handle = IntPtr.Zero;
+        if (!RewindSource())
+            return false;
+        CreateNativeReader(formats);
+        return OpenSource() == (int)ARCHIVE_RESULT.ARCHIVE_OK && IsCompressed();
+    }
+
+    private void CreateNativeReader(ReaderFormats formats)
     {
         handle = archive_read_new();
         if (handle == IntPtr.Zero)
             throw new ApplicationException("Failed to create archive reader");
 
-        // These register what they can and only warn when a filter needs an external
-        // program, which libarchive then reports when it is used; their results are ignored.
+        // The *_all functions register what they can and only warn when a filter needs an
+        // external program, which libarchive then reports when it is used; their results are ignored.
         _ = archive_read_support_filter_all(handle);
-        _ = archive_read_support_format_all(handle);
-        if (rawFormat && archive_read_support_format_raw(handle) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-            Throw();
+        if (formats == ReaderFormats.RawOnly)
+        {
+            // Registers the raw format and makes it the reader's format: libarchive then only
+            // checks that there is data, and no other format can claim it
+            if (archive_read_set_format(handle, ARCHIVE_FORMAT_RAW) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+                Throw();
+        }
+        else
+        {
+            _ = archive_read_support_format_all(handle);
+            if (formats == ReaderFormats.AllAndRaw && archive_read_support_format_raw(handle) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+                Throw();
+        }
 
         if (_password != null)
         {
@@ -252,6 +286,51 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     private bool IsCompressed() => archive_filter_count(handle) > 1;
 
     /// <summary>
+    /// Reads the next header. When the first header of compressed data fails because libarchive's
+    /// mtree format claimed text that is not an mtree specification, the source is opened again
+    /// with the raw format alone, and the header read is that of its single entry.
+    /// </summary>
+    /// <remarks>
+    /// Even without a <c>#mtree</c> signature, the mtree format bids on text whose first lines each
+    /// hold one word, taking them for file names. A compressed list of words or numbers, such as
+    /// <c>seq 1 1000 | gzip</c>, therefore opens as mtree rather than as raw data (see
+    /// <see cref="Open"/>), and fails only at its first header, with "Missing type keyword in mtree
+    /// specification". Registering the raw format with the others would not help: it bids only
+    /// when no other format does. The fallback is limited to:
+    /// <list type="bullet">
+    /// <item>The first header after <see cref="Open"/>. Once an entry has been returned, a header
+    /// that fails is an error in a specification that has been read, and is reported.</item>
+    /// <item>Compressed data, as in <see cref="Open"/>. Uncompressed text still fails as before.</item>
+    /// <item>The mtree format. A format is reported only by its own read_header, and mtree's reports
+    /// it only after parsing the whole text, so the failure is never another format's. What can
+    /// still fail is the first entry's keywords (a missing type, or a malformed or unknown keyword),
+    /// which mtree reports with ARCHIVE_WARN, and this class as an error. Such text is then treated
+    /// as <see cref="Open"/> treats compressed text that mtree's bid rejects outright.</item>
+    /// </list>
+    /// Text that the mtree format cannot parse at all, for example because a later line holds a byte
+    /// that is not printable ASCII, fails before the format is reported, and still fails.
+    /// </remarks>
+    private int ReadNextHeader(out IntPtr entryHandle)
+    {
+        var r = archive_read_next_header(handle, out entryHandle);
+        if (!_firstHeaderPending)
+            return r;
+
+        _firstHeaderPending = false;
+        if (r != (int)ARCHIVE_RESULT.ARCHIVE_OK && r != (int)ARCHIVE_RESULT.ARCHIVE_EOF
+            && (archive_format(handle) & ARCHIVE_FORMAT_BASE_MASK) == ARCHIVE_FORMAT_MTREE
+            && IsCompressed())
+        {
+            var error = ErrorString();
+            if (!ReopenCompressed(ReaderFormats.RawOnly)
+                || (r = archive_read_next_header(handle, out entryHandle)) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+                throw new ApplicationException(error);
+        }
+        StopRecording();
+        return r;
+    }
+
+    /// <summary>
     /// Checks if the archive contains encrypted entries.
     /// </summary>
     /// <returns>
@@ -287,12 +366,14 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     /// the decompressed data. libarchive names that entry <c>data</c>, except that a gzip file which
     /// records its original name (<c>gzip file.txt</c> does unless given <c>-n</c>) gives that name.
     /// The entry is a regular file whose <see cref="Entry.LengthBytes"/> is null, because the
-    /// decompressed size is not known in advance.
+    /// decompressed size is not known in advance. This includes compressed text that libarchive
+    /// takes for an mtree specification but cannot read as one, such as a list of words or numbers,
+    /// one per line; a compressed mtree specification that it can read is read as one.
     /// </remarks>
     public IEnumerable<Entry> Entries()
     {
         int r;
-        while ((r=archive_read_next_header(handle, out var entryHandle))==0)
+        while ((r=ReadNextHeader(out var entryHandle))==0)
         {
             var entry = Entry.Create(entryHandle, handle);
             if (entry is not null)
@@ -356,7 +437,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     /// </remarks>
     public Entry? FirstEntry()
     {
-        int r = archive_read_next_header(handle, out var entryHandle);
+        int r = ReadNextHeader(out var entryHandle);
         if (r == (int)ARCHIVE_RESULT.ARCHIVE_EOF)
             return null;
         if (r != (int)ARCHIVE_RESULT.ARCHIVE_OK)
@@ -655,7 +736,15 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     [LibraryImport("archive")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    private static partial int archive_read_set_format(IntPtr a, int code);
+
+    [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_filter_count(IntPtr a);
+
+    [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    private static partial int archive_format(IntPtr a);
 
     [LibraryImport("archive")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
@@ -736,7 +825,13 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     private static extern int archive_read_support_format_raw(IntPtr a);
 
     [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int archive_read_set_format(IntPtr a, int code);
+
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_filter_count(IntPtr a);
+
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int archive_format(IntPtr a);
 
     [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_read_open_filename(IntPtr a, IntPtr filename, nuint blockSize);

@@ -16,7 +16,8 @@ public partial class LibArchiveReader
     private GCHandle? _bufferHandle;
 
     // A non-seekable stream cannot be read twice, so the chunks the first native reader reads
-    // while opening it are recorded, and replayed to a second native reader if Open() needs one.
+    // while opening it, and for compressed data while reading the first header, are recorded,
+    // and replayed to a second native reader if Open() or ReadNextHeader() needs one.
     private List<byte[]>? _recordedChunks;
     private Queue<byte[]>? _replayChunks;
 
@@ -48,7 +49,8 @@ public partial class LibArchiveReader
     /// Seeking within formats such as 7z, and Reset(), require a seekable stream (CanSeek = true).
     /// A single compressed file that is not an archive, such as a plain gzip stream, is read as
     /// an archive holding one entry (see <see cref="Entries"/>); for a non-seekable stream, the
-    /// bytes read while detecting this are kept in memory until the reader has opened.
+    /// bytes read while detecting this are kept in memory until the reader has opened, and for
+    /// compressed data until the first entry's header has been read.
     /// </remarks>
     /// <exception cref="ApplicationException">Thrown when the archive cannot be opened, including when the
     /// data is neither an archive nor compressed (message "Unrecognized archive format").</exception>
@@ -90,7 +92,8 @@ public partial class LibArchiveReader
 
     // Opens the stream with the native reader that Open() created. While the first native reader
     // opens a non-seekable stream, the chunks it reads are recorded so that RewindStream() can
-    // hand the same bytes to a second one.
+    // hand the same bytes to a second one. Once it has opened, only compressed data can need
+    // that, if its first header fails (see ReadNextHeader()), so only that is still recorded.
     private int OpenStream()
     {
         _recordedChunks = _inputStream is { CanSeek: false } && _replayChunks == null
@@ -98,10 +101,13 @@ public partial class LibArchiveReader
             : null;
 
         var result = OpenWithCallbacks();
-        if (result == (int)ARCHIVE_RESULT.ARCHIVE_OK)
-            _recordedChunks = null;
+        if (result == (int)ARCHIVE_RESULT.ARCHIVE_OK && !IsCompressed())
+            StopRecording();
         return result;
     }
+
+    // Stops recording what a non-seekable stream gives the native reader, and drops the record.
+    private void StopRecording() => _recordedChunks = null;
 
     // Returns the stream to the point where the first native reader started.
     private bool RewindStream()
