@@ -82,7 +82,12 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     /// <param name="filename">The path to the archive file.</param>
     /// <param name="blockSize">Block size in bytes for reading, default is 1 MiB (1048576 bytes).</param>
     /// <param name="password">Optional password for encrypted archives. Supports ZIP archives with traditional PKWARE or AES encryption. RAR and 7z encrypted archives are not supported by libarchive.</param>
-    /// <exception cref="ApplicationException">Thrown when the archive cannot be opened.</exception>
+    /// <remarks>
+    /// A single compressed file that is not an archive, such as a plain <c>.gz</c>, <c>.bz2</c>
+    /// or <c>.xz</c> file, is read as an archive holding one entry; see <see cref="Entries"/>.
+    /// </remarks>
+    /// <exception cref="ApplicationException">Thrown when the archive cannot be opened, including when the file is
+    /// neither an archive nor compressed (message "Unrecognized archive format").</exception>
     /// <exception cref="NotSupportedException">Thrown when attempting to read an encrypted RAR or 7z archive (not supported by libarchive).</exception>
     public LibArchiveReader(string filename, uint blockSize = 1<<20, string? password = null) : base(true)
     {
@@ -90,22 +95,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         _blockSize = blockSize;
         _password = password;
         _sourceType = SourceType.File;
-
-        using var uName = new SafeStringBuffer(filename);
-        handle = archive_read_new();
-        archive_read_support_filter_all(handle);
-        archive_read_support_format_all(handle);
-
-        // Add password if provided
-        if (password != null)
-        {
-            using var uPassword = new SafeStringBuffer(password);
-            if (archive_read_add_passphrase(handle, uPassword.Ptr) != 0)
-                Throw();
-        }
-
-        if (archive_read_open_filename(handle, uName.Ptr, (int)blockSize) != 0)
-            Throw();
+        Open();
     }
 
     /// <summary>
@@ -123,22 +113,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         _blockSize = blockSize;
         _password = password;
         _sourceType = SourceType.MultiVolume;
-
-        using var names = new DisposableStringArray(filenames);
-        handle = archive_read_new();
-        archive_read_support_filter_all(handle);
-        archive_read_support_format_all(handle);
-
-        // Add password if provided
-        if (password != null)
-        {
-            using var uPassword = new SafeStringBuffer(password);
-            if (archive_read_add_passphrase(handle, uPassword.Ptr) != 0)
-                Throw();
-        }
-
-        if (archive_read_open_filenames(handle, names.Ptr, (int)blockSize) != 0)
-            Throw();
+        Open();
     }
 
     // Partial method for cleanup - implemented in LibArchiveReader.Stream.cs
@@ -146,8 +121,93 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     private void Throw()
     {
-        throw new ApplicationException(PtrToStringUTF8(archive_error_string(handle)) ?? "Unknown error");
+        throw new ApplicationException(ErrorString());
     }
+
+    private string ErrorString() => PtrToStringUTF8(archive_error_string(handle)) ?? "Unknown error";
+
+    /// <summary>
+    /// Creates the native reader and opens the source with every filter and archive format.
+    /// </summary>
+    /// <remarks>
+    /// A plain compressed file, such as a <c>.gz</c> that is not a <c>.tar.gz</c>, holds no archive
+    /// format, so every format rejects it. When that happens to compressed data, the source is
+    /// opened again with libarchive's raw format as well, which reads the decompressed data as a
+    /// single entry. The raw format is not simply registered with the others because it accepts
+    /// any data, and libarchive only reports the format it chose once a header has been read: data
+    /// that is neither an archive nor compressed would then open without error. Such data still
+    /// fails here with libarchive's own error, "Unrecognized archive format".
+    /// </remarks>
+    private void Open()
+    {
+        CreateNativeReader(rawFormat: false);
+        if (OpenSource() == (int)ARCHIVE_RESULT.ARCHIVE_OK)
+            return;
+
+        var error = ErrorString();
+        if (IsCompressed())
+        {
+            archive_read_free(handle);
+            handle = IntPtr.Zero;
+            if (RewindSource())
+            {
+                CreateNativeReader(rawFormat: true);
+                if (OpenSource() == (int)ARCHIVE_RESULT.ARCHIVE_OK && IsCompressed())
+                    return;
+            }
+        }
+        throw new ApplicationException(error);
+    }
+
+    private void CreateNativeReader(bool rawFormat)
+    {
+        handle = archive_read_new();
+        if (handle == IntPtr.Zero)
+            throw new ApplicationException("Failed to create archive reader");
+
+        archive_read_support_filter_all(handle);
+        archive_read_support_format_all(handle);
+        if (rawFormat && archive_read_support_format_raw(handle) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+            Throw();
+
+        if (_password != null)
+        {
+            using var uPassword = new SafeStringBuffer(_password);
+            if (archive_read_add_passphrase(handle, uPassword.Ptr) != 0)
+                Throw();
+        }
+    }
+
+    private int OpenSource()
+    {
+        switch (_sourceType)
+        {
+            case SourceType.File:
+            {
+                using var uName = new SafeStringBuffer(_filename!);
+                return archive_read_open_filename(handle, uName.Ptr, (int)_blockSize);
+            }
+            case SourceType.MultiVolume:
+            {
+                using var names = new DisposableStringArray(_filenames!);
+                return archive_read_open_filenames(handle, names.Ptr, (int)_blockSize);
+            }
+            default:
+                return OpenStream();
+        }
+    }
+
+    // Prepares the source to be read again from its start by a second native reader.
+    private bool RewindSource()
+    {
+        CleanupCallbacks();
+        return _sourceType != SourceType.Stream || RewindStream();
+    }
+
+    // True when libarchive put a decompression filter (gzip, bzip2, xz and so on) in front of
+    // the client reader, which is always the last filter in the chain. This also holds after a
+    // failed open, until the native reader is freed.
+    private bool IsCompressed() => archive_filter_count(handle) > 1;
 
     /// <summary>
     /// Checks if the archive contains encrypted entries.
@@ -176,6 +236,14 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     /// Enumerates all entries in the archive.
     /// </summary>
     /// <returns>An enumerable collection of archive entries.</returns>
+    /// <remarks>
+    /// A single compressed file that is not an archive, such as a plain <c>.gz</c>, <c>.bz2</c>,
+    /// <c>.xz</c>, <c>.lzma</c>, <c>.zst</c>, <c>.lz4</c> or <c>.lzo</c> file, yields one entry holding
+    /// the decompressed data. libarchive names that entry <c>data</c>, except that a gzip file which
+    /// records its original name (<c>gzip file.txt</c> does unless given <c>-n</c>) gives that name.
+    /// The entry is a regular file whose <see cref="Entry.LengthBytes"/> is null, because the
+    /// decompressed size is not known in advance.
+    /// </remarks>
     public IEnumerable<Entry> Entries()
     {
         int r;
@@ -213,54 +281,10 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         CleanupCallbacks();
 
         // Reopen based on source type
-        switch (_sourceType)
-        {
-            case SourceType.File:
-                ReopenFile();
-                break;
-            case SourceType.MultiVolume:
-                ReopenMultiVolume();
-                break;
-            case SourceType.Stream:
-                ReopenStream();
-                break;
-        }
-    }
-
-    private void ReopenFile()
-    {
-        using var uName = new SafeStringBuffer(_filename!);
-        handle = archive_read_new();
-        archive_read_support_filter_all(handle);
-        archive_read_support_format_all(handle);
-
-        if (_password != null)
-        {
-            using var uPassword = new SafeStringBuffer(_password);
-            if (archive_read_add_passphrase(handle, uPassword.Ptr) != 0)
-                Throw();
-        }
-
-        if (archive_read_open_filename(handle, uName.Ptr, (int)_blockSize) != 0)
-            Throw();
-    }
-
-    private void ReopenMultiVolume()
-    {
-        using var names = new DisposableStringArray(_filenames!);
-        handle = archive_read_new();
-        archive_read_support_filter_all(handle);
-        archive_read_support_format_all(handle);
-
-        if (_password != null)
-        {
-            using var uPassword = new SafeStringBuffer(_password);
-            if (archive_read_add_passphrase(handle, uPassword.Ptr) != 0)
-                Throw();
-        }
-
-        if (archive_read_open_filenames(handle, names.Ptr, (int)_blockSize) != 0)
-            Throw();
+        if (_sourceType == SourceType.Stream)
+            ReopenStream();
+        else
+            Open();
     }
 
     private void ReopenStream()
@@ -280,7 +304,8 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     /// </summary>
     /// <returns>The first entry, or null if the archive is empty.</returns>
     /// <remarks>
-    /// This is a convenience method for archives containing a single file.
+    /// This is a convenience method for archives containing a single file, and for a single
+    /// compressed file such as a plain <c>.gz</c>, which is read as one entry (see <see cref="Entries"/>).
     /// The entry's stream must be consumed before calling other methods on the reader.
     /// Unlike using Entries().First(), this method does not advance past the entry.
     /// </remarks>
@@ -540,6 +565,12 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     private static partial void archive_read_support_format_all(IntPtr a);
 
     [LibraryImport("archive")]
+    private static partial int archive_read_support_format_raw(IntPtr a);
+
+    [LibraryImport("archive")]
+    private static partial int archive_filter_count(IntPtr a);
+
+    [LibraryImport("archive")]
     private static partial int archive_read_open_filename(IntPtr a, IntPtr filename, int blocksize);
 
     [LibraryImport("archive")]
@@ -583,6 +614,12 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     [DllImport("archive")]
     private static extern void archive_read_support_format_all(IntPtr a);
+
+    [DllImport("archive")]
+    private static extern int archive_read_support_format_raw(IntPtr a);
+
+    [DllImport("archive")]
+    private static extern int archive_filter_count(IntPtr a);
 
     [DllImport("archive")]
     private static extern int archive_read_open_filename(IntPtr a, IntPtr filename, int blocksize);

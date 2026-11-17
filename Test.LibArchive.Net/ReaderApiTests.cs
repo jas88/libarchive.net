@@ -179,7 +179,7 @@ public class ReaderApiTests
     /// <summary>
     /// A wrapper stream that disables seeking.
     /// </summary>
-    private class NonSeekableStream : Stream
+    internal sealed class NonSeekableStream : Stream
     {
         private readonly Stream _inner;
 

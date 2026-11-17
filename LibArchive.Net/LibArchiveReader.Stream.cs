@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 
@@ -13,6 +14,11 @@ public partial class LibArchiveReader
     private GCHandle? _callbackHandle;
     private byte[]? _readBuffer;
     private GCHandle? _bufferHandle;
+
+    // A non-seekable stream cannot be read twice, so the chunks the first native reader reads
+    // while opening it are recorded, and replayed to a second native reader if Open() needs one.
+    private List<byte[]>? _recordedChunks;
+    private Queue<byte[]>? _replayChunks;
 
     // Callback delegates for stream reading
     private delegate int ArchiveOpenCallback(IntPtr archive, IntPtr clientData);
@@ -36,7 +42,12 @@ public partial class LibArchiveReader
     /// The stream should be positioned at the start of the archive data.
     /// Its initial position is treated as archive offset zero, including after Reset().
     /// Seeking within formats such as 7z, and Reset(), require a seekable stream (CanSeek = true).
+    /// A single compressed file that is not an archive, such as a plain gzip stream, is read as
+    /// an archive holding one entry (see <see cref="Entries"/>); for a non-seekable stream, the
+    /// bytes read while detecting this are kept in memory until the reader has opened.
     /// </remarks>
+    /// <exception cref="ApplicationException">Thrown when the archive cannot be opened, including when the
+    /// data is neither an archive nor compressed (message "Unrecognized archive format").</exception>
     public LibArchiveReader(Stream inputStream, string? password = null, uint blockSize = 1 << 20)
         : base(true)
     {
@@ -56,34 +67,57 @@ public partial class LibArchiveReader
 
     private void InitializeFromStream()
     {
-        handle = archive_read_new();
-        if (handle == IntPtr.Zero)
-            throw new ApplicationException("Failed to create archive reader");
-
         try
         {
-            archive_read_support_filter_all(handle);
-            archive_read_support_format_all(handle);
-
-            if (_password != null)
-            {
-                using var uPassword = new SafeStringBuffer(_password);
-                if (archive_read_add_passphrase(handle, uPassword.Ptr) != 0)
-                    Throw();
-            }
-
-            OpenWithCallbacks();
+            Open();
         }
         catch
         {
             CleanupCallbacks();
-            archive_read_free(handle);
+            _recordedChunks = null;
+            _replayChunks = null;
+            if (handle != IntPtr.Zero)
+                archive_read_free(handle);
             handle = IntPtr.Zero;
             throw;
         }
     }
 
-    private void OpenWithCallbacks()
+    // Opens the stream with the native reader that Open() created. While the first native reader
+    // opens a non-seekable stream, the chunks it reads are recorded so that RewindStream() can
+    // hand the same bytes to a second one.
+    private int OpenStream()
+    {
+        _recordedChunks = _inputStream is { CanSeek: false } && _replayChunks == null
+            ? new List<byte[]>()
+            : null;
+
+        var result = OpenWithCallbacks();
+        if (result == (int)ARCHIVE_RESULT.ARCHIVE_OK)
+            _recordedChunks = null;
+        return result;
+    }
+
+    // Returns the stream to the point where the first native reader started.
+    private bool RewindStream()
+    {
+        if (_inputStream == null)
+            return false;
+
+        if (_inputStream.CanSeek)
+        {
+            _inputStream.Seek(_streamOrigin, SeekOrigin.Begin);
+            return true;
+        }
+
+        if (_recordedChunks == null)
+            return false;
+        _replayChunks = new Queue<byte[]>(_recordedChunks);
+        _recordedChunks = null;
+        return true;
+    }
+
+    private int OpenWithCallbacks()
     {
         if (_inputStream == null)
             throw new InvalidOperationException("No input stream available");
@@ -107,15 +141,12 @@ public partial class LibArchiveReader
                 Throw();
         }
 
-        var result = archive_read_open(
+        return archive_read_open(
             handle,
             GCHandle.ToIntPtr(_callbackHandle.Value),
             _openCallback,
             _readCallback,
             _closeCallback);
-
-        if (result != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-            Throw();
     }
 
     private int OnOpen(IntPtr archive, IntPtr clientData)
@@ -139,7 +170,23 @@ public partial class LibArchiveReader
                 return new IntPtr(-1);
             }
 
-            int bytesRead = stream.Read(_readBuffer!, 0, _readBuffer!.Length);
+            int bytesRead;
+            if (_replayChunks is { Count: > 0 })
+            {
+                var chunk = _replayChunks.Dequeue();
+                Buffer.BlockCopy(chunk, 0, _readBuffer!, 0, chunk.Length);
+                bytesRead = chunk.Length;
+            }
+            else
+            {
+                bytesRead = stream.Read(_readBuffer!, 0, _readBuffer!.Length);
+                if (bytesRead > 0 && _recordedChunks != null)
+                {
+                    var chunk = new byte[bytesRead];
+                    Buffer.BlockCopy(_readBuffer!, 0, chunk, 0, bytesRead);
+                    _recordedChunks.Add(chunk);
+                }
+            }
 
             if (bytesRead == 0)
             {

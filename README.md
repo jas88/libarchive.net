@@ -47,6 +47,8 @@ reader.Reset();
 foreach (var entry in reader.Entries()) { ... }
 ```
 
+A single compressed file that is not an archive, such as a plain `.gz`, `.bz2`, `.xz`, `.lzma`, `.zst`, `.lz4` or `.lzo` file, is read as an archive holding one entry: the decompressed data. libarchive names that entry `data`, unless the file records its original name, as gzip does by default (`gzip -n` records none). Its `LengthBytes` is null, because the decompressed size is not known in advance. Data that is neither an archive nor compressed still fails to open, with an `ApplicationException` whose message is `Unrecognized archive format`.
+
 ```csharp
 // Password-protected ZIP archives
 using var encryptedReader = new LibArchiveReader("encrypted.zip", password: "secret");
