@@ -87,11 +87,23 @@ public class UnicodeNameTests
         Assert.That(Names(reader), Is.EqualTo(new[] { "one.txt", "two.txt" }));
     }
 
+    // libarchive's message names the file, which is in a directory whose name has characters beyond
+    // Latin-1, exactly: its narrow strings are UTF-8 on every platform, so on Windows too, where it
+    // converts the UTF-16 name it was given (native/libarchive-narrow-utf8.patch).
     [Test]
     public void ReaderReportsMissingNonAsciiPath()
     {
         var path = Path.Combine(testDirectory, "fehlt-ä.zip");
-        Assert.Throws<ApplicationException>(() => new LibArchiveReader(path).Dispose());
+        var ex = Assert.Throws<ApplicationException>(() => new LibArchiveReader(path).Dispose());
+        Assert.That(ex!.Message, Is.EqualTo($"Failed to open '{path}'"));
+    }
+
+    [Test]
+    public void WriterReportsNonAsciiPathItCannotCreate()
+    {
+        var path = Path.Combine(testDirectory, "fehlt-ö", "neu-日本.zip");
+        var ex = Assert.Throws<ApplicationException>(() => new LibArchiveWriter(path, ArchiveFormat.Zip).Dispose());
+        Assert.That(ex!.Message, Is.EqualTo($"Failed to open '{path}'"));
     }
 
     // Entry names: Latin-1 (precomposed, NFC), CJK, an astral-plane emoji, and a directory
