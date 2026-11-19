@@ -87,11 +87,21 @@ character set are not converted, as on every other platform. Names read on macOS
 as on every other platform instead of NFD, and the zip writer sets the UTF-8 flag on non-ASCII
 names. The description at the top of the patch lists each change.
 
+The patch makes one more change, which has nothing to do with character sets. libarchive's lz4
+writer calls `LZ4_resetStreamHC()`, which lz4 1.11.0 deprecates, so every build warned. The patch
+makes, in its place, the two calls that `lz4hc.h` names for it: `LZ4_initStreamHC()` on
+`sizeof(LZ4_streamHC_t)` bytes, then `LZ4_resetStreamHC_fast()` with the compression level. lz4's
+own `LZ4_resetStreamHC()` is that same initialisation followed by setting the level (`lz4hc.c`), so
+the stream is left exactly as before and compresses to the same bytes. Defining lz4's
+`LZ4_DISABLE_DEPRECATE_WARNINGS` instead would also hide any other deprecated call, such as one
+that a later libarchive release makes.
+
 - `patch_libarchive` (in `build-config.sh`) applies it to the freshly unpacked sources in every
   build script: `build-macos.sh`, the three `build-linux*.sh` scripts and `build-windows.sh`, each
   of which unpacks the sources afresh on every run. It fails the build unless every hunk applies
-  without fuzz, and unless each file the patch changes has its `LIBARCHIVE_NET_NARROW_UTF8`
-  marker; given sources that an earlier build left patched, it fails and says so.
+  without fuzz, and unless each file the patch changes has the marker of its change
+  (`LIBARCHIVE_NET_NARROW_UTF8`, or `LIBARCHIVE_NET_LZ4_INIT_STREAM_HC` for the lz4 writer); given
+  sources that an earlier build left patched, it fails and says so.
 - The macOS native test (`nativetest.c`) and the Linux load test (`write_load_test_source` in
   `build-linux-common.sh`) fail the build unless the linked library behaves that way in the "C"
   locale: a name converts between narrow and wide strings as UTF-8, and a zip entry keeps its UTF-8

@@ -434,10 +434,14 @@ patch_libarchive() (
         echo "Rework it for this release: see \"The libarchive patch\" in BUILD.md."
         exit 1
     fi
-    # Every file the patch changes carries its marker
-    for file in libarchive/archive_string.c libarchive/archive_write_set_format_zip.c; do
-        if ! grep -q LIBARCHIVE_NET_NARROW_UTF8 "$2/$file"; then
-            echo "ERROR: $2/$file lacks the changes of ${LIBARCHIVE_PATCH}"
+    # Every file the patch changes carries the marker of its change ("<file> <marker>")
+    for check in "libarchive/archive_string.c LIBARCHIVE_NET_NARROW_UTF8" \
+        "libarchive/archive_write_set_format_zip.c LIBARCHIVE_NET_NARROW_UTF8" \
+        "libarchive/archive_write_add_filter_lz4.c LIBARCHIVE_NET_LZ4_INIT_STREAM_HC"; do
+        file=${check% *}
+        marker=${check#* }
+        if ! grep -q "$marker" "$2/$file"; then
+            echo "ERROR: $2/$file lacks the changes of ${LIBARCHIVE_PATCH} (marker ${marker})"
             exit 1
         fi
     done
