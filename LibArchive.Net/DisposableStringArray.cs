@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Linq;
 using System.Runtime.InteropServices;
 
 namespace LibArchive.Net;
@@ -11,20 +10,34 @@ public sealed class DisposableStringArray : IDisposable
 {
     private readonly IntPtr[] backing;
     private readonly GCHandle handle;
-    private readonly SafeStringBuffer[] strings;
+    private readonly SafeStringBuffer?[] strings;
 
     /// <summary>
     /// Initializes a new instance of <see cref="DisposableStringArray"/> from a string array.
     /// </summary>
     /// <param name="a">The array of strings to marshal.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="a"/> holds a null string.</exception>
     public DisposableStringArray(string[] a)
     {
         backing = new IntPtr[a.Length+1];
-        strings = a.Select(s => new SafeStringBuffer(s)).ToArray();
-        for (int i=0;i<strings.Length;i++)
-            backing[i] = strings[i].Ptr;
-        backing[strings.Length] = IntPtr.Zero;
-        handle = GCHandle.Alloc(backing, GCHandleType.Pinned);
+        strings = new SafeStringBuffer?[a.Length];
+        try
+        {
+            for (int i = 0; i < a.Length; i++)
+            {
+                var buffer = new SafeStringBuffer(a[i]);
+                strings[i] = buffer;
+                backing[i] = buffer.Ptr;
+            }
+            backing[a.Length] = IntPtr.Zero;
+            handle = GCHandle.Alloc(backing, GCHandleType.Pinned);
+        }
+        catch
+        {
+            // The caller gets no instance to dispose: free the strings marshalled so far
+            DisposeStrings();
+            throw;
+        }
     }
 
     /// <summary>
@@ -39,8 +52,13 @@ public sealed class DisposableStringArray : IDisposable
     {
         GC.SuppressFinalize(this);
         handle.Free();
+        DisposeStrings();
+    }
+
+    private void DisposeStrings()
+    {
         foreach (var s in strings)
-            s.Dispose();
+            s?.Dispose();
     }
 }
 
@@ -60,13 +78,15 @@ internal sealed class DisposableWideStringArray : IDisposable
         {
             for (int i = 0; i < a.Length; i++)
                 backing[i] = Marshal.StringToCoTaskMemUni(a[i] ?? throw new ArgumentNullException(nameof(a)));
+            handle = GCHandle.Alloc(backing, GCHandleType.Pinned);
         }
         catch
         {
+            // The caller gets no instance to dispose: free the strings marshalled so far, also
+            // when pinning the array fails
             FreeStrings();
             throw;
         }
-        handle = GCHandle.Alloc(backing, GCHandleType.Pinned);
     }
 
     public IntPtr Ptr => handle.AddrOfPinnedObject();
