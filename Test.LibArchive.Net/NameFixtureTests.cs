@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using System.Text;
 using LibArchive.Net;
 using NUnit.Framework;
@@ -79,20 +78,16 @@ public class NameFixtureTests
     }
 
     // A name that is not valid UTF-8 and has no declared character set still gives its entry, under
-    // the name decoded as UTF-8 with U+FFFD for each invalid sequence; on Windows, where libarchive
-    // gives such a name in the same form as a decoded one, as Latin-1 (see Entry.Name).
-    [TestCase("nametest-legacy-cp437.zip", new byte[] { 0x47, 0x72, 0x94, 0xE1, 0x65, 0x2E, 0x74, 0x78, 0x74 })]
-    [TestCase("nametest-legacy-latin1.tar", new byte[] { 0x47, 0x72, 0xF6, 0xDF, 0x65, 0x2E, 0x74, 0x78, 0x74 })]
-    public void LegacyCodePageNameKeepsItsEntry(string fixture, byte[] storedName)
+    // the name decoded as UTF-8 with U+FFFD for each invalid sequence, on every platform: here the
+    // stored names are 47 72 94 E1 65 2E 74 78 74 (CP437) and 47 72 F6 DF 65 2E 74 78 74 (Latin-1).
+    [TestCase("nametest-legacy-cp437.zip")]
+    [TestCase("nametest-legacy-latin1.tar")]
+    public void LegacyCodePageNameKeepsItsEntry(string fixture)
     {
-        var expected = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-            ? new string(storedName.Select(b => (char)b).ToArray())
-            : "Gr��e.txt";
-
         using var reader = new LibArchiveReader(fixture);
         var files = reader.Entries().Select(e => (e.Name, Text: e.ReadAllText())).ToArray();
 
-        Assert.That(files, Is.EqualTo(new[] { (expected, "latin\n") }));
+        Assert.That(files, Is.EqualTo(new[] { ("Gr\ufffd\ufffde.txt", "latin\n") }));
     }
 
     // A Unicode Path field whose CRC-32 matches the name replaces it, and libarchive drops the name

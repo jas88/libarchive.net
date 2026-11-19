@@ -94,8 +94,6 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 #endif
     }
 
-    private static readonly System.Text.UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
-
     // The bytes of a NUL-terminated narrow string, or null for a null pointer.
     private static byte[]? ReadNulTerminated(IntPtr ptr)
     {
@@ -111,21 +109,6 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         var bytes = new byte[length];
         Marshal.Copy(ptr, bytes, 0, length);
         return bytes;
-    }
-
-    // Decodes bytes that are valid UTF-8.
-    private static bool TryDecodeStrictUtf8(byte[] bytes, out string value)
-    {
-        try
-        {
-            value = StrictUtf8.GetString(bytes);
-            return true;
-        }
-        catch (System.Text.DecoderFallbackException)
-        {
-            value = string.Empty;
-            return false;
-        }
     }
 
     /// <summary>
@@ -237,7 +220,6 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
             _ = archive_read_support_format_all(handle);
             if (formats == ReaderFormats.AllAndRaw && archive_read_support_format_raw(handle) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
                 Throw();
-            KeepUndeclaredNameBytes();
         }
 
         if (_password != null)
@@ -248,39 +230,13 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         }
     }
 
-    // On Windows only: makes the tar, zip and cpio readers keep a name whose format declares no
-    // character set (a ustar or cpio header, a ZIP entry without its UTF-8 flag) as the bytes in
-    // the archive, which Entry.Name reads as UTF-8. Unless the C runtime's locale is "C" or uses
-    // the OEM code page, these readers otherwise convert such a name from the OEM code page
-    // (archive_string.c:1822-1841, called at archive_read_support_format_zip.c:1263, _tar.c:552
-    // and _cpio.c:371). .NET leaves that locale as "C", but other code in the process could
-    // change it; compat-2x skips the conversion whatever the locale (_zip.c:3758-3761,
-    // _tar.c:447-451, _cpio.c:327-330), and on Windows does nothing else: the libarchive 2.x
-    // UTF-8 handling it also selects for pax names is a no-op where wchar_t is UTF-16
-    // (archive_string.c:1925-1932). hdrcharset=UTF-8 is not used instead: a name that is not
-    // valid UTF-8 would then fail to convert, which leaves the entry with no name at all
-    // (archive_string.c:4335-4340) and makes the header ARCHIVE_WARN, so a single name in a
-    // legacy code page would stop Entries(). Elsewhere libarchive never converts such names, and
-    // the option could change pax names, so it is not set.
-    private void KeepUndeclaredNameBytes()
-    {
-        if (!UseWideEntryNames)
-            return;
-        using var options = new SafeStringBuffer("tar:compat-2x,zip:compat-2x,cpio:compat-2x");
-        if (archive_read_set_options(handle, options.Ptr) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-            Throw();
-    }
-
-    // Entry names are read and written in their UTF-16 (wide) form on Windows, and as UTF-8
-    // elsewhere: see Entry.Name and LibArchiveWriter.SetEntryPathname.
-    internal static readonly bool UseWideEntryNames = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
-
-    // libarchive's narrow-character open functions take the name in the C library's current
-    // locale. On Windows they convert it to UTF-16 with the locale's code page (the ANSI code
-    // page, as .NET never calls setlocale), so a UTF-8 name would be misread there: Windows gets
-    // the UTF-16 (_w) variants instead. Elsewhere the bytes go to open(2) unchanged, and UTF-8 is
-    // what .NET itself uses for file names; the _w variants there would convert through the "C"
-    // locale and reject any non-ASCII name.
+    // Archive files are opened by their UTF-16 name on Windows, with the _w variants of
+    // libarchive's open functions. There archive_read_open_filename gives a narrow name to
+    // libarchive's open() (archive_windows.c:288-400), which passes it to GetFileAttributesA(),
+    // _sopen_s() and mbstowcs(): these take it to be in the ANSI code page or the C runtime's
+    // locale, not UTF-8. LibArchiveWriter opens files the same way. Elsewhere the bytes go to
+    // open(2) unchanged, and UTF-8 is what .NET itself uses for file names, so the narrow
+    // functions are used there.
     internal static readonly bool UseWideFileNames = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
     private int OpenSource()
@@ -500,10 +456,9 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         /// <para>A name in a format that declares no character set, such as a ustar, GNU tar or cpio
         /// header, a ZIP entry without the UTF-8 flag, or a Rock Ridge name in an ISO 9660 image,
         /// is read as UTF-8, as it is stored (it is not normalized). A byte sequence in it that is
-        /// not valid UTF-8, as in an archive written in a legacy code page, becomes U+FFFD. On
-        /// Windows such a name is read as Latin-1 (ISO 8859-1) instead, one character per byte:
-        /// there libarchive gives a decoded name made only of Latin-1 characters in that same form,
-        /// so the two cannot be told apart.</para>
+        /// not valid UTF-8, as in an archive written in a legacy code page, becomes U+FFFD.</para>
+        /// <para>Names are read the same way on every platform, whatever the locale of the
+        /// process.</para>
         /// <para>An entry is returned even if libarchive can give no name for it: the name is then
         /// empty.</para>
         /// </remarks>
@@ -548,30 +503,15 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
         // A format reader keeps a name either decoded from the character set its format declares
         // (normalized to NFC), or, where the format declares none, as the bytes in the archive
-        // (see Name). On macOS and Linux archive_entry_pathname returns the former as UTF-8
-        // (native/libarchive-narrow-utf8.patch) and the latter unchanged, so its bytes are read as
-        // UTF-8, with U+FFFD for any invalid sequence.
-        // On Windows a decoded name is kept as UTF-16, and archive_entry_pathname converts it
-        // through the C runtime's locale, "C" in a .NET process: to Latin-1 when every character is
-        // in Latin-1, and otherwise, because that fails, to UTF-8 (archive_entry.c:594-610,
-        // archive_string.c:730-751). Bytes that are valid UTF-8 are read as UTF-8 there too, and
-        // any others through archive_entry_pathname_w: the exact name if it was decoded, and the
-        // bytes as Latin-1 if not (archive_string.c:494-511). (So on Windows a decoded name made
-        // only of Latin-1 characters whose Latin-1 bytes happen to be valid UTF-8, such as "Ã©",
-        // is read as that UTF-8.) KeepUndeclaredNameBytes keeps undecoded names as bytes there
-        // whatever the locale. Without any form, as when a declared name fails to decode, the
-        // name is empty, so that the entry is still returned.
+        // (see Name). On every platform archive_entry_pathname returns the former as UTF-8 and the
+        // latter unchanged (native/libarchive-narrow-utf8.patch makes libarchive's narrow strings
+        // UTF-8, and leaves names that declare no character set unconverted, Windows included), so
+        // its bytes are read as UTF-8, with U+FFFD for any invalid sequence. Without any form, as
+        // when a declared name fails to decode, the name is empty, so that the entry is still
+        // returned.
         private static string GetPathname(IntPtr entry)
         {
             var bytes = ReadNulTerminated(archive_entry_pathname(entry));
-            if (bytes != null && TryDecodeStrictUtf8(bytes, out var name))
-                return name;
-            if (UseWideEntryNames)
-            {
-                var wide = archive_entry_pathname_w(entry);
-                if (wide != IntPtr.Zero)
-                    return Marshal.PtrToStringUni(wide) ?? string.Empty;
-            }
             return bytes == null ? string.Empty : System.Text.Encoding.UTF8.GetString(bytes);
         }
 
@@ -819,15 +759,6 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial IntPtr archive_entry_pathname(IntPtr entry);
 
-    // Windows only, where wchar_t is UTF-16
-    [LibraryImport("archive")]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-    private static partial IntPtr archive_entry_pathname_w(IntPtr entry);
-
-    [LibraryImport("archive")]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-    private static partial int archive_read_set_options(IntPtr a, IntPtr options);
-
     [LibraryImport("archive", EntryPoint = "archive_entry_filetype")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial ushort archive_entry_filetype_u16(IntPtr entry);
@@ -903,13 +834,6 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
 
     [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr archive_entry_pathname(IntPtr entry);
-
-    // Windows only, where wchar_t is UTF-16
-    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr archive_entry_pathname_w(IntPtr entry);
-
-    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
-    private static extern int archive_read_set_options(IntPtr a, IntPtr options);
 
     [DllImport("archive", EntryPoint = "archive_entry_filetype", CallingConvention = CallingConvention.Cdecl)]
     private static extern ushort archive_entry_filetype_u16(IntPtr entry);

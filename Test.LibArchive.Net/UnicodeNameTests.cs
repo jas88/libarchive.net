@@ -109,8 +109,8 @@ public class UnicodeNameTests
 
     // The formats whose writers keep each entry's path as it is given, nested ones included. The
     // ISO 9660 and XAR writers build a directory tree, adding the parent directories themselves,
-    // so NameEncodingTests covers them, with names that have no directory part, as it covers the
-    // bytes every format stores.
+    // so NameEncodingTests covers them: the bytes they store for names without a directory part,
+    // and the directories they add (ImplicitParentDirectoriesKeepTheirNames).
     private static readonly ArchiveFormat[] PathFormats =
     {
         ArchiveFormat.Zip, ArchiveFormat.SevenZip, ArchiveFormat.Tar, ArchiveFormat.Ustar,

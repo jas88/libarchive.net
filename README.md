@@ -120,11 +120,6 @@ When reading, `Entry.Name` is:
 
 An entry is always returned, with an empty name if libarchive cannot give one.
 
-Limits on Windows, where libarchive converts narrow strings through the C runtime's locale, which a .NET process leaves as "C" (Latin-1, one byte per character):
-
-- A name without a declared character set that is not valid UTF-8 is read as Latin-1 instead of with U+FFFD, because libarchive gives it in the same form as a decoded name made only of Latin-1 characters. For the same reason, a decoded name made only of Latin-1 characters whose Latin-1 bytes form valid UTF-8, such as `Ã©`, is read as that UTF-8 (`é`).
-- In ISO 9660 images, a Rock Ridge name made only of Latin-1 characters is stored as Latin-1, and in ISO 9660 and XAR, a parent directory that was not added as an entry is named wrongly if its name is not ASCII. See [Entry Names](docs/WRITE-SUPPORT.md#entry-names) in the write support guide.
-
 ## Installation
 
 ```bash

@@ -53,14 +53,9 @@ public enum ArchiveFormat
     /// <summary>
     /// ISO 9660 format - CD-ROM filesystem format.
     /// Written with Joliet names, in UTF-16BE, and Rock Ridge names, in UTF-8.
+    /// A parent directory that was not added as an entry is added by libarchive, under the name
+    /// it has in the entry's path.
     /// </summary>
-    /// <remarks>
-    /// On Windows, libarchive takes Rock Ridge names from the C runtime's "C" locale form of each
-    /// path, which is Latin-1 when every character is in Latin-1: such a Rock Ridge name is stored
-    /// as Latin-1. It also names a parent directory that was not added as an entry from that form,
-    /// which gives the directory a wrong Joliet name if its name is not ASCII. See "Entry Names" in
-    /// docs/WRITE-SUPPORT.md.
-    /// </remarks>
     Iso9660,
 
     /// <summary>
@@ -76,9 +71,8 @@ public enum ArchiveFormat
     /// ("Xar not supported on this platform") before anything is written, and opening a XAR archive with
     /// <see cref="LibArchiveReader"/> throws <see cref="System.ApplicationException"/>
     /// ("Unrecognized archive format").</para>
-    /// <para>On Windows, libarchive gives a parent directory that was not added as an entry a wrong
-    /// name if its name is not ASCII: add such a directory with
-    /// <see cref="LibArchiveWriter.AddDirectoryEntry(string)"/> before the entries in it.</para>
+    /// <para>A parent directory that was not added as an entry is added by libarchive, under the
+    /// name it has in the entry's path.</para>
     /// </remarks>
     Xar,
 }

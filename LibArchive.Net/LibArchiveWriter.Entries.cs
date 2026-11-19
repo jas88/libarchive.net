@@ -442,20 +442,12 @@ public partial class LibArchiveWriter
 
     #region Helper Methods
 
-    // Sets an entry's name. On Windows libarchive takes a narrow name to be in the C runtime's
-    // locale, which a .NET process leaves as "C" (one byte per character, U+0000-U+00FF), so the
-    // name is set in its UTF-16 form, which the writers convert to their format's character set
-    // (see SetHeaderCharset). On macOS and Linux libarchive takes narrow names to be UTF-8, which
-    // every writer stores as it is (native/libarchive-narrow-utf8.patch). libarchive copies the
-    // name either way.
+    // Sets an entry's name, as UTF-8, which libarchive takes every narrow string to be on every
+    // platform (native/libarchive-narrow-utf8.patch): each writer stores it in its format's
+    // character set (see ArchiveFormat), and the formats that declare none get the UTF-8 as it is.
+    // libarchive copies the name.
     private static void SetEntryPathname(IntPtr entry, string pathname)
     {
-        if (LibArchiveReader.UseWideEntryNames)
-        {
-            archive_entry_copy_pathname_w(entry, pathname);
-            return;
-        }
-
         using var pathBuffer = new SafeStringBuffer(pathname);
         archive_entry_set_pathname(entry, pathBuffer.Ptr);
     }

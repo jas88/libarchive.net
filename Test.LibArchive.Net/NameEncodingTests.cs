@@ -16,10 +16,13 @@ namespace Test.LibArchive.Net;
 public class NameEncodingTests
 {
     // Latin-1 (composed, NFC), CJK, and a character outside the Basic Multilingual Plane
-    // (a surrogate pair in UTF-16)
-    public static readonly string[] Names = { "Größe.txt", "日本語.txt", "\U0001F600.txt" };
-
-    private static bool IsWindows => RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+    // (a surrogate pair in UTF-16), and two names made only of Latin-1 characters whose Latin-1
+    // bytes happen to be valid UTF-8: "Ã©" is C3 A9 in Latin-1, which is the UTF-8 of "é". Each
+    // must be stored and read back as the characters given, not as the name those bytes spell.
+    public static readonly string[] Names =
+    {
+        "Größe.txt", "日本語.txt", "\U0001F600.txt", "Ã©.txt", "Ã¶Ã¤Ã¼.txt",
+    };
 
     // XAR cannot be written on Linux (see XarTests)
     public static IEnumerable<ArchiveFormat> WritableFormats()
@@ -89,7 +92,7 @@ public class NameEncodingTests
                 AssertIsoNames(archive, name);
                 break;
             case ArchiveFormat.Xar:
-                AssertXarName(archive, name, utf8);
+                AssertXarName(archive, name);
                 break;
             default:
                 Assert.Fail($"No assertion for {format}");
@@ -102,7 +105,7 @@ public class NameEncodingTests
         Assert.That(files[0].Content, Is.EqualTo(ContentOf(name)));
     }
 
-    // All three names in one archive, read back from memory and from a file: each name is the one
+    // All the names in one archive, read back from memory and from a file: each name is the one
     // written, composed (NFC), with its own content.
     [Test]
     public void NamesReadBackComposed([ValueSource(nameof(WritableFormats))] ArchiveFormat format)
@@ -128,6 +131,67 @@ public class NameEncodingTests
         {
             File.Delete(path);
         }
+    }
+
+    // The formats that hold a tree of directories: libarchive adds each parent directory that was
+    // not added as an entry itself, naming it from the entry's path
+    public static IEnumerable<ArchiveFormat> TreeFormats() =>
+        WritableFormats().Where(f => f is ArchiveFormat.Iso9660 or ArchiveFormat.Xar);
+
+    // Each directory that libarchive adds keeps its name in every form the format stores: here one
+    // made only of Latin-1 characters and one of CJK characters, neither added as an entry. (The
+    // XAR reader does not return such a directory, as it has no metadata but its name and type:
+    // archive_read_support_format_xar.c:705-712.)
+    [Test]
+    public void ImplicitParentDirectoriesKeepTheirNames([ValueSource(nameof(TreeFormats))] ArchiveFormat format)
+    {
+        const string path = "Größe/日本語/\U0001F600.txt";
+        var archive = Write(format, path);
+
+        foreach (var directory in new[] { "Größe", "日本語" })
+        {
+            if (format == ArchiveFormat.Iso9660)
+                AssertIsoNames(archive, directory);
+            else
+                AssertXarName(archive, directory);
+        }
+
+        Assert.That(ReadFiles(archive).Select(f => f.Name), Is.EqualTo(new[] { path }));
+        if (format == ArchiveFormat.Iso9660)
+            Assert.That(ReadDirectories(archive), Is.EqualTo(new[] { "Größe", "Größe/日本語" }));
+    }
+
+    // An entry goes into the directory added for it, whether or not the two names have characters
+    // beyond Latin-1: here the directory's name does not, and the entry's does.
+    [Test]
+    public void EntryGoesIntoTheDirectoryAddedForIt([ValueSource(nameof(TreeFormats))] ArchiveFormat format)
+    {
+        const string path = "Café/日本.txt";
+        var writer = LibArchiveWriter.CreateMemoryWriter(format);
+        using (writer)
+        {
+            writer.AddDirectoryEntry("Café");
+            writer.AddEntry(path, ContentOf(path));
+        }
+        var archive = writer.ToArray();
+
+        Assert.That(ReadDirectories(archive), Is.EqualTo(new[] { "Café" }));
+        var files = ReadFiles(archive);
+        Assert.That(files.Select(f => f.Name), Is.EqualTo(new[] { path }));
+        Assert.That(files[0].Content, Is.EqualTo(ContentOf(path)));
+    }
+
+    // The directories read back, by name without a trailing '/', in order, leaving out the root
+    // directory of an ISO 9660 image (".")
+    private static List<string> ReadDirectories(byte[] archive)
+    {
+        using var reader = new LibArchiveReader(new MemoryStream(archive));
+        return reader.Entries()
+            .Where(e => e.IsDirectory)
+            .Select(e => e.Name.TrimEnd('/'))
+            .Where(n => n != ".")
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
     }
 
     // ZIP: the name is UTF-8 and general purpose bit 11 (the UTF-8 flag) is set, in the local file
@@ -190,26 +254,29 @@ public class NameEncodingTests
     }
 
     // ISO 9660: the Joliet directory holds the name in UTF-16BE, and the primary directory its Rock
-    // Ridge NM entry: "NM", its length, version 1 and no flags, then the name. libarchive stores
-    // that name in the C library's locale form: UTF-8 on macOS and Linux, and on Windows, whose
-    // "C" locale maps U+0000-U+00FF to single bytes, Latin-1 for a name made only of such
-    // characters (and UTF-8 for any other). Reading prefers Rock Ridge (see the read-back
-    // assertions), and gets the name back on each platform.
+    // Ridge NM entry: "NM", its length, version 1 and no flags, then the name in UTF-8, the form
+    // libarchive keeps names in on every platform. Reading prefers Rock Ridge (see the read-back
+    // assertions).
     private static void AssertIsoNames(byte[] iso, string name)
     {
-        Assert.That(IndexOf(iso, Encoding.BigEndianUnicode.GetBytes(name)), Is.GreaterThan(0), "Joliet name");
+        Assert.That(IndexOf(iso, Encoding.BigEndianUnicode.GetBytes(name)), Is.GreaterThan(0), $"Joliet name {name}");
 
-        var rockRidge = IsWindows && name.All(c => c <= 'ÿ')
-            ? name.Select(c => (byte)c).ToArray()
-            : Encoding.UTF8.GetBytes(name);
+        var rockRidge = Encoding.UTF8.GetBytes(name);
         var nm = new byte[] { (byte)'N', (byte)'M', (byte)(5 + rockRidge.Length), 1, 0 }.Concat(rockRidge).ToArray();
-        Assert.That(IndexOf(iso, nm), Is.GreaterThan(0), "Rock Ridge NM entry");
+        Assert.That(IndexOf(iso, nm), Is.GreaterThan(0), $"Rock Ridge NM entry {name}");
     }
 
-    // XAR: the table of contents (zlib-compressed XML after the 28-byte header) holds the name as
-    // UTF-8 text when every character is in Latin-1, and otherwise as base64 of its UTF-8, which
-    // is how libarchive's XAR writer stores names.
-    private static void AssertXarName(byte[] xar, string name, byte[] utf8)
+    // XAR: the table of contents holds the name as UTF-8 text when every character is in Latin-1,
+    // and otherwise as base64 of its UTF-8, which is how libarchive's XAR writer stores names.
+    private static void AssertXarName(byte[] xar, string name) =>
+        Assert.That(XarTableOfContents(xar), Does.Contain(XarNameElement(name)));
+
+    private static string XarNameElement(string name) => name.All(c => c <= 'ÿ')
+        ? $"<name>{name}</name>"
+        : $"<name enctype=\"base64\">{Convert.ToBase64String(Encoding.UTF8.GetBytes(name))}</name>";
+
+    // The XML table of contents, which is zlib-compressed after the header (28 bytes)
+    private static string XarTableOfContents(byte[] xar)
     {
         Assert.That(Encoding.ASCII.GetString(xar, 0, 4), Is.EqualTo("xar!"));
         var headerSize = ReadUInt16BigEndian(xar, 4);
@@ -218,12 +285,7 @@ public class NameEncodingTests
         // The raw deflate data between the 2-byte zlib header and the 4-byte Adler-32 checksum
         using var deflate = new DeflateStream(new MemoryStream(xar, headerSize + 2, compressed - 6), CompressionMode.Decompress);
         using var toc = new StreamReader(deflate, Encoding.UTF8);
-        var xml = toc.ReadToEnd();
-
-        var element = name.All(c => c <= 'ÿ')
-            ? $"<name>{name}</name>"
-            : $"<name enctype=\"base64\">{Convert.ToBase64String(utf8)}</name>";
-        Assert.That(xml, Does.Contain(element));
+        return toc.ReadToEnd();
     }
 
     // The bytes of a NUL-padded field
