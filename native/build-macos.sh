@@ -45,9 +45,15 @@ patch_libarchive "${SCRIPT_DIR}" "libarchive-${LIBARCHIVE_VERSION}"
 # targets would also build lz4's program and shared library and bzip2's programs.
 mkdir -p "$PREFIX/lib" "$PREFIX/include"
 
+# The objects are universal (CFLAGS has two -arch flags). Asked to index an archive of
+# them itself ("ar rcs", which lz4's and zstd's Makefiles use), Apple's ar warns that
+# it "will be fat and ar(1) will not be able to operate on it"; ranlib run on its own
+# makes the same universal archive without a warning. So those Makefiles get
+# ARFLAGS=rc, and ranlib indexes their archives afterwards.
 echo "Building lz4 ${LZ4_VERSION}..."
-make -j"$NCPU" -sC "lz4-${LZ4_VERSION}/lib" liblz4.a CFLAGS="$CFLAGS"
+make -j"$NCPU" -sC "lz4-${LZ4_VERSION}/lib" liblz4.a CFLAGS="$CFLAGS" ARFLAGS=rc
 cp "lz4-${LZ4_VERSION}/lib/liblz4.a" "$PREFIX/lib/"
+ranlib "$PREFIX/lib/liblz4.a"
 cp "lz4-${LZ4_VERSION}/lib/lz4.h" "lz4-${LZ4_VERSION}/lib/lz4hc.h" "lz4-${LZ4_VERSION}/lib/lz4frame.h" "$PREFIX/include/"
 
 echo "Building bzip2 ${BZIP2_VERSION}..."
@@ -90,7 +96,9 @@ cd ..
 echo "Building zstd ${ZSTD_VERSION}..."
 # Library only: the top-level install also builds the zstd CLI, whose lz4 support
 # uses the unprefixed lz4frame enums removed in lz4 1.11.0. Matches the other platforms.
-make -j$NCPU -sC zstd-${ZSTD_VERSION}/lib install-static install-includes
+# ARFLAGS=rc and ranlib: see lz4 above.
+make -j$NCPU -sC zstd-${ZSTD_VERSION}/lib install-static install-includes ARFLAGS=rc
+ranlib "$PREFIX/lib/libzstd.a"
 
 echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}

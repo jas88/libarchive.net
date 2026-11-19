@@ -39,8 +39,8 @@ LZO_SHIM_CXX_RUNTIME_SYMBOLS='(__cxa_|__gxx_personality|_Unwind_|__dynamic_cast|
 # Usage: build_lzo_shim <shim source directory> <unpacked lzokay directory> <flags>
 # <flags> are the platform's own C++ compiler flags as one string (optimisation,
 # -fPIC, -m32, -arch ...); LZO_SHIM_CXXFLAGS are added to them.
-# Uses PREFIX, CXX (default: c++) and AR (default: ar). Compiles in ./lzokay-build,
-# so the current directory must be the build directory.
+# Uses PREFIX, CXX (default: c++) and AR (default: ar), and the ranlib and nm beside
+# AR. Compiles in ./lzokay-build, so the current directory must be the build directory.
 build_lzo_shim() (
     # Compiler commands and flags are split into words on purpose; stop the shell
     # from also expanding wildcards in them.
@@ -63,6 +63,7 @@ build_lzo_shim() (
     # rewrite the first "ar" in the whole path instead, such as the one in a
     # ".../libarchive-linux-x64/..." toolchain directory, and is not POSIX either.
     nm="${ar%ar}nm"
+    ranlib="${ar%ar}ranlib"
     if ! command -v patch >/dev/null 2>&1; then
         echo "ERROR: build_lzo_shim needs the patch program"
         exit 1
@@ -88,7 +89,12 @@ build_lzo_shim() (
 
     mkdir -p "$PREFIX/lib" "$PREFIX/include/lzo" || exit
     rm -f "$PREFIX/lib/liblzo2.a" || exit
-    "$ar" rcs "$PREFIX/lib/liblzo2.a" lzokay.o lzo-shim.o || exit
+    # Archived, then indexed by ranlib on its own, which is what "ar rcs" does in one
+    # step: with universal macOS objects, Apple's ar warns that an archive it indexes
+    # itself "will be fat and ar(1) will not be able to operate on it", and ranlib
+    # makes the same archive without a warning.
+    "$ar" rc "$PREFIX/lib/liblzo2.a" lzokay.o lzo-shim.o || exit
+    "$ranlib" "$PREFIX/lib/liblzo2.a" || exit
     cp "$shim_dir/include/lzo/lzoconf.h" "$shim_dir/include/lzo/lzo1x.h" "$PREFIX/include/lzo/" || exit
 
     # Fail here, with the symbol names in the log, rather than let libarchive's
