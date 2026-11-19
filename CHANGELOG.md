@@ -12,9 +12,28 @@ v0.3.2 - November 16, 2026
 - Fix a password with the 7-Zip format silently producing an unencrypted archive, which read back in full without the password. libarchive can only encrypt ZIP, so 7-Zip now throws `NotSupportedException` before the output is created, as the other formats besides ZIP already did. With `EncryptionType.None` the password is ignored, for every format.
 - `EncryptionType.AES192` now throws `NotSupportedException`, as libarchive's ZIP writer supports only AES-128 and AES-256, instead of an `ApplicationException` reading ``Undefined option: `encryption'``. `EncryptionType.None` with a password, which failed the same way for ZIP, now writes an unencrypted archive.
 - `WithPassword` now throws `InvalidOperationException`, pointing to the constructor and `CreateMemoryWriter`, instead of failing and leaving the writer unusable. libarchive accepts encryption settings only before an archive is opened, and the writer opens it when it is created, so encryption cannot be enabled, changed or removed afterwards. With `EncryptionType.None` on a writer that is not encrypting, `WithPassword` does nothing.
+- Fix non-ASCII entry names, in every format, on every platform, whatever the process locale. libarchive converted names through the C runtime's locale, which a .NET process leaves as "C".
+  - On macOS and Linux, writing such a name failed in pax/tar and XAR, 7-Zip archives with one could not be read, and ZIP archives lacked the UTF-8 flag.
+  - On Windows, names were stored double-encoded in pax, 7-Zip, XAR and ISO 9660 Joliet names, and the .NET Standard 2.0 build lost every character outside the ANSI code page.
+
+  Names are now stored as UTF-8 (UTF-16 in 7-Zip and Joliet), with ZIP's UTF-8 flag, and read back as UTF-8. Archive files with non-ASCII paths now open on Windows.
+- Fix reading a plain compressed file that is not an archive (`.gz`, `.bz2`, `.xz`, `.lzma`, `.zst`, `.lz4` or `.lzo`), which threw "Unrecognized archive format": the README's own example failed. Such a file now reads as one entry holding the decompressed data, from a path, from volumes or from a stream. So does compressed text that libarchive took for an mtree spec. A compressed file holding no data, like empty data, opens as an archive with no entries.
+- Fix the file writer ignoring `blockSize`: its import of `archive_write_open_filename` had a third argument that the C function does not have. The file, stream and memory writers now set the block size, without padding the last block, so archives are byte-identical whatever the block size. A block size above `int.MaxValue` throws `ArgumentOutOfRangeException`.
+- Fix the P/Invoke declarations to match libarchive 3.8.11:
+  - every import and callback is explicitly cdecl, where Windows x86 defaulted to stdcall;
+  - `size_t` parameters are `nuint`;
+  - `mode_t` has its per-platform width;
+  - `time_t`'s companion `long` is a C `long`.
+
+  The entry stream's `Read` now validates its arguments.
+- Fix a crash when disposing a stream reader: the native reader was freed after its stream callbacks were released, and freeing it still calls them.
+- An entry whose name libarchive cannot convert is now returned with an empty name instead of being skipped silently.
+- Names read from a format that declares its character set (ZIP with the UTF-8 flag, pax, 7-Zip, Joliet, XAR) are returned composed (NFC), as libarchive normalizes them. Other formats return names as stored, decoded as UTF-8.
+- The .NET Standard 2.0 build marshals strings as UTF-8 instead of the Windows ANSI code page. A non-ASCII password on that build is therefore UTF-8, as other ZIP tools expect.
 
 **API Improvements:**
 - `LibArchiveWriter.GetUnixPermissions` now returns `System.IO.UnixFileMode` and uses `FileInfo.UnixFileMode` directly on .NET 7+, falling back to defaults when the platform reports `0` (Windows) or `-1` (file missing). On .NET Standard 2.0 an internal `UnixFileMode` polyfill mirrors the BCL flags enum so the same code paths and constants are used everywhere.
+- Add a `CreateMemoryWriter(uint blockSize, ArchiveFormat format, ...)` overload. The existing signature is unchanged, so compiled callers keep working.
 
 **Target Frameworks:**
 - Add a `net11.0` build. The package is now built with the .NET 11 SDK.
@@ -31,6 +50,7 @@ v0.3.2 - November 16, 2026
 - Add mbedTLS 3.6.8, statically linked into the Linux libraries only, for AES-encrypted ZIP archives
 - Add `THIRD-PARTY-NOTICES.txt` at the root of the package, with the licence notices for the third-party code linked into the native libraries
 - Stop building and shipping the Linux x86 library, which the loader never supported and for which .NET has no official runtime; a .NET 10+ app on an unofficial Linux x86 runtime, which could previously load the packaged library, now gets a `DllNotFoundException`
+- Patch libarchive at build time (`native/libarchive-narrow-utf8.patch`) so that its narrow strings are UTF-8 on every platform, whatever the process locale, without changing the locale. Every native build fails if the patch does not apply exactly, and the update checker does not propose a libarchive release that the patch does not apply to
 - Ship a native library of its own for each Linux runtime, linked dynamically against that runtime's C library, in place of one library per architecture with musl linked into it, which the glibc and musl runtimes shared. The libraries need:
   - glibc 2.28 or later for `linux-x64` and `linux-arm64` (RHEL 8 and later);
   - glibc 2.34 or later for `linux-arm`, which is built with a 64-bit `time_t` and `off_t`. On an older glibc the dynamic loader refuses to load it, where the previous library crashed or misbehaved;
@@ -56,13 +76,19 @@ v0.3.2 - November 16, 2026
 - Cache native source downloads and configure results under `${XDG_CACHE_HOME:-~/.cache}/libarchive-net/`. They were in `~/downloads`, which is `~/Downloads` on macOS's case-insensitive file system, and `~/config-cache`. Each native CI job now has its own download cache
 - Stop tracking a prebuilt 2022 `archive.dll` (libarchive 3.6.1), which a local `dotnet pack` shipped as the only native library, and ignore `runtimes/*/native/`
 - Warn (`LIBARCHIVENET001`) when packing without a native library for every runtime, naming the runtimes that have none
-- Make every pre-commit hook pass on all files
+- Make every pre-commit hook pass on all files, and exclude patch files from the trailing-whitespace hook, which would change them
+- Run the Windows package tests on the modern .NET target as well as .NET Framework 4.6.2
+- Unpack fresh sources on every Windows native build, so a second local build no longer fails on the libarchive tree that the first one patched
+- Keep the plain-text test fixtures byte-exact on Windows checkouts
+- `scripts/generate-build-props.sh`: the .NET 13 SDK targets net12.0 and net13.0, and the .NET 14 SDK follows the same rule instead of targeting net14.0 alone
 - The Linux libraries are built with zig. CI load-tests each of them in containers of old and current distributions, and runs the package's tests on .NET in Alpine x64 as well as on Ubuntu.
 
 **Documentation:**
 - The package description and `PACKAGES.md` now describe what the package ships: reading and writing, the supported platforms and runtimes, and the libraries bundled on each platform. `PACKAGES.md`'s code samples now compile
 - Correct API names, target frameworks and the license link in `README.md` and `docs/WRITE-SUPPORT.md`, and note that XAR is not available on Linux
 - `native/BUILD.md`: liblzma is 0BSD (since XZ Utils 5.6.0), not public domain. It also gains the cache locations and a section on testing a package locally
+- `README.md` and `docs/WRITE-SUPPORT.md` describe how each format stores entry names and how they are read back
+- Correct the doc comments on the ZIP encryption variants (AES-128, AES-256, Traditional), on 7-Zip having no encryption, on XAR being unavailable on Linux, and on `CompressionType.Deflate` throwing `NotSupportedException`. Also correct the error-handling sample in `docs/WRITE-SUPPORT.md`
 
 **Tooling Updates:**
 - Bump .NET SDK from 10.0.201 to 11.0.100
