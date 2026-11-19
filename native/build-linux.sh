@@ -125,7 +125,7 @@ cd libarchive-${LIBARCHIVE_VERSION}
 # implementation was available. With digests present it would otherwise be enabled
 # and need an XML library resolved in the final link. So no XML library is built
 # for Linux: download_all_libraries unpacks libxml2, but only macOS and Windows use it.
-./configure --cache-file="$(get_config_cache x86_64-linux)" --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2 --disable-shared --enable-static --with-mbedtls --without-openssl --without-xml2 --without-expat
+./configure --cache-file="$(get_config_cache x86_64-linux)" --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-lzo2 --disable-shared --enable-static --with-mbedtls --without-openssl --without-xml2 --without-expat
 make -sj$NCPU install
 cd ..
 
