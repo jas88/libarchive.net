@@ -35,7 +35,8 @@ echo "Unpacking toolchain in build directory..."
 tar xJf "$TOOLCHAIN_ARCHIVE"
 
 # Set up toolchain paths
-export TOOLCHAIN_PREFIX="$(pwd)/${TOOLCHAIN_DIR}"
+TOOLCHAIN_PREFIX="$(pwd)/${TOOLCHAIN_DIR}"
+export TOOLCHAIN_PREFIX
 export TOOLCHAIN_SYSROOT="$TOOLCHAIN_PREFIX/arm-buildroot-linux-musleabihf/sysroot"
 
 # Verify toolchain was unpacked correctly
