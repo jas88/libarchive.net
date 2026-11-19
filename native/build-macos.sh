@@ -40,12 +40,20 @@ download_all_libraries
 # Every narrow string UTF-8, whatever the locale (see "The libarchive patch" in BUILD.md)
 patch_libarchive "${SCRIPT_DIR}" "libarchive-${LIBARCHIVE_VERSION}"
 
-# Build compression libraries
+# Build compression libraries: only the static library and headers of each, which is
+# all that libarchive and the final link use, as on the other platforms. Their install
+# targets would also build lz4's program and shared library and bzip2's programs.
+mkdir -p "$PREFIX/lib" "$PREFIX/include"
+
 echo "Building lz4 ${LZ4_VERSION}..."
-make -j$NCPU -sC lz4-${LZ4_VERSION} install PREFIX=$PREFIX CFLAGS="$CFLAGS"
+make -j"$NCPU" -sC "lz4-${LZ4_VERSION}/lib" liblz4.a CFLAGS="$CFLAGS"
+cp "lz4-${LZ4_VERSION}/lib/liblz4.a" "$PREFIX/lib/"
+cp "lz4-${LZ4_VERSION}/lib/lz4.h" "lz4-${LZ4_VERSION}/lib/lz4hc.h" "lz4-${LZ4_VERSION}/lib/lz4frame.h" "$PREFIX/include/"
 
 echo "Building bzip2 ${BZIP2_VERSION}..."
-make -j$NCPU -sC bzip2-${BZIP2_VERSION} install PREFIX=$PREFIX CFLAGS="$CFLAGS"
+make -j"$NCPU" -sC "bzip2-${BZIP2_VERSION}" libbz2.a CFLAGS="$CFLAGS"
+cp "bzip2-${BZIP2_VERSION}/libbz2.a" "$PREFIX/lib/"
+cp "bzip2-${BZIP2_VERSION}/bzlib.h" "$PREFIX/include/"
 
 # lzop (LZO1X) support: lzokay behind the liblzo2 API, in place of the GPL-licensed liblzo2.
 # This script sets no C++ compiler of its own (CI exports CXX="ccache clang++"), so fall
@@ -91,7 +99,7 @@ cd libarchive-${LIBARCHIVE_VERSION}
 # with "libtool: Version mismatch error" once the runner's libtool outpaces it.
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
 export LIBXML2_PC_LIBS="-L$PREFIX/lib -lxml2"
-./configure --cache-file=$(get_config_cache darwin-universal) --prefix=$PREFIX --enable-silent-rules --disable-dependency-tracking --enable-static --disable-shared --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-rpath --enable-posix-regex-lib=libc --enable-xattr --enable-acl --enable-largefile --with-pic --with-zlib --with-bz2lib --with-libb2 --with-iconv --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-cng
+./configure --cache-file=$(get_config_cache darwin-universal) --prefix=$PREFIX --enable-silent-rules --disable-dependency-tracking --enable-static --disable-shared --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --disable-rpath --enable-posix-regex-lib=libc --enable-xattr --enable-acl --enable-largefile --with-pic --with-zlib --with-bz2lib --with-libb2 --with-iconv --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-cng
 make -sj$NCPU install
 cd ..
 
