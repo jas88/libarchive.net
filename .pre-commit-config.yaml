@@ -3,6 +3,9 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
+        # A unified diff writes an empty context line as a single space: stripping it would
+        # change the patches that the native build applies
+        exclude: '\.patch$'
       - id: end-of-file-fixer
       - id: check-yaml
         args: ['--unsafe']  # Allow custom YAML tags
