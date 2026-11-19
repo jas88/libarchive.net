@@ -180,7 +180,10 @@ for lib in libarchive libxml2 libz liblzma liblzo2 libzstd liblz4 libbz2; do
     echo "$PREFIX/lib/${lib}.a: $(ls -lh $PREFIX/lib/${lib}.a | awk '{print $5}')"
 done
 # Use --start-group for all dependency libraries to allow multi-pass symbol resolution
-# This is needed because libxml2 depends on libz and liblzma
+# This is needed because libxml2 depends on libz
+# The C compiler driver links the DLL, so no C++ runtime is linked (the lzop shim needs
+# none: see build-lzo-shim.sh) and there is no -static-libstdc++: MinGW GCC ignores it
+# in a C link, and Clang (LLVM-MinGW, for arm64) warns that it is unused.
 ${CC} -shared -o ${OUTPUT_NAME} \
     -Wl,--whole-archive \
     $PREFIX/lib/libarchive.a \
@@ -194,7 +197,7 @@ ${CC} -shared -o ${OUTPUT_NAME} \
     $PREFIX/lib/liblz4.a \
     $PREFIX/lib/libbz2.a \
     -Wl,--end-group \
-    -static -static-libgcc -static-libstdc++ \
+    -static -static-libgcc \
     -lws2_32 -lbcrypt -lkernel32
 
 echo "Testing DLL..."
