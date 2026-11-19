@@ -79,8 +79,7 @@ public partial class LibArchiveWriter
         var entry = archive_entry_new();
         try
         {
-            using var pathBuffer = new SafeStringBuffer(archivePath);
-            archive_entry_set_pathname(entry, pathBuffer.Ptr);
+            SetEntryPathname(entry, archivePath);
             archive_entry_set_filetype(entry, AE_IFDIR);
             archive_entry_set_perm(entry, DefaultDirectoryMode);
             archive_entry_set_size(entry, 0);
@@ -440,10 +439,27 @@ public partial class LibArchiveWriter
 
     #region Helper Methods
 
+    // Sets an entry's name. On Windows libarchive takes a narrow name to be in the C runtime's
+    // locale, which a .NET process leaves as "C" (one byte per character, U+0000-U+00FF), so the
+    // name is set in its UTF-16 form, which the writers convert to their format's character set
+    // (see SetHeaderCharset). On macOS and Linux libarchive takes narrow names to be UTF-8, which
+    // every writer stores as it is (native/libarchive-narrow-utf8.patch). libarchive copies the
+    // name either way.
+    private static void SetEntryPathname(IntPtr entry, string pathname)
+    {
+        if (LibArchiveReader.UseWideEntryNames)
+        {
+            archive_entry_copy_pathname_w(entry, pathname);
+            return;
+        }
+
+        using var pathBuffer = new SafeStringBuffer(pathname);
+        archive_entry_set_pathname(entry, pathBuffer.Ptr);
+    }
+
     private void SetEntryMetadata(IntPtr entry, FileInfo fileInfo, string archivePath)
     {
-        using var pathBuffer = new SafeStringBuffer(archivePath);
-        archive_entry_set_pathname(entry, pathBuffer.Ptr);
+        SetEntryPathname(entry, archivePath);
         archive_entry_set_size(entry, fileInfo.Length);
         archive_entry_set_filetype(entry, AE_IFREG);
         archive_entry_set_perm(entry, GetUnixPermissions(fileInfo));
@@ -457,8 +473,7 @@ public partial class LibArchiveWriter
         var entry = archive_entry_new();
         try
         {
-            using var pathBuffer = new SafeStringBuffer(archivePath);
-            archive_entry_set_pathname(entry, pathBuffer.Ptr);
+            SetEntryPathname(entry, archivePath);
             archive_entry_set_size(entry, size);
             archive_entry_set_filetype(entry, AE_IFREG);
             archive_entry_set_perm(entry, permissions);

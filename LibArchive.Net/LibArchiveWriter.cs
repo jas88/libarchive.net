@@ -152,6 +152,47 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
 
         if (result != (int)ARCHIVE_RESULT.ARCHIVE_OK)
             Throw();
+
+        SetHeaderCharset(format);
+    }
+
+    /// <summary>
+    /// On Windows, makes the ZIP, ustar and cpio writers store entry names as UTF-8.
+    /// </summary>
+    /// <remarks>
+    /// On Windows, names are set in their UTF-16 form (see SetEntryPathname). The pax, 7-Zip and
+    /// XAR writers, and ISO 9660's Joliet names, convert that to their format's character set
+    /// themselves (UTF-8, UTF-16LE, UTF-8 and UTF-16BE). The ZIP, ustar and cpio writers convert
+    /// it to the C runtime's locale unless hdrcharset names another character set
+    /// (archive_write_set_format_zip.c:887, _ustar.c:388, _cpio_newc.c:319), and in the "C" locale
+    /// of a .NET process that maps only U+0000-U+00FF, one byte each, failing for anything else
+    /// (archive_string.c:730-751 and 1843-1862). With hdrcharset=UTF-8 they convert the UTF-16
+    /// form to UTF-8 (archive_string.c:4154-4163), and the ZIP writer also sets the UTF-8 flag
+    /// on a name that is not ASCII (archive_write_set_format_zip.c:934-938). ISO 9660 has no such
+    /// option: its Rock Ridge names are taken from the locale's form
+    /// (archive_write_set_format_iso9660.c:4710), so on Windows a name made only of Latin-1
+    /// characters is stored in them as Latin-1, and any other as UTF-8 (archive_entry.c:594-610).
+    /// On macOS and Linux the names are set as UTF-8, which every writer stores as it is
+    /// (native/libarchive-narrow-utf8.patch), so no option is set there.
+    /// </remarks>
+    private void SetHeaderCharset(ArchiveFormat format)
+    {
+        if (!LibArchiveReader.UseWideEntryNames)
+            return;
+
+        var option = format switch
+        {
+            ArchiveFormat.Zip => "zip:hdrcharset=UTF-8",
+            ArchiveFormat.Ustar => "ustar:hdrcharset=UTF-8",
+            ArchiveFormat.Cpio => "cpio:hdrcharset=UTF-8",
+            _ => null
+        };
+        if (option == null)
+            return;
+
+        using var optionBuffer = new SafeStringBuffer(option);
+        if (archive_write_set_options(handle, optionBuffer.Ptr) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+            Throw();
     }
 
     private void AddFilter(CompressionType compression, int level)
@@ -635,17 +676,15 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial void archive_entry_free(IntPtr entry);
 
-    // Entry names are set as the "multibyte" form, the UTF-8 bytes as they are, and not with
-    // archive_entry_set_pathname_utf8 or archive_entry_copy_pathname_w. libarchive's writers read
-    // names back through that multibyte form (archive_entry_pathname_l), and on Unix .NET leaves
-    // the C library in the "C" locale, whose ASCII nothing converts to or from: with only a
-    // UTF-8 or wide form set, libarchive 3.8.11 rejects a non-ASCII name for ZIP, tar and cpio,
-    // writes 7-Zip archives it cannot read and ISO 9660 images without the entry, and its pax
-    // writer can dereference NULL. The bytes themselves go into ZIP (without its UTF-8 flag),
-    // ustar and cpio unchanged.
+    // macOS and Linux: the name as UTF-8 (see SetEntryPathname)
     [LibraryImport("archive")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial void archive_entry_set_pathname(IntPtr entry, IntPtr pathname);
+
+    // Windows only, where wchar_t is UTF-16
+    [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    private static partial void archive_entry_copy_pathname_w(IntPtr entry, [MarshalAs(UnmanagedType.LPWStr)] string pathname);
 
     [LibraryImport("archive")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
@@ -676,8 +715,13 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern void archive_entry_free(IntPtr entry);
 
+    // macOS and Linux: the name as UTF-8 (see SetEntryPathname)
     [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern void archive_entry_set_pathname(IntPtr entry, IntPtr pathname);
+
+    // Windows only, where wchar_t is UTF-16
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
+    private static extern void archive_entry_copy_pathname_w(IntPtr entry, [MarshalAs(UnmanagedType.LPWStr)] string pathname);
 
     [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern void archive_entry_set_size(IntPtr entry, long size);
