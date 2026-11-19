@@ -77,27 +77,27 @@ patch_libarchive "${SCRIPT_DIR}" "libarchive-${LIBARCHIVE_VERSION}"
 
 # Build compression libraries (static only to avoid conflicts with -static LDFLAGS)
 echo "Building lz4 ${LZ4_VERSION}..."
-cd lz4-${LZ4_VERSION}/lib
-make -j$NCPU liblz4.a "CC=$CC" "AR=$AR"
-mkdir -p $PREFIX/lib $PREFIX/include
-cp liblz4.a $PREFIX/lib/
-cp lz4.h lz4hc.h lz4frame.h $PREFIX/include/
+cd "lz4-${LZ4_VERSION}/lib"
+make -j"$NCPU" liblz4.a "CC=$CC" "AR=$AR"
+mkdir -p "$PREFIX/lib" "$PREFIX/include"
+cp liblz4.a "$PREFIX/lib/"
+cp lz4.h lz4hc.h lz4frame.h "$PREFIX/include/"
 cd ../..
 
 echo "Building zstd ${ZSTD_VERSION}..."
-cd zstd-${ZSTD_VERSION}/lib
-make -j$NCPU libzstd.a "CC=$CC" "AR=$AR"
-mkdir -p $PREFIX/lib $PREFIX/include
-cp libzstd.a $PREFIX/lib/
-cp zstd.h zstd_errors.h zdict.h $PREFIX/include/
+cd "zstd-${ZSTD_VERSION}/lib"
+make -j"$NCPU" libzstd.a "CC=$CC" "AR=$AR"
+mkdir -p "$PREFIX/lib" "$PREFIX/include"
+cp libzstd.a "$PREFIX/lib/"
+cp zstd.h zstd_errors.h zdict.h "$PREFIX/include/"
 cd ../..
 
 echo "Building bzip2 ${BZIP2_VERSION}..."
-cd bzip2-${BZIP2_VERSION}
-make -j$NCPU libbz2.a "CC=$CC" "AR=$AR" "RANLIB=$RANLIB" CFLAGS="-fPIC -O2 -D_FILE_OFFSET_BITS=64"
-mkdir -p $PREFIX/lib $PREFIX/include
-cp libbz2.a $PREFIX/lib/
-cp bzlib.h $PREFIX/include/
+cd "bzip2-${BZIP2_VERSION}"
+make -j"$NCPU" libbz2.a "CC=$CC" "AR=$AR" "RANLIB=$RANLIB" CFLAGS="-fPIC -O2 -D_FILE_OFFSET_BITS=64"
+mkdir -p "$PREFIX/lib" "$PREFIX/include"
+cp libbz2.a "$PREFIX/lib/"
+cp bzlib.h "$PREFIX/include/"
 cd ..
 
 # lzop (LZO1X) support: lzokay behind the liblzo2 API, in place of the GPL-licensed liblzo2
@@ -106,29 +106,29 @@ cd ..
 build_lzo_shim "${SCRIPT_DIR}/lzo-shim" "lzokay-${LZOKAY_COMMIT}" "$CXXFLAGS"
 
 echo "Building zlib ${ZLIB_VERSION}..."
-cd zlib-${ZLIB_VERSION}
-CHOST=arm-linux ./configure --static --prefix=$PREFIX
-make -sj$NCPU install
+cd "zlib-${ZLIB_VERSION}"
+CHOST=arm-linux ./configure --static --prefix="$PREFIX"
+make -sj"$NCPU" install
 cd ..
 
 echo "Building xz ${XZ_VERSION}..."
-cd xz-${XZ_VERSION}
-./configure --cache-file=$(get_config_cache arm-linux) --build=x86_64-pc-linux-gnu --host=arm-linux --with-pic --disable-shared --prefix=$PREFIX
-make -sj$NCPU install
+cd "xz-${XZ_VERSION}"
+./configure --cache-file="$(get_config_cache arm-linux)" --build=x86_64-pc-linux-gnu --host=arm-linux --with-pic --disable-shared --prefix="$PREFIX"
+make -sj"$NCPU" install
 cd ..
 
 # Download, build and install the static mbedTLS crypto library (see build-linux-common.sh)
 build_mbedtls
 
 echo "Building libarchive ${LIBARCHIVE_VERSION}..."
-cd libarchive-${LIBARCHIVE_VERSION}
+cd "libarchive-${LIBARCHIVE_VERSION}"
 # --with-mbedtls --without-openssl: use the static mbedTLS built above for ZIP AES.
 # --without-xml2 --without-expat: keep XAR disabled, as it was while no MD5/SHA-1
 # implementation was available. With digests present it would otherwise be enabled
 # and need an XML library resolved in the final link. So no XML library is built
 # for Linux: download_all_libraries unpacks libxml2, but only macOS and Windows use it.
-./configure --cache-file=$(get_config_cache arm-linux) --build=x86_64-pc-linux-gnu --host=arm-linux --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-lzo2 --disable-shared --enable-static --with-mbedtls --without-openssl --without-xml2 --without-expat
-make -sj$NCPU install
+./configure --cache-file="$(get_config_cache arm-linux)" --build=x86_64-pc-linux-gnu --host=arm-linux --prefix="$PREFIX" --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-lzo2 --disable-shared --enable-static --with-mbedtls --without-openssl --without-xml2 --without-expat
+make -sj"$NCPU" install
 cd ..
 
 echo "Creating final shared library..."

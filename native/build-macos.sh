@@ -79,44 +79,44 @@ cp "bzip2-${BZIP2_VERSION}/bzlib.h" "$PREFIX/include/"
 CXX="${CXX:-clang++}" build_lzo_shim "${SCRIPT_DIR}/lzo-shim" "lzokay-${LZOKAY_COMMIT}" "$CFLAGS"
 
 echo "Building zlib ${ZLIB_VERSION}..."
-cd zlib-${ZLIB_VERSION}
-./configure --static --prefix=$PREFIX
-make -sj$NCPU install
+cd "zlib-${ZLIB_VERSION}"
+./configure --static --prefix="$PREFIX"
+make -sj"$NCPU" install
 cd ..
 
 echo "Building xz ${XZ_VERSION}..."
-cd xz-${XZ_VERSION}
+cd "xz-${XZ_VERSION}"
 # No autotools regeneration here: the tarball ships consistent generated files and
 # download_all_libraries has already stamped them in dependency order.
-./configure --cache-file=$(get_config_cache darwin-universal) --with-pic --disable-shared --prefix=$PREFIX
-make -sj$NCPU install
+./configure --cache-file="$(get_config_cache darwin-universal)" --with-pic --disable-shared --prefix="$PREFIX"
+make -sj"$NCPU" install
 cd ..
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
-cd libxml2-${LIBXML2_VERSION}
+cd "libxml2-${LIBXML2_VERSION}"
 # --with-zlib names where zlib was installed above: libxml2 adds -I<dir>/include and
 # -L<dir>/lib, and records them for whatever links it. libxml2 has had no lzma
 # support (and no --with-lzma option) since 2.15.0.
-./autogen.sh --cache-file=$(get_config_cache darwin-universal) --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib="$PREFIX"
-make -sj$NCPU install
+./autogen.sh --cache-file="$(get_config_cache darwin-universal)" --enable-silent-rules --disable-shared --enable-static --prefix="$PREFIX" --without-python --with-zlib="$PREFIX"
+make -sj"$NCPU" install
 cd ..
 
 echo "Building zstd ${ZSTD_VERSION}..."
 # Library only: the top-level install also builds the zstd CLI, whose lz4 support
 # uses the unprefixed lz4frame enums removed in lz4 1.11.0. Matches the other platforms.
 # ARFLAGS=rc and ranlib: see lz4 above.
-make -j$NCPU -sC zstd-${ZSTD_VERSION}/lib install-static install-includes ARFLAGS=rc
+make -j"$NCPU" -sC "zstd-${ZSTD_VERSION}/lib" install-static install-includes ARFLAGS=rc
 ranlib "$PREFIX/lib/libzstd.a"
 
 echo "Building libarchive ${LIBARCHIVE_VERSION}..."
-cd libarchive-${LIBARCHIVE_VERSION}
+cd "libarchive-${LIBARCHIVE_VERSION}"
 # No autotools regeneration here: running aclocal would rebuild aclocal.m4 from the
 # host's libtool.m4 while leaving the tarball's older ltmain.sh in place, which fails
 # with "libtool: Version mismatch error" once the runner's libtool outpaces it.
-export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
+export LIBXML2_PC_CFLAGS="-I$PREFIX/include/libxml2"
 export LIBXML2_PC_LIBS="-L$PREFIX/lib -lxml2"
-./configure --cache-file=$(get_config_cache darwin-universal) --prefix=$PREFIX --enable-silent-rules --disable-dependency-tracking --enable-static --disable-shared --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --disable-rpath --enable-posix-regex-lib=libc --enable-xattr --enable-acl --enable-largefile --with-pic --with-zlib --with-bz2lib --with-libb2 --with-iconv --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-cng
-make -sj$NCPU install
+./configure --cache-file="$(get_config_cache darwin-universal)" --prefix="$PREFIX" --enable-silent-rules --disable-dependency-tracking --enable-static --disable-shared --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --disable-rpath --enable-posix-regex-lib=libc --enable-xattr --enable-acl --enable-largefile --with-pic --with-zlib --with-bz2lib --with-libb2 --with-iconv --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-cng
+make -sj"$NCPU" install
 cd ..
 
 echo "Creating universal binary..."

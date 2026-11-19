@@ -104,34 +104,34 @@ patch_libarchive "${SCRIPT_DIR}" "libarchive-${LIBARCHIVE_VERSION}"
 
 # Build compression libraries
 echo "Building lz4 ${LZ4_VERSION}..."
-cd lz4-${LZ4_VERSION}/lib
-make -j$NCPU liblz4.a "CC=$CC" "AR=$AR"
-mkdir -p $PREFIX/lib $PREFIX/include
-cp liblz4.a $PREFIX/lib/
-cp lz4.h lz4hc.h lz4frame.h $PREFIX/include/
+cd "lz4-${LZ4_VERSION}/lib"
+make -j"$NCPU" liblz4.a "CC=$CC" "AR=$AR"
+mkdir -p "$PREFIX/lib" "$PREFIX/include"
+cp liblz4.a "$PREFIX/lib/"
+cp lz4.h lz4hc.h lz4frame.h "$PREFIX/include/"
 cd ../..
 
 echo "Building bzip2 ${BZIP2_VERSION}..."
-cd bzip2-${BZIP2_VERSION}
-make -j$NCPU libbz2.a "CC=$CC" "AR=$AR" "RANLIB=$RANLIB" CFLAGS="$CFLAGS -D_FILE_OFFSET_BITS=64"
+cd "bzip2-${BZIP2_VERSION}"
+make -j"$NCPU" libbz2.a "CC=$CC" "AR=$AR" "RANLIB=$RANLIB" CFLAGS="$CFLAGS -D_FILE_OFFSET_BITS=64"
 # Verify library was built and has symbols
 ls -lh libbz2.a
 ${MINGW_PREFIX}-nm -g libbz2.a | grep BZ2_bzCompressInit || echo "WARNING: BZ2_bzCompressInit not found in libbz2.a"
-mkdir -p $PREFIX/lib $PREFIX/include
-cp libbz2.a $PREFIX/lib/
-cp bzlib.h $PREFIX/include/
+mkdir -p "$PREFIX/lib" "$PREFIX/include"
+cp libbz2.a "$PREFIX/lib/"
+cp bzlib.h "$PREFIX/include/"
 cd ..
 
 echo "Building zlib ${ZLIB_VERSION}..."
-cd zlib-${ZLIB_VERSION}
-CHOST=${MINGW_PREFIX} ./configure --static --prefix=$PREFIX
-make -j$NCPU install
+cd "zlib-${ZLIB_VERSION}"
+CHOST=${MINGW_PREFIX} ./configure --static --prefix="$PREFIX"
+make -j"$NCPU" install
 cd ..
 
 echo "Building xz ${XZ_VERSION}..."
-cd xz-${XZ_VERSION}
-./configure --cache-file=$(get_config_cache ${MINGW_PREFIX}) --host=${MINGW_PREFIX} --with-pic --disable-shared --prefix=$PREFIX --disable-scripts --disable-doc
-make -j$NCPU install
+cd "xz-${XZ_VERSION}"
+./configure --cache-file="$(get_config_cache ${MINGW_PREFIX})" --host=${MINGW_PREFIX} --with-pic --disable-shared --prefix="$PREFIX" --disable-scripts --disable-doc
+make -j"$NCPU" install
 cd ..
 
 # lzop (LZO1X) support: lzokay behind the liblzo2 API, in place of the GPL-licensed liblzo2
@@ -140,34 +140,34 @@ cd ..
 build_lzo_shim "${SCRIPT_DIR}/lzo-shim" "lzokay-${LZOKAY_COMMIT}" "$CXXFLAGS"
 
 echo "Building zstd ${ZSTD_VERSION}..."
-cd zstd-${ZSTD_VERSION}/lib
-make -j$NCPU libzstd.a "CC=$CC" "AR=$AR"
-mkdir -p $PREFIX/lib $PREFIX/include
-cp libzstd.a $PREFIX/lib/
-cp zstd.h zstd_errors.h zdict.h $PREFIX/include/
+cd "zstd-${ZSTD_VERSION}/lib"
+make -j"$NCPU" libzstd.a "CC=$CC" "AR=$AR"
+mkdir -p "$PREFIX/lib" "$PREFIX/include"
+cp libzstd.a "$PREFIX/lib/"
+cp zstd.h zstd_errors.h zdict.h "$PREFIX/include/"
 cd ../..
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
-cd libxml2-${LIBXML2_VERSION}
+cd "libxml2-${LIBXML2_VERSION}"
 # --without-iconv: Windows has native encoding support, avoids needing libiconv.
 # libxml2 has had no lzma support (and no --with-lzma option) since 2.15.0.
-./configure --cache-file=$(get_config_cache ${MINGW_PREFIX}) --host=${MINGW_PREFIX} --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --without-iconv --with-zlib=$PREFIX
-make -j$NCPU install
+./configure --cache-file="$(get_config_cache ${MINGW_PREFIX})" --host=${MINGW_PREFIX} --enable-silent-rules --disable-shared --enable-static --prefix="$PREFIX" --without-python --without-iconv --with-zlib="$PREFIX"
+make -j"$NCPU" install
 cd ..
 
 echo "Building libarchive ${LIBARCHIVE_VERSION}..."
-cd libarchive-${LIBARCHIVE_VERSION}
+cd "libarchive-${LIBARCHIVE_VERSION}"
 # pkg-config only looks at our prefix: export_cross_build_tools, above, set PKG_CONFIG_LIBDIR.
 # For static linking tests, autoconf needs all dependencies in LDFLAGS
 export LDFLAGS="$LDFLAGS -L$PREFIX/lib -lz -llzma"
 # Use libarchive-specific cache to avoid conflicts from the LDFLAGS modified above
-./configure --cache-file=$(get_config_cache ${MINGW_PREFIX}-libarchive) --host=${MINGW_PREFIX} --prefix=$PREFIX \
+./configure --cache-file="$(get_config_cache ${MINGW_PREFIX}-libarchive)" --host=${MINGW_PREFIX} --prefix="$PREFIX" \
     --enable-silent-rules --disable-dependency-tracking \
     --enable-static --disable-shared \
     --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip \
     --enable-posix-regex-lib=libc \
     --with-pic --with-zlib --with-bz2lib --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-xml2
-make -j$NCPU install
+make -j"$NCPU" install
 cd ..
 
 echo "Creating Windows DLL..."
@@ -186,16 +186,16 @@ done
 # in a C link, and Clang (LLVM-MinGW, for arm64) warns that it is unused.
 ${CC} -shared -o ${OUTPUT_NAME} \
     -Wl,--whole-archive \
-    $PREFIX/lib/libarchive.a \
+    "$PREFIX/lib/libarchive.a" \
     -Wl,--no-whole-archive \
     -Wl,--start-group \
-    $PREFIX/lib/libxml2.a \
-    $PREFIX/lib/libz.a \
-    $PREFIX/lib/liblzma.a \
+    "$PREFIX/lib/libxml2.a" \
+    "$PREFIX/lib/libz.a" \
+    "$PREFIX/lib/liblzma.a" \
     "$PREFIX/lib/liblzo2.a" \
-    $PREFIX/lib/libzstd.a \
-    $PREFIX/lib/liblz4.a \
-    $PREFIX/lib/libbz2.a \
+    "$PREFIX/lib/libzstd.a" \
+    "$PREFIX/lib/liblz4.a" \
+    "$PREFIX/lib/libbz2.a" \
     -Wl,--end-group \
     -static -static-libgcc \
     -lws2_32 -lbcrypt -lkernel32
