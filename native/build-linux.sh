@@ -115,23 +115,16 @@ cd xz-${XZ_VERSION}
 make -sj$NCPU install
 cd ..
 
-echo "Building libxml2 ${LIBXML2_VERSION}..."
-cd libxml2-${LIBXML2_VERSION}
-./autogen.sh --cache-file="$(get_config_cache x86_64-linux)" --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX/../zlib-${ZLIB_VERSION} --with-lzma=$PREFIX/../xz-${XZ_VERSION}
-make -sj$NCPU install
-cd ..
-
 # Download, build and install the static mbedTLS crypto library (see build-linux-common.sh)
 build_mbedtls
 
 echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
-export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
-export LIBXML2_PC_LIBS=-L$PREFIX
 # --with-mbedtls --without-openssl: use the static mbedTLS built above for ZIP AES.
 # --without-xml2 --without-expat: keep XAR disabled, as it was while no MD5/SHA-1
 # implementation was available. With digests present it would otherwise be enabled
-# and need libxml2 and its dependencies resolved in the final link.
+# and need an XML library resolved in the final link. So no XML library is built
+# for Linux: download_all_libraries unpacks libxml2, but only macOS and Windows use it.
 ./configure --cache-file="$(get_config_cache x86_64-linux)" --prefix=$PREFIX --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-sysroot --with-lzo2 --disable-shared --enable-static --with-mbedtls --without-openssl --without-xml2 --without-expat
 make -sj$NCPU install
 cd ..

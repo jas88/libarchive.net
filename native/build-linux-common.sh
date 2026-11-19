@@ -92,7 +92,6 @@ link_libarchive() {
         # The libraries libarchive.a uses
         "$PREFIX/lib/libbz2.a"
         "$PREFIX/lib/libz.a"
-        "$PREFIX/lib/libxml2.a"
         "$PREFIX/lib/liblzma.a"
         "$PREFIX/lib/liblzo2.a"
         "$PREFIX/lib/libzstd.a"

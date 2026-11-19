@@ -23,7 +23,7 @@ The libraries are:
 - lz4
 - zstd
 - lzokay (lzop support)
-- libxml2
+- libxml2 (macOS and Windows only)
 - zlib
 - xz (liblzma)
 - bzip2
@@ -34,6 +34,10 @@ mbedTLS is built and statically linked by the Linux scripts only, as a minimal
 encryption and digest support. Windows (CNG) and macOS (CommonCrypto) use the
 operating system's crypto instead. It is pinned to the 3.6 LTS line because
 libarchive cannot build against mbedTLS 4.
+
+libxml2 gives libarchive its XAR support, which the Linux libraries do not have
+(libarchive is configured `--without-xml2 --without-expat` there), so only the
+macOS and Windows scripts build it.
 
 ### lzop support
 
@@ -155,7 +159,7 @@ This will automatically detect your platform and build the appropriate libraries
 - gcc
 - make
 - sccache (the scripts compile through it)
-- autoconf, automake, libtool and pkg-config (libxml2 is built with its `autogen.sh`)
+- pkg-config (libarchive's configure uses it)
 - tar, gzip, xz and bzip2, which unpack the downloads (`.tar.gz`, `.tar.xz` and `.tar.bz2` archives)
 - file (each script runs it on the library it built)
 - unzip, to list a package's contents (see [Testing Changes](#testing-changes))
