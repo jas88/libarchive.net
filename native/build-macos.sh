@@ -74,7 +74,7 @@ echo "Building libxml2 ${LIBXML2_VERSION}..."
 cd libxml2-${LIBXML2_VERSION}
 # --with-zlib names where zlib was installed above: libxml2 adds -I<dir>/include and
 # -L<dir>/lib, and records them for whatever links it. libxml2 has had no lzma
-# support (and no --with-lzma option) since 2.14.
+# support (and no --with-lzma option) since 2.15.0.
 ./autogen.sh --cache-file=$(get_config_cache darwin-universal) --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib="$PREFIX"
 make -sj$NCPU install
 cd ..

@@ -148,7 +148,7 @@ cd ../..
 echo "Building libxml2 ${LIBXML2_VERSION}..."
 cd libxml2-${LIBXML2_VERSION}
 # --without-iconv: Windows has native encoding support, avoids needing libiconv.
-# libxml2 has had no lzma support (and no --with-lzma option) since 2.14.
+# libxml2 has had no lzma support (and no --with-lzma option) since 2.15.0.
 ./configure --cache-file=$(get_config_cache ${MINGW_PREFIX}) --host=${MINGW_PREFIX} --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --without-iconv --with-zlib=$PREFIX
 make -j$NCPU install
 cd ..
