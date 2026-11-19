@@ -67,6 +67,8 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     /// archive is written, not its size or contents.</param>
     /// <param name="password">Optional password for encryption. libarchive can only encrypt ZIP archives.</param>
     /// <param name="encryption">Encryption type when a password is provided (default: AES-256).</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="blockSize"/> is greater than
+    /// <see cref="int.MaxValue"/>, the largest block size libarchive takes.</exception>
     /// <exception cref="NotSupportedException">
     /// A password was supplied for a format other than ZIP (unless the encryption type is
     /// <see cref="EncryptionType.None"/>, which ignores the password), or with an encryption type that libarchive
@@ -84,6 +86,7 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     {
         if (string.IsNullOrEmpty(filename))
             throw new ArgumentException("Filename cannot be null or empty", nameof(filename));
+        CheckBlockSize(blockSize);
 
         // Reject encryption libarchive cannot provide before the output file is created or truncated
         var encryptionOption = GetEncryptionOption(format, password, encryption);
@@ -297,6 +300,20 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     }
 
     /// <summary>
+    /// Rejects a block size that archive_write_set_bytes_per_block cannot take. It takes an int and
+    /// does nothing, returning ARCHIVE_OK, when it is negative (archive_write.c:156-159), so a size
+    /// above int.MaxValue would leave libarchive's default of 10240 bytes in place without a word.
+    /// Called by every public entry point that takes a block size, before any native handle exists
+    /// and before a file is created or truncated.
+    /// </summary>
+    private static void CheckBlockSize(uint blockSize)
+    {
+        if (blockSize > int.MaxValue)
+            throw new ArgumentOutOfRangeException(nameof(blockSize), blockSize,
+                $"The block size can be at most {int.MaxValue} bytes");
+    }
+
+    /// <summary>
     /// Makes libarchive hand the archive to the file or stream in blocks of <see cref="blockSize"/>
     /// bytes, before the archive is opened.
     /// </summary>
@@ -309,6 +326,7 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     /// </remarks>
     private void SetBlockSize()
     {
+        // CheckBlockSize keeps it within int: libarchive ignores a negative size
         if (archive_write_set_bytes_per_block(handle, (int)blockSize) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
             Throw();
         if (archive_write_set_bytes_in_last_block(handle, 1) != (int)ARCHIVE_RESULT.ARCHIVE_OK)

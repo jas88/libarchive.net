@@ -36,6 +36,8 @@ public partial class LibArchiveWriter
     /// <param name="blockSize">Size in bytes of the blocks libarchive writes the archive in (default: 1 MiB);
     /// 0 writes data as it is produced. The last block is not padded, so the block size changes how the
     /// archive is written, not its size or contents.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="blockSize"/> is greater than
+    /// <see cref="int.MaxValue"/>, the largest block size libarchive takes.</exception>
     /// <exception cref="NotSupportedException">
     /// A password was supplied for a format other than ZIP (unless the encryption type is
     /// <see cref="EncryptionType.None"/>, which ignores the password), or with an encryption type that libarchive
@@ -55,6 +57,7 @@ public partial class LibArchiveWriter
             throw new ArgumentNullException(nameof(outputStream));
         if (!outputStream.CanWrite)
             throw new ArgumentException("Stream must be writable", nameof(outputStream));
+        CheckBlockSize(blockSize);
 
         // Reject encryption libarchive cannot provide before anything is written to the stream
         var encryptionOption = GetEncryptionOption(format, password, encryption);
@@ -231,6 +234,8 @@ public partial class LibArchiveWriter
     /// <param name="encryption">Encryption type when a password is provided (default: AES-256).</param>
     /// <param name="initialCapacity">Initial capacity of the memory buffer in bytes (default: 64 KB).</param>
     /// <returns>A LibArchiveWriter that writes to memory.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="blockSize"/> is greater than
+    /// <see cref="int.MaxValue"/>, the largest block size libarchive takes.</exception>
     /// <exception cref="NotSupportedException">
     /// A password was supplied for a format other than ZIP (unless the encryption type is
     /// <see cref="EncryptionType.None"/>, which ignores the password), or with an encryption type that libarchive
@@ -245,6 +250,7 @@ public partial class LibArchiveWriter
         EncryptionType encryption = EncryptionType.Default,
         int initialCapacity = 64 * 1024)
     {
+        CheckBlockSize(blockSize);
         var memoryStream = new MemoryStream(initialCapacity);
         return new LibArchiveWriter(memoryStream, format, compression, compressionLevel, password, encryption, blockSize);
     }

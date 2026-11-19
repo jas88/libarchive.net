@@ -134,6 +134,29 @@ public class BlockSizeTests
         return count;
     }
 
+    // libarchive takes the block size as an int, and ignores a negative one, so each entry point that
+    // takes a block size rejects one above int.MaxValue, before it creates or writes anything
+    [Test]
+    public void TestBlockSizeAboveIntMaxValueIsRejected([Values((uint)int.MaxValue + 1, uint.MaxValue)] uint blockSize)
+    {
+        static void AssertRejected(Func<LibArchiveWriter> create)
+        {
+            var ex = Assert.Throws<ArgumentOutOfRangeException>(() => create().Dispose());
+            Assert.That(ex!.ParamName, Is.EqualTo("blockSize"));
+        }
+
+        var existing = Encoding.ASCII.GetBytes("existing content");
+        File.WriteAllBytes(_path, existing);
+        AssertRejected(() => new LibArchiveWriter(_path, ArchiveFormat.Ustar, blockSize: blockSize));
+        Assert.That(File.ReadAllBytes(_path), Is.EqualTo(existing), "the file is not truncated");
+
+        using var output = new MemoryStream();
+        AssertRejected(() => new LibArchiveWriter(output, ArchiveFormat.Ustar, blockSize: blockSize));
+        Assert.That(output.Length, Is.Zero, "nothing is written to the stream");
+
+        AssertRejected(() => LibArchiveWriter.CreateMemoryWriter(blockSize, ArchiveFormat.Ustar));
+    }
+
     // libarchive writes a block to the file as soon as it is full, so the bytes on disk before
     // the writer is closed show the block size: whole blocks of a ustar archive's 103936 bytes
     // of headers and data (512 + 512 + 512 + 102400), and the 1024-byte end marker on closing.
