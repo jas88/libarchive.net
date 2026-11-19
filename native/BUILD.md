@@ -296,9 +296,9 @@ it. Warnings that came from the dependencies' own build machinery are avoided as
   `build-config.sh`) names them instead: the build machine's `pkg-config`, confined by
   `PKG_CONFIG_LIBDIR` to the `.pc` files the build itself installs, as a cross
   pkg-config would be, and `MANIFEST_TOOL=:`, libtool's own value for no manifest tool
-  (Microsoft's `mt.exe` is the only one; the build machine's `mt` is the tape drive
-  program). The x64 Linux build's configure runs are not cross builds, but its
-  toolchain is a cross toolchain all the same, so it is given the same.
+  (none of the MinGW or Bootlin toolchains has one, and the build machine's `mt` is the
+  tape drive program). The x64 Linux build's configure runs are not cross builds, but
+  its toolchain is a cross toolchain all the same, so it is given the same.
 
 Do not silence a new warning with `-w`, a broad `-Wno-*` or the like. Stop building what
 the libraries do not ship, or fix the flags or code at fault; for a warning in a

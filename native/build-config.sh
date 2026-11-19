@@ -113,9 +113,10 @@ export CONFIG_CACHE_DIR="${LIBARCHIVE_NET_CACHE_DIR}/config-cache"
 # configure looks for under the host triplet and, not finding them, takes unprefixed
 # from the build machine, warning "using cross tools not prefixed with host triplet".
 # pkg-config is the build machine's, confined to the .pc files under $PREFIX as a cross
-# pkg-config would be. libtool's manifest tool, mt.exe, comes with Microsoft's tools
-# only (an mt on the build machine is the tape drive program), so it is ":", libtool's
-# own value for none. Call it once PREFIX has its final value.
+# pkg-config would be. libtool's manifest tool (an mt.exe that embeds manifests): none
+# of the MinGW or Bootlin toolchains has one, and an mt on the build machine is the tape
+# drive program, so it is ":", libtool's own value for none. Call it once PREFIX has its
+# final value.
 # Usage: export_cross_build_tools
 export_cross_build_tools() {
     export PKG_CONFIG=pkg-config
