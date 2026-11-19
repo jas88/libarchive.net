@@ -458,7 +458,7 @@ composed, NFC, name stays composed):
 | `Tar`, `Pax` | UTF-8 in a pax extended header's `path` record for a name that is not ASCII (or too long for ustar), and in the ustar header as far as it fits |
 | `Ustar` | UTF-8 in the name and prefix fields (100 and 155 bytes); ustar cannot declare a character set |
 | `Cpio` | UTF-8; cpio cannot declare a character set |
-| `Iso9660` | UTF-16BE in the Joliet directory, and UTF-8 in the Rock Ridge `NM` entries of the primary one (whose own ISO 9660 names allow only upper-case letters, digits and `_`, so libarchive replaces any other character with `_`) |
+| `Iso9660` | UTF-16BE in the Joliet directory, and UTF-8 in the Rock Ridge `NM` entries of the primary one. The primary directory's own names are ISO 9660 level 1 identifiers, which do not keep the name: an 8.3 name of upper-case letters, digits and `_` with a `;1` version, such as `GR____E.TXT;1` for `Größe.txt` |
 | `Xar` | UTF-8 in the table of contents, base64-encoded (`enctype="base64"`) when the name has characters beyond Latin-1, as libarchive's XAR writer does |
 
 The `Iso9660` and `Xar` writers hold a tree of directories, and add each parent directory that was

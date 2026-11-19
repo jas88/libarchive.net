@@ -108,7 +108,7 @@ When writing, each format stores a name as below. libarchive does not normalize 
 |--------|----------------|
 | ZIP | UTF-8, with the UTF-8 flag (general purpose bit 11) set on a name that is not ASCII |
 | 7-Zip | UTF-16LE |
-| TAR, PAX | UTF-8 in a pax `path` record for a name that is not ASCII, and in the ustar header as far as it fits |
+| TAR, PAX | UTF-8 in a pax `path` record for a name that is not ASCII or does not fit the ustar header's name fields, and in the ustar header as far as it fits |
 | Ustar, CPIO | UTF-8 (neither format can declare a character set) |
 | ISO 9660 | UTF-16BE in Joliet names, and UTF-8 in Rock Ridge names |
 | XAR | UTF-8, base64-encoded if the name has characters beyond Latin-1 |
