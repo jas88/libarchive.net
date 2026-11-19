@@ -61,6 +61,8 @@ export CPPFLAGS="-I$PREFIX/include"
 export CFLAGS="-fPIC -O2 $CPPFLAGS -static-libgcc"
 export CXXFLAGS="-fPIC -O2 $CPPFLAGS -static-libstdc++ -static-libgcc"
 export LDFLAGS="-L$PREFIX/lib -static"
+# pkg-config and the manifest tool for configure (see build-config.sh)
+export_cross_build_tools
 
 echo "Toolchain installed:"
 $CC --version | head -n1

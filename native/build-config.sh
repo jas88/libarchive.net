@@ -109,6 +109,20 @@ export DOWNLOAD_CACHE="${LIBARCHIVE_NET_CACHE_DIR}/downloads"
 # Configure cache directory (persistent across builds, shared per host triplet)
 export CONFIG_CACHE_DIR="${LIBARCHIVE_NET_CACHE_DIR}/config-cache"
 
+# For a build with a cross toolchain (the Linux and Windows builds): name two tools that
+# configure looks for under the host triplet and, not finding them, takes unprefixed
+# from the build machine, warning "using cross tools not prefixed with host triplet".
+# pkg-config is the build machine's, confined to the .pc files under $PREFIX as a cross
+# pkg-config would be. libtool's manifest tool, mt.exe, comes with Microsoft's tools
+# only (an mt on the build machine is the tape drive program), so it is ":", libtool's
+# own value for none. Call it once PREFIX has its final value.
+# Usage: export_cross_build_tools
+export_cross_build_tools() {
+    export PKG_CONFIG=pkg-config
+    export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig"
+    export MANIFEST_TOOL=:
+}
+
 # Get the config.cache file path for a given host triplet
 # Usage: get_config_cache [host-triplet]
 # If no host is specified, uses "native"

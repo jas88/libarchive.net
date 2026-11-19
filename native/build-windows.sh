@@ -90,6 +90,8 @@ export CPPFLAGS="-I$PREFIX/include"
 export CFLAGS="-O2 -fPIC ${ARCH_FLAGS}"
 export CXXFLAGS="-O2 -fPIC ${ARCH_FLAGS}"
 export LDFLAGS="-L$PREFIX/lib"
+# pkg-config and the manifest tool for configure (see build-config.sh)
+export_cross_build_tools
 
 # Download and unpack fresh copies of all libraries, as the other build scripts do, even
 # where an earlier run left them unpacked: that run has patched libarchive, and
@@ -155,11 +157,10 @@ cd ..
 
 echo "Building libarchive ${LIBARCHIVE_VERSION}..."
 cd libarchive-${LIBARCHIVE_VERSION}
-# Set PKG_CONFIG_LIBDIR so pkg-config only looks at our prefix
-export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig"
+# pkg-config only looks at our prefix: export_cross_build_tools, above, set PKG_CONFIG_LIBDIR.
 # For static linking tests, autoconf needs all dependencies in LDFLAGS
 export LDFLAGS="$LDFLAGS -L$PREFIX/lib -lz -llzma"
-# Use libarchive-specific cache to avoid conflicts from modified LDFLAGS/PKG_CONFIG_LIBDIR
+# Use libarchive-specific cache to avoid conflicts from the LDFLAGS modified above
 ./configure --cache-file=$(get_config_cache ${MINGW_PREFIX}-libarchive) --host=${MINGW_PREFIX} --prefix=$PREFIX \
     --enable-silent-rules --disable-dependency-tracking \
     --enable-static --disable-shared \
