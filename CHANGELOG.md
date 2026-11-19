@@ -50,9 +50,19 @@ v0.3.2 - November 16, 2026
 - Fail the Linux builds if a library is not self-contained or does not load in a process that contains only musl, using QEMU for the ARMv7 and ARM64 load tests, and also load the x64 library from a glibc program
 - Select the win32 MinGW compilers by name in the Windows build, which failed on the x86 and x64 targets when the apt package cache was restored
 - Harden the native dependency update checker: apply an update only once its new tarball's SHA-256 is recorded and checked, replace `native/build-config.sh` atomically, accept only plain dotted version numbers from upstream, and send the GitHub token only to `api.github.com`, without following redirects; its workflow gives the default token no permissions
-- Fix `native/build-all.sh` for local builds: copy the libraries from `~/libarchive-native`, where the platform scripts leave them, and version `--package` from `PACKAGE_VERSION`
+- Fix `native/build-all.sh` for local builds: copy the libraries from `~/libarchive-native`, where the platform scripts leave them. `--package` now takes its version from `PACKAGE_VERSION`, which MinVer previously overrode, and tests the packed package as CI does: the modern .NET target everywhere, and net462 on Windows only
 - Remove the unused Perl update checker, `scripts/check-native-updates.pl`
+- Verify each Bootlin toolchain download against the `.sha256` file that Bootlin publishes beside it, before every use, so a truncated download or an error page is never reused. Verify the LLVM-MinGW download against a pinned SHA-256
+- Cache native source downloads and configure results under `${XDG_CACHE_HOME:-~/.cache}/libarchive-net/`. They were in `~/downloads`, which is `~/Downloads` on macOS's case-insensitive file system, and `~/config-cache`. Each native CI job now has its own download cache
+- Stop tracking a prebuilt 2022 `archive.dll` (libarchive 3.6.1), which a local `dotnet pack` shipped as the only native library, and ignore `runtimes/*/native/`
+- Warn (`LIBARCHIVENET001`) when packing without a native library for every runtime, naming the runtimes that have none
+- Make every pre-commit hook pass on all files
 - The Linux libraries are built with zig. CI load-tests each of them in containers of old and current distributions, and runs the package's tests on .NET in Alpine x64 as well as on Ubuntu.
+
+**Documentation:**
+- The package description and `PACKAGES.md` now describe what the package ships: reading and writing, the supported platforms and runtimes, and the libraries bundled on each platform. `PACKAGES.md`'s code samples now compile
+- Correct API names, target frameworks and the license link in `README.md` and `docs/WRITE-SUPPORT.md`, and note that XAR is not available on Linux
+- `native/BUILD.md`: liblzma is 0BSD (since XZ Utils 5.6.0), not public domain. It also gains the cache locations and a section on testing a package locally
 
 **Tooling Updates:**
 - Bump .NET SDK from 10.0.201 to 11.0.100
