@@ -5,8 +5,8 @@
 # Library versions
 LIBARCHIVE_VERSION="3.8.11"
 # This project's patch to libarchive, in this directory: every narrow string is UTF-8,
-# whatever the locale of the process. The macOS and Linux builds apply it with
-# patch_libarchive; see "The libarchive patch" in BUILD.md.
+# whatever the locale of the process. Every build (macOS, Linux and Windows) applies it
+# with patch_libarchive; see "The libarchive patch" in BUILD.md.
 LIBARCHIVE_PATCH="libarchive-narrow-utf8.patch"
 LZ4_VERSION="1.11.1"
 ZSTD_VERSION="1.5.7"
@@ -409,8 +409,7 @@ download_all_libraries() {
 # Apply LIBARCHIVE_PATCH to libarchive sources that download_all_libraries has just
 # unpacked, failing unless every hunk applies exactly: -F 0 allows no fuzz, so a hunk only
 # applies where all of its context matches (an offset is fine), and -N refuses sources
-# that already look patched. The Windows builds do not call this: the patch only changes
-# code that they do not compile.
+# that already look patched. Every build calls it, the Windows ones included.
 # Usage: patch_libarchive <directory of this file> <unpacked libarchive directory>
 # Like the functions in build-lzo-shim.sh, it has a subshell body, stays POSIX (this file
 # is sourced by build-windows.sh under plain sh) and ends every step in "|| exit".

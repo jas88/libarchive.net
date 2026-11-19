@@ -99,6 +99,10 @@ else
     echo "Using pre-downloaded library sources"
 fi
 
+# Every narrow string UTF-8, whatever the locale (see "The libarchive patch" in BUILD.md).
+# The libarchive sources must be freshly unpacked: patch_libarchive refuses patched ones.
+patch_libarchive "${SCRIPT_DIR}" "libarchive-${LIBARCHIVE_VERSION}"
+
 # Build compression libraries
 echo "Building lz4 ${LZ4_VERSION}..."
 cd lz4-${LZ4_VERSION}/lib

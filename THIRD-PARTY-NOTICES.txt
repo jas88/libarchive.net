@@ -192,12 +192,12 @@ The libarchive library is linked in whole (the link commands use
 the source release. The command line programs of that release (bsdtar,
 bsdcpio, bsdcat, bsdunzip) are not shipped.
 
-The Linux and macOS binaries are built from modified sources: this project's
-patch native/libarchive-narrow-utf8.patch changes two of its files,
-libarchive/archive_string.c and libarchive/archive_write_set_format_zip.c, so
-that every narrow string is UTF-8 whatever the locale of the process. The
-patch leaves their copyright notices and licence terms as they are. The
-Windows binaries are built from the unmodified sources.
+The native binaries for every platform (Linux, macOS and Windows) are built
+from modified sources: this project's patch native/libarchive-narrow-utf8.patch
+changes two of its files, libarchive/archive_string.c and
+libarchive/archive_write_set_format_zip.c, so that every narrow string is
+UTF-8 whatever the locale of the process. The patch leaves their copyright
+notices and licence terms as they are.
 
 libarchive's COPYING file, in full. It is the project's own statement of what
 applies to the library, and it says that "the actual statements in the files

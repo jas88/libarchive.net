@@ -1,57 +1,96 @@
 UTF-8 for every narrow string, whatever the locale of the process.
 
 Applied by patch_libarchive (native/build-config.sh) to the libarchive release pinned
-in native/build-config.sh, by the macOS and Linux builds only: Windows builds compile
-none of the code it changes. A build fails if any hunk does not apply exactly (no
-fuzz), and scripts/check-native-updates.sh will not propose a libarchive release that
-it does not apply to. See "The libarchive patch" in native/BUILD.md.
+in native/build-config.sh, by every build: macOS, Linux and Windows. A build fails if
+any hunk does not apply exactly (no fuzz), and scripts/check-native-updates.sh will
+not propose a libarchive release that it does not apply to. See "The libarchive
+patch" in native/BUILD.md.
 
 LibArchive.Net passes UTF-8 to libarchive's narrow (char *) functions and decodes
-every narrow string it gets back as UTF-8. libarchive instead converts names between
-an archive's character set and the "current" one of the process locale
-(nl_langinfo(CODESET)), and between narrow and wide strings with mbrtowc() and
-wcrtomb(). A .NET process never calls setlocale(), so that locale is "C", whose
-character set is ASCII ("US-ASCII" on macOS; the Linux library has its own copy of
-musl, which no one ever calls setlocale() in, and which says "ASCII"). Non-ASCII
-names then fail to convert: the pax, 7-Zip, ISO 9660 (Joliet) and xar writers warn
-and store them wrongly or not at all, the 7-Zip, xar, zip (UTF-8 flag) and Joliet
-readers return no name, the pax reader warns, the zip writer leaves out the UTF-8
-flag, and wide strings are garbled. This patch makes libarchive's narrow strings
-UTF-8 on every platform but Windows, without touching any locale:
+every narrow string it gets back as UTF-8. libarchive instead takes narrow strings to
+be in the "current" character set, which it gets from the process locale, and
+converts names between that and the character set of an archive.
+
+On macOS and Linux it asks nl_langinfo(CODESET), and converts between narrow and wide
+strings with mbrtowc() and wcrtomb(). A .NET process never calls setlocale(), so that
+locale is "C", whose character set is ASCII ("US-ASCII" on macOS; the Linux library
+has its own copy of musl, which no one ever calls setlocale() in, and which says
+"ASCII"). Non-ASCII names then fail to convert: the pax, 7-Zip, ISO 9660 (Joliet) and
+xar writers warn and store them wrongly or not at all, the 7-Zip, xar, zip (UTF-8
+flag) and Joliet readers return no name, the pax reader warns, the zip writer leaves
+out the UTF-8 flag, and wide strings are garbled.
+
+On Windows it takes a code page from the C runtime's locale, and in the "C" locale
+it makes a narrow string one byte per character, which holds U+0000-U+00FF only. A
+Rock Ridge name in ISO 9660, which is taken from the narrow form, is then Latin-1 if
+every character fits, and the ISO 9660 and xar writers misname a non-ASCII parent
+directory that they add themselves. In any other locale, names in formats that
+declare no character set are converted between the OEM code page and the locale's.
+
+This patch makes the current character set UTF-8 on every platform, without touching
+any locale. An hdrcharset option still sets an archive's character set, the other
+side of each conversion:
 
 1. default_iconv_charset() returns "UTF-8" as the current character set, as it does
    on Android, instead of asking the locale.
 2. archive_wstring_append_from_mbs() and archive_string_append_from_wcs() convert
    between UTF-8 and Unicode code points (wchar_t is 32 bits on Linux and macOS)
-   with libarchive's own UTF-8 code instead of mbrtowc() and wcrtomb().
+   with libarchive's own UTF-8 code instead of mbrtowc() and wcrtomb(). Windows
+   builds compile other versions of them, which use the current code page (5).
 3. On macOS, names read from an archive are no longer made NFD (decomposed): they
    are NFC, as libarchive makes them on every other platform, so a name written
    composed reads back composed.
 4. The zip writer sets the UTF-8 flag (general purpose bit 11) on a non-ASCII name
    when no hdrcharset option says otherwise, as it already did in a UTF-8 locale.
+5. On Windows, get_current_codepage() and get_current_oemcp() return CP_UTF8, so
+   narrow strings convert to and from UTF-16 as UTF-8 (with MultiByteToWideChar()
+   and WideCharToMultiByte()), and the default conversions from and to the OEM code
+   page do nothing, as they do on other platforms. As MultiByteToWideChar() rejects
+   any flag but MB_ERR_INVALID_CHARS for UTF-8,
+   archive_wstring_append_from_mbs_in_codepage() no longer passes MB_PRECOMPOSED
+   with it.
 
 Every change is marked LIBARCHIVE_NET_NARROW_UTF8, which patch_libarchive checks for.
 
 --- a/libarchive/archive_string.c
 +++ b/libarchive/archive_string.c
-@@ -453,7 +453,15 @@
+@@ -453,7 +453,16 @@
  default_iconv_charset(const char *charset) {
  	if (charset != NULL && charset[0] != '\0')
  		return charset;
 -#if HAVE_LOCALE_CHARSET && HAVE_LOCALCHARSET_H && !defined(__APPLE__)
-+#if !defined(_WIN32) || defined(__CYGWIN__)
++#if 1
 +	/*
 +	 * LIBARCHIVE_NET_NARROW_UTF8: LibArchive.Net passes and expects
 +	 * UTF-8 in every narrow string, whatever the locale of the process
 +	 * (which a .NET process leaves as "C", whose charset is ASCII), so
-+	 * the current charset is always UTF-8 here, as on Android.
++	 * the current charset is always UTF-8 here, as on Android. On
++	 * Windows its code page is UTF-8 too (see get_current_codepage()).
 +	 */
 +	return "UTF-8";
 +#elif HAVE_LOCALE_CHARSET && HAVE_LOCALCHARSET_H && !defined(__APPLE__)
  	/* locale_charset() is broken on Mac OS */
  	return locale_charset();
  #elif HAVE_NL_LANGINFO
-@@ -624,70 +632,40 @@
+@@ -582,8 +591,16 @@
+ 			 * an archive file. */
+ 			length = mbsnbytes(s, length);
+ 			mbflag = 0;
+-		} else
++		} else if (from_cp != CP_UTF8)
+ 			mbflag = MB_PRECOMPOSED;
++		else
++			/*
++			 * LIBARCHIVE_NET_NARROW_UTF8: MultiByteToWideChar()
++			 * fails with ERROR_INVALID_FLAGS given any flag but
++			 * MB_ERR_INVALID_CHARS for UTF-8, which is the
++			 * current code page (see get_current_codepage()).
++			 */
++			mbflag = 0;
+ 
+ 		mbflag |= MB_ERR_INVALID_CHARS;
+ 
+@@ -624,70 +641,40 @@
  /*
   * Convert MBS to WCS.
   * Note: returns -1 if conversion fails.
@@ -69,25 +108,24 @@ Every change is marked LIBARCHIVE_NET_NARROW_UTF8, which patch_libarchive checks
  {
 -	size_t r;
  	int ret_val = 0;
-+	wchar_t *wcs;
-+
- 	/*
+-	/*
 -	 * No single byte will be more than one wide character,
-+	 * No UTF-8 sequence is shorter than the wide character it makes,
- 	 * so this length estimate will always be big enough.
+-	 * so this length estimate will always be big enough.
 -	 */
 -	// size_t wcs_length = len;
 -	size_t mbs_length = len;
 -	const char *mbs = p;
--	wchar_t *wcs;
+ 	wchar_t *wcs;
 -#if HAVE_MBRTOWC
 -	mbstate_t shift_state;
--
+ 
 -	memset(&shift_state, 0, sizeof(shift_state));
 -#endif
--	/*
+ 	/*
 -	 * As we decided to have wcs_length == mbs_length == len
 -	 * we can use len here instead of wcs_length
++	 * No UTF-8 sequence is shorter than the wide character it makes,
++	 * so this length estimate will always be big enough.
  	 */
  	if (NULL == archive_wstring_ensure(dest, dest->length + len + 1))
  		return (-1);
@@ -141,7 +179,7 @@ Every change is marked LIBARCHIVE_NET_NARROW_UTF8, which patch_libarchive checks
  	}
  	dest->length = wcs - dest->s;
  	dest->s[dest->length] = L'\0';
-@@ -823,66 +801,36 @@
+@@ -823,66 +810,36 @@
   * Translates a wide character string into current locale character set
   * and appends to the archive_string.  Note: returns -1 if conversion
   * fails.
@@ -162,11 +200,12 @@ Every change is marked LIBARCHIVE_NET_NARROW_UTF8, which patch_libarchive checks
 -	 * needed.  We prefer wcrtomb() when it's available because
 -	 * it's thread-safe. */
 -	int n, ret_val = 0;
-+	int ret_val = 0;
- 	char *p;
+-	char *p;
 -	char *end;
 -#if HAVE_WCRTOMB
 -	mbstate_t shift_state;
++	int ret_val = 0;
++	char *p;
  
 -	memset(&shift_state, 0, sizeof(shift_state));
 -#else
@@ -227,7 +266,7 @@ Every change is marked LIBARCHIVE_NET_NARROW_UTF8, which patch_libarchive checks
  		len--;
  	}
  	as->length = p - as->s;
-@@ -1275,12 +1223,12 @@
+@@ -1275,12 +1232,12 @@
  	 */
  	if ((flag & SCONV_FROM_CHARSET) &&
  	    (flag & (SCONV_FROM_UTF16 | SCONV_FROM_UTF8))) {
@@ -246,7 +285,7 @@ Every change is marked LIBARCHIVE_NET_NARROW_UTF8, which patch_libarchive checks
  	}
  #if defined(__APPLE__)
  	/*
-@@ -1295,15 +1243,9 @@
+@@ -1295,15 +1252,9 @@
  	    !(flag & (SCONV_TO_UTF16 | SCONV_TO_UTF8)))
  		flag |= SCONV_NORMALIZATION_C;
  	/*
@@ -264,21 +303,57 @@ Every change is marked LIBARCHIVE_NET_NARROW_UTF8, which patch_libarchive checks
  #endif
  
  #if defined(HAVE_ICONV)
+@@ -1572,6 +1523,16 @@
+ 	char *locale, *p;
+ 	unsigned cp;
+ 
++	/*
++	 * LIBARCHIVE_NET_NARROW_UTF8: narrow strings are UTF-8 here as on
++	 * every other platform (see default_iconv_charset()), whatever the
++	 * locale of the process or its ANSI code page. In the "C" locale,
++	 * which a .NET process leaves set, CP_C_LOCALE below would make a
++	 * narrow string one byte per character (U+0000-U+00FF only). The
++	 * code after this return is not used.
++	 */
++	return (CP_UTF8);
++
+ 	locale = setlocale(LC_CTYPE, NULL);
+ 	if (locale == NULL)
+ 		return (GetACP());
+@@ -1662,6 +1623,16 @@
+ 	char *locale, *p;
+ 	size_t len;
+ 
++	/*
++	 * LIBARCHIVE_NET_NARROW_UTF8: the OEM code page is the current
++	 * one, UTF-8 (see get_current_codepage()), so that names in formats
++	 * that declare no character set are not converted from or to an
++	 * OEM code page by default, as no other platform converts them:
++	 * archive_string_default_conversion_for_read() and _for_write()
++	 * return no conversion. The code after this return is not used.
++	 */
++	return (CP_UTF8);
++
+ 	locale = setlocale(LC_CTYPE, NULL);
+ 	if (locale == NULL)
+ 		return (GetOEMCP());
 --- a/libarchive/archive_write_set_format_zip.c
 +++ b/libarchive/archive_write_set_format_zip.c
-@@ -936,8 +936,13 @@
+@@ -936,10 +936,14 @@
  			if (strcmp(archive_string_conversion_charset_name(
  					zip->opt_sconv), "UTF-8") == 0)
  				zip->entry_flags |= ZIP_ENTRY_FLAG_UTF8_NAME;
 -#if HAVE_NL_LANGINFO
 -		} else if (strcmp(nl_langinfo(CODESET), "UTF-8") == 0) {
-+#if !defined(_WIN32) || defined(__CYGWIN__)
 +		} else {
 +			/*
 +			 * LIBARCHIVE_NET_NARROW_UTF8: the current charset is
-+			 * UTF-8 whatever nl_langinfo(CODESET) says (see
-+			 * default_iconv_charset() in archive_string.c).
++			 * UTF-8 whatever nl_langinfo(CODESET) says, and on
++			 * Windows too (see default_iconv_charset() and
++			 * get_current_codepage() in archive_string.c).
 +			 */
  			zip->entry_flags |= ZIP_ENTRY_FLAG_UTF8_NAME;
- #endif
+-#endif
  		}
+ 	}
+ 	/* Reject empty or overlong pathnames */

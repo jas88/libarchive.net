@@ -58,32 +58,45 @@ it, so libarchive itself is not patched.
 ### The libarchive patch
 
 LibArchive.Net passes UTF-8 to libarchive's narrow (`char *`) functions and decodes every narrow
-string that libarchive returns as UTF-8. libarchive itself takes narrow strings to be in the
-character set of the process locale (`nl_langinfo(CODESET)`), and converts them to and from wide
-strings with `mbrtowc` and `wcrtomb`. A .NET process never calls `setlocale`, so on macOS that
-locale is "C", whose character set is US-ASCII; the Linux libraries contain their own copy of musl,
-in which nothing ever calls `setlocale`, so it is always "C" there. Unpatched, non-ASCII names then
-fail in several formats: the pax, 7-Zip, ISO 9660 (Joliet) and XAR writers warn and store them
-wrongly or not at all, the 7-Zip, XAR, zip (with the UTF-8 flag) and Joliet readers return no name
-for them, and the zip writer leaves out the UTF-8 flag.
+string that libarchive returns as UTF-8, on every platform. libarchive itself takes narrow strings
+to be in a "current" character set, which it gets from the process locale, and converts names
+between that and the character set of an archive. A .NET process never calls `setlocale`, so that
+locale is "C":
 
-`libarchive-narrow-utf8.patch` makes libarchive's narrow strings UTF-8 on macOS and Linux whatever
-the locale, without changing any locale, process-wide or per thread: the current character set is
-always UTF-8, narrow and wide strings are converted with libarchive's own UTF-8 code, names read on
-macOS are NFC (composed) as on every other platform instead of NFD, and the zip writer sets the
-UTF-8 flag on non-ASCII names. The description at the top of the patch lists each change.
+- On macOS and Linux libarchive asks `nl_langinfo(CODESET)`, which in the "C" locale is US-ASCII
+  on macOS and ASCII in the copy of musl that the Linux libraries contain (in which nothing ever
+  calls `setlocale`), and it converts narrow strings to and from wide ones with `mbrtowc` and
+  `wcrtomb`. Unpatched, non-ASCII names then fail in several formats: the pax, 7-Zip, ISO 9660
+  (Joliet) and XAR writers warn and store them wrongly or not at all, the 7-Zip, XAR, zip (with the
+  UTF-8 flag) and Joliet readers return no name for them, and the zip writer leaves out the UTF-8
+  flag.
+- On Windows libarchive takes a code page from the C runtime's locale, and in the "C" locale makes
+  a narrow string one byte per character, which can hold only U+0000-U+00FF. Unpatched, a Rock
+  Ridge name in ISO 9660, which is taken from the narrow form, is stored as Latin-1 when every
+  character fits, and the ISO 9660 and XAR writers misname a non-ASCII parent directory that they
+  add themselves. In any other locale, names in formats that declare no character set are converted
+  between the OEM code page and the locale's.
 
-- `patch_libarchive` (in `build-config.sh`) applies it to the freshly unpacked sources in
-  `build-macos.sh` and the three `build-linux*.sh` scripts. It fails the build unless every hunk
-  applies without fuzz, and unless each file the patch changes has its `LIBARCHIVE_NET_NARROW_UTF8`
-  marker.
+`libarchive-narrow-utf8.patch` makes the current character set, the one that narrow strings are in,
+UTF-8 on every platform, whatever the locale and without changing any locale, process-wide or per
+thread. The other side of each conversion is unchanged: an archive's names are still in the
+character set its format declares, or the one an `hdrcharset` option names. On macOS and Linux
+narrow and wide strings are converted with libarchive's own UTF-8 code; on Windows the current and
+OEM code pages are UTF-8, so Windows converts them as UTF-8, and names in formats that declare no
+character set are not converted, as on every other platform. Names read on macOS are NFC (composed)
+as on every other platform instead of NFD, and the zip writer sets the UTF-8 flag on non-ASCII
+names. The description at the top of the patch lists each change.
+
+- `patch_libarchive` (in `build-config.sh`) applies it to the freshly unpacked sources in every
+  build script: `build-macos.sh`, the three `build-linux*.sh` scripts and `build-windows.sh`. It
+  fails the build unless every hunk applies without fuzz, and unless each file the patch changes
+  has its `LIBARCHIVE_NET_NARROW_UTF8` marker.
 - The macOS native test (`nativetest.c`) and the Linux load test (`write_load_test_source` in
   `build-linux-common.sh`) fail the build unless the linked library behaves that way in the "C"
   locale: a name converts between narrow and wide strings as UTF-8, and a zip entry keeps its UTF-8
-  name, with the UTF-8 flag, and reads back unchanged.
-- The Windows builds do not apply it. libarchive uses code pages there, the patch changes only code
-  that Windows builds do not compile, and LibArchive.Net uses the wide-character functions on
-  Windows.
+  name, with the UTF-8 flag, and reads back unchanged. The Windows DLLs are cross-compiled, so the
+  build cannot run them: the .NET tests check them on Windows (the `test-net462` job, which runs
+  them on .NET Framework 4.6.2 and on modern .NET).
 - `scripts/check-native-updates.sh` proposes a new libarchive release only if the patch still
   applies to it the same way (a dry run, without fuzz), and otherwise reports a failed check. To
   rework the patch for a new release, apply it to the new sources, resolve any rejected hunks
@@ -283,7 +296,7 @@ A weekly workflow runs `scripts/check-native-updates.sh`, which looks for new re
 2. Update the version variables (e.g., `LIBARCHIVE_VERSION="3.8.0"`)
 3. Update the matching `*_SHA256` variables to the SHA256 of each new tarball: the builds verify each library tarball against them and fail on a mismatch
 4. Update the URLs if the download pattern changed
-5. For a new libarchive release, check that `libarchive-narrow-utf8.patch` still applies, and rework it if not (see "The libarchive patch" above): the macOS and Linux builds fail otherwise
+5. For a new libarchive release, check that `libarchive-narrow-utf8.patch` still applies, and rework it if not (see "The libarchive patch" above): every build fails otherwise
 6. Test the build on each platform
 
 ## CI/CD Integration

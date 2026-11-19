@@ -243,8 +243,8 @@ update_failed() {
 
 # Succeed if this project's libarchive patch, named by LIBARCHIVE_PATCH in the copy of
 # build-config.sh in $1, applies to the libarchive release tarball $2, which unpacks into
-# libarchive-$3/, exactly as patch_libarchive applies it in the macOS and Linux builds
-# (no fuzz). Those builds fail on a release that it does not apply to.
+# libarchive-$3/, exactly as patch_libarchive applies it in every native build (no
+# fuzz). Those builds fail on a release that it does not apply to.
 libarchive_patch_applies() {
     local name dir="$WORK_DIR/libarchive-patch-check"
     name=$(config_value "$1" LIBARCHIVE_PATCH)
@@ -316,8 +316,8 @@ update_version() {
     fi
 
     # A libarchive release that this project's patch does not apply to would fail every
-    # macOS and Linux build: report it as a failed check instead, until the patch is
-    # reworked for it (see "The libarchive patch" in native/BUILD.md)
+    # native build: report it as a failed check instead, until the patch is reworked for
+    # it (see "The libarchive patch" in native/BUILD.md)
     if [ "$dep_name" = "libarchive" ]; then
         echo "  Checking that the libarchive patch applies to ${new_ver}..."
         if ! libarchive_patch_applies "$candidate" "$tarball" "$new_ver"; then
