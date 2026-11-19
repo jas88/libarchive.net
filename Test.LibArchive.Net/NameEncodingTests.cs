@@ -133,6 +133,49 @@ public class NameEncodingTests
         }
     }
 
+    // The formats whose names declare their character set, UTF-8 or UTF-16: ZIP (which flags each
+    // name that is not ASCII as UTF-8), pax path records (Tar and Pax), 7-Zip and XAR. libarchive
+    // decodes such a name when reading, and normalizes it to NFC (archive_string.c:1270-1277).
+    // ISO 9660 images have Joliet names in UTF-16BE, but also Rock Ridge names, which declare none
+    // and which the reader prefers (archive_read_support_format_iso9660.c:1183-1189).
+    private static readonly ArchiveFormat[] DeclaredCharsetFormats =
+    {
+        ArchiveFormat.Zip, ArchiveFormat.Tar, ArchiveFormat.Pax, ArchiveFormat.SevenZip, ArchiveFormat.Xar,
+    };
+
+    // A name is stored in the form it is given, decomposed (NFD) here, and reads back composed
+    // (NFC) from a format that declares its names' character set, but as stored from one that
+    // does not.
+    [Test]
+    public void DecomposedNameReadsBackComposedWhereItsCharacterSetIsDeclared(
+        [ValueSource(nameof(WritableFormats))] ArchiveFormat format)
+    {
+        const string composed = "Größe.txt";
+        var decomposed = composed.Normalize(NormalizationForm.FormD);
+        Assert.That(decomposed, Is.Not.EqualTo(composed));
+        var archive = Write(format, decomposed);
+
+        switch (format)
+        {
+            case ArchiveFormat.SevenZip:
+                Assert.That(IndexOf(archive, Encoding.Unicode.GetBytes(decomposed + "\0")), Is.GreaterThan(0));
+                break;
+            case ArchiveFormat.Iso9660:
+                AssertIsoNames(archive, decomposed);
+                break;
+            case ArchiveFormat.Xar:
+                AssertXarName(archive, decomposed);
+                break;
+            default:
+                // A ustar header starts with the name
+                Assert.That(IndexOf(archive, Encoding.UTF8.GetBytes(decomposed)), Is.GreaterThanOrEqualTo(0));
+                break;
+        }
+
+        var expected = DeclaredCharsetFormats.Contains(format) ? composed : decomposed;
+        Assert.That(ReadFiles(archive).Select(f => f.Name), Is.EqualTo(new[] { expected }));
+    }
+
     // The formats that hold a tree of directories: libarchive adds each parent directory that was
     // not added as an entry itself, naming it from the entry's path
     public static IEnumerable<ArchiveFormat> TreeFormats() =>

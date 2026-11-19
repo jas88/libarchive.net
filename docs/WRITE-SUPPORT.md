@@ -464,9 +464,14 @@ composed, NFC, name stays composed):
 The `Iso9660` and `Xar` writers hold a tree of directories, and add each parent directory that was
 not added as an entry themselves, under the name it has in the entry's path.
 
-`LibArchiveReader` reads these names back unchanged. It reads a name whose format declares no
-character set (ustar, cpio, ZIP without the UTF-8 flag, Rock Ridge) as UTF-8, with U+FFFD for any
-invalid byte sequence; see "Entry Names" in the [README](../README.md#entry-names).
+`LibArchiveReader` reads each name back as it was written, except for its normalization: where
+the format declares the name's character set, libarchive decodes the name and normalizes it to NFC
+(composed), so a name written decomposed (NFD) reads back composed. The formats that declare it are
+`Zip` (whose names that are not ASCII have the UTF-8 flag), `Tar` and `Pax` (pax `path` records),
+`SevenZip` and `Xar`. A name whose format declares no character set reads back as the bytes stored,
+decoded as UTF-8, with U+FFFD for any invalid byte sequence: `Ustar`, `Cpio`, and `Iso9660`,
+whose Rock Ridge names libarchive reads in preference to its Joliet ones. See "Entry Names" in the
+[README](../README.md#entry-names).
 
 ## Platform Support
 

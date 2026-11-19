@@ -115,7 +115,7 @@ When writing, each format stores a name as below. libarchive does not normalize 
 
 When reading, `Entry.Name` is:
 
-- the name decoded from the character set the archive declares, normalized to NFC (composed) by libarchive, for pax `path` records, ZIP entries with the UTF-8 flag or an Info-ZIP Unicode path field, and 7-Zip, XAR and Joliet names;
+- the name decoded from the character set the archive declares, normalized to NFC (composed) by libarchive, for pax `path` records, ZIP entries with the UTF-8 flag or an Info-ZIP Unicode path field, and 7-Zip, XAR and Joliet names (Joliet names are read only from ISO 9660 images without Rock Ridge names). A name written decomposed (NFD) in one of these therefore reads back composed;
 - otherwise (ustar, GNU tar and cpio headers, ZIP entries without the UTF-8 flag, Rock Ridge names, and so on) the stored bytes read as UTF-8, as tools on macOS and Linux write them, without normalizing them. A byte sequence that is not valid UTF-8, as in a name in a legacy code page (a ZIP from an older Windows, in its OEM code page, for example), becomes U+FFFD, and the entry is still returned.
 
 An entry is always returned, with an empty name if libarchive cannot give one.
