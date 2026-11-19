@@ -137,7 +137,11 @@ verify_lzo_support() (
     # libarchive only refers to this function when its configure found <lzo/lzo1x.h>
     # and liblzo2, and the linker only takes it out of liblzo2.a when libarchive
     # refers to it. Mach-O and 32-bit Windows add the leading underscore.
-    if ! printf '%s\n' "$symbols" | grep -E -q ' [Tt] _?lzo1x_decompress_safe$'; then
+    # awk reads the whole list: "grep -q" would stop at the match and close the pipe,
+    # and where SIGPIPE is ignored (as under GitHub Actions) printf then fails with a
+    # "write error: Broken pipe" for the rest of the list.
+    if ! printf '%s\n' "$symbols" |
+        awk '/ [Tt] _?lzo1x_decompress_safe$/ { found = 1 } END { exit !found }'; then
         echo "ERROR: lzo1x_decompress_safe is not defined in ${lib}."
         echo "libarchive was built without liblzo2, so it would read lzop data only by running an external lzop program."
         exit 1
@@ -178,12 +182,15 @@ verify_lzo_shim_resolved() (
     # Every symbol the shim's object files import ("U"; weak references may stay
     # unresolved) must be defined in the library, whatever its name. The global
     # offset table is the one exception: the linker supplies it without always
-    # leaving a symbol behind.
-    defined=$(printf '%s\n' "$defined" | awk '{ print $NF }')
-    missing=$(printf '%s\n' "$needed" | awk '$1 == "U" && $2 != "_GLOBAL_OFFSET_TABLE_" { print $2 }' | sort -u |
-        while IFS= read -r symbol; do
-            printf '%s\n' "$defined" | grep -F -x -q -e "$symbol" || printf '%s\n' "$symbol"
-        done)
+    # leaving a symbol behind. One awk reads both lists, the defined names (the last
+    # field of each line) up to a line "--", and nm's list of the shim's imports
+    # after it: a "grep -q" per symbol closed the pipe of the defined list at a match,
+    # and printf then failed with "write error: Broken pipe" where SIGPIPE is ignored.
+    missing=$( { printf '%s\n' "$defined"; echo --; printf '%s\n' "$needed"; } |
+        awk '!imports && $0 == "--" { imports = 1; next }
+            !imports { if (NF) defined[$NF] = 1; next }
+            $1 == "U" && $2 != "_GLOBAL_OFFSET_TABLE_" && !($2 in defined) { print $2 }' |
+        sort -u)
     if [ -n "$missing" ]; then
         printf '%s\n' "$missing"
         echo "ERROR: ${lib} does not define the symbols listed above, which the lzop shim needs, and would fail to load."
