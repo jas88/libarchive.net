@@ -120,7 +120,8 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     /// <remarks>
     /// A single compressed file that is not an archive, such as a plain <c>.gz</c>, <c>.bz2</c>
     /// or <c>.xz</c> file, is read as an archive holding one entry; see <see cref="Entries"/>. An
-    /// empty file opens as an archive with no entries.
+    /// empty file opens as an archive with no entries, and so does a compressed file whose
+    /// decompressed data is empty.
     /// </remarks>
     /// <exception cref="ApplicationException">Thrown when the archive cannot be opened, including when the file is
     /// not empty and is neither an archive nor compressed (message "Unrecognized archive format").</exception>
@@ -173,7 +174,10 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     /// any data, and libarchive only reports the format it chose once a header has been read: data
     /// that is neither an archive nor compressed would then open without error. Such data still
     /// fails here with libarchive's own error, "Unrecognized archive format", unless it is empty:
-    /// libarchive's empty format reads empty data as an archive with no entries.
+    /// libarchive's empty format reads empty data as an archive with no entries. It also claims
+    /// compressed data that decompresses to nothing, which therefore opens here with no entries
+    /// as well: the raw format could not give it an entry, as it needs at least one byte
+    /// (archive_read_support_format_empty.c:67-68, archive_read_support_format_raw.c:99-100).
     /// Compressed text can also be claimed by the mtree format and fail only at its first header;
     /// <see cref="ReadNextHeader"/> then reads it as raw data.
     /// </remarks>
@@ -362,7 +366,9 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     /// The entry is a regular file whose <see cref="Entry.LengthBytes"/> is null, because the
     /// decompressed size is not known in advance. This includes compressed text that libarchive
     /// takes for an mtree specification but cannot read as one, such as a list of words or numbers,
-    /// one per line; a compressed mtree specification that it can read is read as one.
+    /// one per line; a compressed mtree specification that it can read is read as one. A
+    /// compressed file whose decompressed data is empty, such as a gzip of an empty file, yields no
+    /// entry, as empty data does: libarchive reads both as an empty archive.
     /// </remarks>
     public IEnumerable<Entry> Entries()
     {

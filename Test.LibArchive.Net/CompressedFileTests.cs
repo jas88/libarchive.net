@@ -24,10 +24,13 @@ namespace Test.LibArchive.Net;
 //         --uid 0 --gid 0 --numeric-owner -cf - rawtest.txt | gzip -9 -n > rawtest.tar.gz
 //     COPYFILE_DISABLE=1 tar --format=pax --no-xattrs --no-mac-metadata --no-acls \
 //         --uid 0 --gid 0 --numeric-owner -cf - rawtest.txt | head -c 520 | gzip -9 -n > rawtest-truncated.tar.gz
+//     : > rawtest-empty.txt
+//     gzip -9 -n -c rawtest-empty.txt > rawtest-empty.txt.gz
 //
 // gzip -n stores neither the file name nor the time; without it gzip stores both, and
 // libarchive then names the entry after the stored name. rawtest-truncated.tar.gz ends eight
 // bytes into the extended header of its first entry, so that header cannot be read.
+// rawtest-empty.txt.gz decompresses to nothing (rawtest-empty.txt itself is not kept).
 // rawtest.txt itself is the uncompressed file that is not an archive. Bare "seq 1 1000" would
 // not do for it: libarchive's mtree reader claims text whose lines each hold a single word,
 // which then opens and fails only at the first header (see MtreeTextTests.cs).
@@ -224,6 +227,30 @@ public class CompressedFileTests
         {
             File.Delete(emptyFile);
         }
+    }
+
+    // Compressed data that decompresses to nothing has no entry either: libarchive's empty format
+    // claims it, as it claims empty data (archive_read_support_format_empty.c:67-68), while the raw
+    // format, which gives any other compressed file its one entry, needs at least one byte
+    // (archive_read_support_format_raw.c:99-100).
+    [Test]
+    public void TestCompressedEmptyDataHasNoEntries()
+    {
+        const string fixture = "rawtest-empty.txt.gz";
+
+        using (var reader = new LibArchiveReader(fixture))
+        {
+            Assert.That(reader.FirstEntry(), Is.Null);
+            reader.Reset();
+            Assert.That(reader.Entries(), Is.Empty, "after Reset");
+        }
+
+        var bytes = File.ReadAllBytes(fixture);
+        using (var reader = new LibArchiveReader(new MemoryStream(bytes)))
+            Assert.That(reader.Entries(), Is.Empty, "stream");
+        using (var nonSeekable = new ReaderApiTests.NonSeekableStream(new MemoryStream(bytes)))
+        using (var reader = new LibArchiveReader(nonSeekable))
+            Assert.That(reader.Entries(), Is.Empty, "non-seekable stream");
     }
 
     private static void AssertEntries(LibArchiveReader reader, string expectedName)
