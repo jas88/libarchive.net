@@ -10,12 +10,14 @@ LibArchive.Net now provides comprehensive write support for creating archives in
 
 - **ZIP** - Widely compatible, supports AES encryption
 - **7-Zip (.7z)** - Excellent compression (no encryption: libarchive cannot encrypt 7-Zip archives)
-- **TAR** - Unix standard, combine with compression filters
+- **TAR** - Unix standard, combine with compression filters (written as restricted pax)
 - **Ustar** - TAR variant with extended metadata
-- **PAX** - Modern TAR with Unicode support
-- **CPIO** - Unix archive format
-- **ISO 9660** - CD-ROM filesystem
+- **PAX** - Modern TAR, with pax extended headers for what ustar cannot hold
+- **CPIO** - Unix archive format (SVR4 "newc")
+- **ISO 9660** - CD-ROM filesystem, with Joliet and Rock Ridge extensions
 - **XAR** - macOS package format (not on Linux, see below)
+
+Every format stores names with any Unicode characters: see [Entry Names](#entry-names).
 
 XAR is not available on Linux. libarchive's XAR support needs an XML library, and the Linux native
 libraries are built without one (`native/build-linux*.sh` configure libarchive with
@@ -440,6 +442,50 @@ void AddDirectory(
     bool preserveDirectoryStructure = true,
     IProgress<FileProgress>? progress = null)
 ```
+
+## Entry Names
+
+The `archivePath` given to `AddEntry`, `AddFile` and `AddDirectoryEntry` (and the paths that
+`AddFiles` and `AddDirectory` make) can hold any Unicode characters, whatever the locale of the
+process. Each format stores them as follows; libarchive does not normalize them, so each name is
+stored in the form it is given (a composed, NFC, name stays composed):
+
+| Format | Name stored as |
+|--------|----------------|
+| `Zip` | UTF-8, with the UTF-8 flag (general purpose bit 11) set on a name that is not ASCII, in the local and central directory headers |
+| `SevenZip` | UTF-16LE |
+| `Tar`, `Pax` | UTF-8 in a pax extended header's `path` record for a name that is not ASCII (or too long for ustar), and in the ustar header as far as it fits |
+| `Ustar` | UTF-8 in the name and prefix fields (100 and 155 bytes); ustar cannot declare a character set |
+| `Cpio` | UTF-8; cpio cannot declare a character set |
+| `Iso9660` | UTF-16BE in the Joliet directory, and UTF-8 in the Rock Ridge `NM` entries of the primary one (whose own ISO 9660 names allow only upper-case letters, digits and `_`, so libarchive replaces any other character with `_`) |
+| `Xar` | UTF-8 in the table of contents, base64-encoded (`enctype="base64"`) when the name has characters beyond Latin-1, as libarchive's XAR writer does |
+
+`LibArchiveReader` reads these names back unchanged. It reads a name whose format declares no
+character set (ustar, cpio, ZIP without the UTF-8 flag, Rock Ridge) as UTF-8, with U+FFFD for any
+invalid byte sequence; see "Entry Names" in the [README](../README.md#entry-names).
+
+### On Windows
+
+libarchive converts names to narrow (`char`) strings through the C runtime's locale, which a .NET
+process leaves as "C": Latin-1 for a name made only of Latin-1 characters, one byte per character,
+and UTF-8 for any other. So LibArchive.Net sets names in their UTF-16 form on Windows, which the
+pax, 7-Zip and XAR writers and Joliet convert exactly, and makes the ZIP, ustar and cpio writers
+store UTF-8 (libarchive's `hdrcharset=UTF-8` option). Every format then stores the bytes it stores
+on macOS and Linux, except in these cases:
+
+- **ISO 9660**: libarchive takes Rock Ridge names from the narrow form, so a Rock Ridge name made
+  only of Latin-1 characters, such as `Größe.txt`, is stored as Latin-1. The Joliet names are exact,
+  and are what Windows reads. `LibArchiveReader` prefers Rock Ridge names, as libarchive does, and
+  reads such a name back unchanged on Windows, but with U+FFFD on macOS and Linux, where other
+  readers of Rock Ridge names also see the Latin-1 bytes.
+- **ISO 9660 and XAR**: a parent directory that was not added as an entry is created by libarchive
+  from the narrow form of the path, and gets a wrong name if its name is not ASCII: in ISO 9660 a
+  wrong Joliet name, and in XAR a name encoded twice. Add such a directory with `AddDirectoryEntry`
+  before the entries in it. In ISO 9660, libarchive also finds each entry's parent directory by that
+  narrow form, so a directory with a Latin-1-only name that is not ASCII, such as `Café`, does not
+  match the path of an entry in it whose name has characters beyond Latin-1, such as
+  `Café/日本.txt`, which gets an implicit second `Café` directory: keep directory names in ISO 9660
+  images written on Windows ASCII, or out of that combination.
 
 ## Platform Support
 

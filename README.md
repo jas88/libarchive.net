@@ -98,6 +98,33 @@ var progress = new Progress<FileProgress>(p =>
 streamWriter.AddFiles(files, progress: progress);
 ```
 
+## Entry Names
+
+Entry names can hold any Unicode characters, on every platform and whatever the locale of the process.
+
+When writing, each format stores a name as below. libarchive does not normalize names: each is stored in the form it is given, so a name given composed (NFC) is stored composed.
+
+| Format | Name stored as |
+|--------|----------------|
+| ZIP | UTF-8, with the UTF-8 flag (general purpose bit 11) set on a name that is not ASCII |
+| 7-Zip | UTF-16LE |
+| TAR, PAX | UTF-8 in a pax `path` record for a name that is not ASCII, and in the ustar header as far as it fits |
+| Ustar, CPIO | UTF-8 (neither format can declare a character set) |
+| ISO 9660 | UTF-16BE in Joliet names, and UTF-8 in Rock Ridge names |
+| XAR | UTF-8, base64-encoded if the name has characters beyond Latin-1 |
+
+When reading, `Entry.Name` is:
+
+- the name decoded from the character set the archive declares, normalized to NFC (composed) by libarchive, for pax `path` records, ZIP entries with the UTF-8 flag or an Info-ZIP Unicode path field, and 7-Zip, XAR and Joliet names;
+- otherwise (ustar, GNU tar and cpio headers, ZIP entries without the UTF-8 flag, Rock Ridge names, and so on) the stored bytes read as UTF-8, as tools on macOS and Linux write them, without normalizing them. A byte sequence that is not valid UTF-8, as in a name in a legacy code page (a ZIP from an older Windows, in its OEM code page, for example), becomes U+FFFD, and the entry is still returned.
+
+An entry is always returned, with an empty name if libarchive cannot give one.
+
+Limits on Windows, where libarchive converts narrow strings through the C runtime's locale, which a .NET process leaves as "C" (Latin-1, one byte per character):
+
+- A name without a declared character set that is not valid UTF-8 is read as Latin-1 instead of with U+FFFD, because libarchive gives it in the same form as a decoded name made only of Latin-1 characters. For the same reason, a decoded name made only of Latin-1 characters whose Latin-1 bytes form valid UTF-8, such as `Ã©`, is read as that UTF-8 (`é`).
+- In ISO 9660 images, a Rock Ridge name made only of Latin-1 characters is stored as Latin-1, and in ISO 9660 and XAR, a parent directory that was not added as an entry is named wrongly if its name is not ASCII. See [Entry Names](docs/WRITE-SUPPORT.md#entry-names) in the write support guide.
+
 ## Installation
 
 ```bash
@@ -130,7 +157,7 @@ Native libraries for all supported platforms are included in the NuGet package.
 
 | Property/Method | Description |
 |-----------------|-------------|
-| `Name` | Entry filename/path |
+| `Name` | Entry filename/path (see [Entry Names](#entry-names)) |
 | `LengthBytes` | Uncompressed size in bytes, or `null` if it is not known |
 | `Type` | Entry type, a `LibArchiveReader.EntryType`: `RegularFile` or `Directory` (other kinds of entry, such as symbolic links, have no named value) |
 | `Stream` | Stream for reading entry content |

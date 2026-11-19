@@ -16,7 +16,8 @@ public partial class LibArchiveWriter
     /// Adds a single file to the archive.
     /// </summary>
     /// <param name="sourcePath">Path to the file on disk.</param>
-    /// <param name="archivePath">Path to use within the archive. If null, uses the filename only.</param>
+    /// <param name="archivePath">Path to use within the archive. If null, uses the filename only. Any Unicode
+    /// characters are allowed: see <see cref="ArchiveFormat"/> for how each format stores the name.</param>
     public void AddFile(string sourcePath, string? archivePath = null)
     {
         var fileInfo = new FileInfo(sourcePath);
@@ -30,7 +31,8 @@ public partial class LibArchiveWriter
     /// <summary>
     /// Adds a file with the given data to the archive.
     /// </summary>
-    /// <param name="archivePath">Path to use within the archive.</param>
+    /// <param name="archivePath">Path to use within the archive. Any Unicode characters are allowed: see
+    /// <see cref="ArchiveFormat"/> for how each format stores the name.</param>
     /// <param name="data">File content as byte array.</param>
     /// <param name="modificationTime">Optional modification time. If null, uses current time.</param>
     public void AddEntry(string archivePath, byte[] data, DateTime? modificationTime = null)
@@ -66,7 +68,8 @@ public partial class LibArchiveWriter
     /// <summary>
     /// Adds a directory entry to the archive.
     /// </summary>
-    /// <param name="archivePath">Path to use within the archive.</param>
+    /// <param name="archivePath">Path to use within the archive. Any Unicode characters are allowed: see
+    /// <see cref="ArchiveFormat"/> for how each format stores the name.</param>
     public void AddDirectoryEntry(string archivePath)
     {
         if (string.IsNullOrEmpty(archivePath))
