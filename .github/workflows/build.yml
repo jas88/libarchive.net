@@ -440,6 +440,9 @@ jobs:
             *.nupkg
           if-no-files-found: error
 
+  # Tests the package on Windows for .NET Framework 4.6.2 (the library's .NET Standard 2.0
+  # build) and for the modern .NET target (its newest build), which the package job tests on
+  # Linux. The job keeps its name and id, which other checks and jobs refer to.
   test-net462:
     name: Test package (.NET Framework 4.6.2 on Windows)
     needs: [package]
@@ -457,7 +460,8 @@ jobs:
         with:
           name: dist
           path: dist
-      - name: Test net462 against the package
+      - name: Restore the tests against the package
+        id: restore
         shell: bash
         env:
           PACKAGE_VERSION: ${{ needs.package.outputs.package-version }}
@@ -465,7 +469,31 @@ jobs:
           # LibArchive.Net may only come from dist (not a cache or nuget.org); see the script.
           ./scripts/write-package-test-nuget-config.sh dist "$RUNNER_TEMP/nuget-test"
           dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --configfile "$RUNNER_TEMP/nuget-test/nuget.config" -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION"
+      - name: Test net462 against the package
+        shell: bash
+        env:
+          PACKAGE_VERSION: ${{ needs.package.outputs.package-version }}
+        run: |
           dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net462 --configuration Release --no-restore --nologo -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION"
+      # Runs whether or not the net462 tests passed, so that a failure shows for each framework.
+      - name: Test the modern .NET target against the package
+        if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
+        shell: bash
+        env:
+          PACKAGE_VERSION: ${{ needs.package.outputs.package-version }}
+        run: |
+          # Determine the modern .NET test target from the project, as the package job does
+          TEST_TFMS=$(dotnet msbuild Test.LibArchive.Net/Test.LibArchive.Net.csproj -getProperty:TargetFrameworks \
+            -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION" | tail -1 | tr -d ' \r')
+          TEST_TFM=$(echo "$TEST_TFMS" | tr ';' '\n' | grep -E '^net[0-9]+\.[0-9]+$' | head -1)
+          if [ -z "$TEST_TFM" ]; then
+            echo "::error::No modern .NET target framework found in test project TargetFrameworks '$TEST_TFMS'"
+            exit 1
+          fi
+          echo "Testing modern target framework: $TEST_TFM (from '$TEST_TFMS')"
+
+          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework "$TEST_TFM" --configuration Release --no-restore --nologo \
+            -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION"
 
   # Required status check: the branch protection for main requires a check with exactly this
   # name, so do not rename it without updating the rule. The one job that used to carry the
