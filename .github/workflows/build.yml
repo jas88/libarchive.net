@@ -24,7 +24,11 @@ env:
   # Bump to invalidate every cached native binary and configure result (e.g. after a
   # runner toolchain change that native/** does not capture).
   NATIVE_CACHE_VERSION: v1
+  # LLVM-MinGW (win-arm64 only) and the SHA-256 of its release asset
+  # llvm-mingw-<version>-ucrt-ubuntu-20.04-x86_64.tar.xz: update the two together.
+  # The release publishes no checksum, so the hash is of the asset as downloaded.
   LLVM_MINGW_VERSION: '20240619'
+  LLVM_MINGW_SHA256: 27d33157cc252c29ad6f777a96a0d94176fea1b534ff09b5071485def143b90e
   # xz 5.8.2 was built with automake 1.18.1 and autoconf 2.72
   AUTOCONF_VERSION: '2.72'
   AUTOCONF_SHA256: ba885c1319578d6c94d46e9b0dceb4014caafe2490e437a0dbca3f270a223f5a
@@ -74,14 +78,18 @@ jobs:
       - name: Cache library downloads
         uses: actions/cache@v6.1.0
         with:
-          path: ~/downloads
-          key: library-downloads-${{ hashFiles('native/build-config.sh') }}
+          # DOWNLOAD_CACHE in native/build-config.sh: this path unless XDG_CACHE_HOME
+          # names another directory (the build log prints the one in use)
+          path: ~/.cache/libarchive-net/downloads
+          # One cache per job (see the native job's download cache)
+          key: library-downloads-osx-universal-${{ hashFiles('native/build-config.sh') }}
           restore-keys: |
-            library-downloads-
+            library-downloads-osx-universal-
       - name: Cache configure results
         uses: actions/cache@v6.1.0
         with:
-          path: ~/config-cache
+          # CONFIG_CACHE_DIR in native/build-config.sh (see the download cache above)
+          path: ~/.cache/libarchive-net/config-cache
           # Exact match only: a configure cache from another toolchain or flag set makes
           # autoconf abort ("`CC' has changed since the previous run").
           key: config-cache-macos-${{ env.NATIVE_CACHE_VERSION }}-${{ hashFiles('native/build-*.sh') }}
@@ -129,12 +137,30 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { target: linux-x64,   kind: linux,   script: build-linux.sh,       output: libarchive-linux-x64.so }
-          - { target: linux-arm64, kind: linux,   script: build-linux-arm64.sh, output: libarchive-linux-arm64.so }
-          - { target: linux-arm,   kind: linux,   script: build-linux-arm.sh,   output: libarchive-linux-arm.so }
-          - { target: win-x86,     kind: windows, arch: x86,                    output: archive-x86.dll }
-          - { target: win-x64,     kind: windows, arch: x64,                    output: archive-x64.dll }
-          - { target: win-arm64,   kind: windows, arch: arm64,                  output: archive-arm64.dll }
+          - target: linux-x64
+            kind: linux
+            script: build-linux.sh
+            output: libarchive-linux-x64.so
+          - target: linux-arm64
+            kind: linux
+            script: build-linux-arm64.sh
+            output: libarchive-linux-arm64.so
+          - target: linux-arm
+            kind: linux
+            script: build-linux-arm.sh
+            output: libarchive-linux-arm.so
+          - target: win-x86
+            kind: windows
+            arch: x86
+            output: archive-x86.dll
+          - target: win-x64
+            kind: windows
+            arch: x64
+            output: archive-x64.dll
+          - target: win-arm64
+            kind: windows
+            arch: arm64
+            output: archive-arm64.dll
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
@@ -165,15 +191,22 @@ jobs:
         if: steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache@v6.1.0
         with:
-          path: ~/downloads
-          key: library-downloads-${{ hashFiles('native/build-config.sh') }}
+          # DOWNLOAD_CACHE in native/build-config.sh: this path unless XDG_CACHE_HOME
+          # names another directory (the build log prints the one in use)
+          path: ~/.cache/libarchive-net/downloads
+          # One cache per job, because each job downloads different files (only the
+          # Linux jobs fetch a Bootlin toolchain and mbedTLS). With one key for all of
+          # them, only the first job to finish could save the cache, and runs that hit
+          # the key never save it again, so the cache held that one job's downloads.
+          key: library-downloads-${{ matrix.target }}-${{ hashFiles('native/build-config.sh') }}
           restore-keys: |
-            library-downloads-
+            library-downloads-${{ matrix.target }}-
       - name: Cache configure results
         if: steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache@v6.1.0
         with:
-          path: ~/config-cache
+          # CONFIG_CACHE_DIR in native/build-config.sh (see the download cache above)
+          path: ~/.cache/libarchive-net/config-cache
           # Exact match only: a configure cache from another toolchain or flag set makes
           # autoconf abort ("`CC' has changed since the previous run").
           key: ${{ steps.cache-key.outputs.config-key }}
@@ -197,7 +230,13 @@ jobs:
         if: steps.native-cache.outputs.cache-hit != 'true' && matrix.target == 'win-arm64'
         run: |
           LLVM_MINGW="llvm-mingw-${LLVM_MINGW_VERSION}-ucrt-ubuntu-20.04-x86_64"
-          curl -fsSL "https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/${LLVM_MINGW}.tar.xz" | tar xJ -C "$RUNNER_TEMP"
+          ARCHIVE="$RUNNER_TEMP/${LLVM_MINGW}.tar.xz"
+          curl -fsSL --retry 3 --retry-delay 5 -o "$ARCHIVE" \
+            "https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/${LLVM_MINGW}.tar.xz"
+          # Verified before anything is unpacked; a mismatch fails the job
+          echo "${LLVM_MINGW_SHA256}  ${ARCHIVE}" | sha256sum -c -
+          tar xJf "$ARCHIVE" -C "$RUNNER_TEMP"
+          rm -f "$ARCHIVE"
           echo "$RUNNER_TEMP/${LLVM_MINGW}/bin" >> "$GITHUB_PATH"
       - name: Verify MinGW compilers are installed
         if: steps.native-cache.outputs.cache-hit != 'true' && matrix.kind == 'windows'
@@ -379,7 +418,8 @@ jobs:
           dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --configfile "$RUNNER_TEMP/nuget-test/nuget.config" -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION"
 
           # Determine the modern .NET test target from the project (generated by scripts/generate-build-props.sh)
-          TEST_TFMS=$(dotnet msbuild Test.LibArchive.Net/Test.LibArchive.Net.csproj -getProperty:TargetFrameworks -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION" | tail -1 | tr -d ' \r')
+          TEST_TFMS=$(dotnet msbuild Test.LibArchive.Net/Test.LibArchive.Net.csproj -getProperty:TargetFrameworks \
+            -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION" | tail -1 | tr -d ' \r')
           TEST_TFM=$(echo "$TEST_TFMS" | tr ';' '\n' | grep -E '^net[0-9]+\.[0-9]+$' | head -1)
           if [ -z "$TEST_TFM" ]; then
             echo "::error::No modern .NET target framework found in test project TargetFrameworks '$TEST_TFMS'"
@@ -388,7 +428,8 @@ jobs:
           echo "Testing modern target framework: $TEST_TFM (from '$TEST_TFMS')"
 
           dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework "$TEST_TFM" --configuration Release --no-restore -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION"
-          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework "$TEST_TFM" --configuration Release --no-build --nologo -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION"
+          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework "$TEST_TFM" --configuration Release --no-build --nologo \
+            -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION"
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4.39.3
       - name: Archive production artifacts

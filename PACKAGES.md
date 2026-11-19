@@ -6,26 +6,25 @@
 
 ### Overview
 
-LibArchive.Net is a .NET wrapper for the native libarchive compression library, providing read-only access to a wide variety of archive and compression formats including: zip, rar, 7zip, tar, gzip, bzip2, lzop, and lzma.
+LibArchive.Net is a .NET wrapper for the native libarchive library, providing read and write access to a wide variety of archive and compression formats, including zip, rar (read only), 7zip, tar, gzip, bzip2, xz, lzma, lzop, zstd and lz4.
 
 ### Key Features
 
-- **Multi-Format Support**: Read archives in zip, rar, 7zip, tar, gzip, bzip2, lzop, lzma formats
+- **Reading**: zip, rar, 7zip, tar, cpio, ISO 9660 and other archive formats, compressed with gzip, bzip2, xz, lzma, lzop, zstd, lz4 and more, including password-protected ZIP archives (traditional PKWARE and AES)
+- **Writing**: ZIP, 7-Zip, TAR (also Ustar and PAX), CPIO, ISO 9660 and XAR archives (XAR not on Linux), compressed with Gzip, Bzip2, XZ, LZMA, LZ4, Zstd, Compress or LZIP, and encrypted ZIP archives (AES-128, AES-256 or traditional PKWARE)
 - **Cross-Platform**: Native libraries included for:
-  - Windows: x86, x64, ARM64
-  - Linux: x64, musl-x64
-  - macOS: x64, ARM64 (Apple Silicon)
-- **Native AOT Compatible**: Full support for Native AOT compilation (.NET 8+)
-- **Trimming Ready**: Optimized for trimmed deployments (.NET 6+)
-- **Multi-Targeting**: Supports .NET Standard 2.0, .NET 6, .NET 8, and .NET 9
-- **Zero Dependencies**: All native libraries are bundled in the package
+  - Windows: x86, x64, ARM64 (`win-x86`, `win-x64`, `win-arm64`)
+  - Linux: x64, ARM (32-bit), ARM64, on glibc and on musl (`linux-x64`, `linux-arm`, `linux-arm64`, `linux-musl-x64`, `linux-musl-arm`, `linux-musl-arm64`)
+  - macOS: x64, ARM64 (Apple Silicon) (`osx-x64`, `osx-arm64`)
+- **Native AOT and Trimming**: Compatible on .NET 10 and later
+- **No Native Dependencies to Install**: The native libraries are in the package
 
 ### Target Frameworks
 
-- **.NET Standard 2.0**: Broad compatibility with .NET Framework 4.6.1+, Unity, Xamarin
-- **.NET 6.0**: LTS support (EOL November 2024)
-- **.NET 8.0**: Current LTS with Native AOT support
-- **.NET 9.0**: Latest features and performance improvements
+- **.NET Standard 2.0**: .NET Framework 4.6.1 and later, and Mono
+- **.NET**: A build for each current .NET version (the list in `LibArchive.Net/Directory.Build.props`, which `scripts/generate-build-props.sh` writes for the SDK that builds the package). These builds are trimming and Native AOT compatible
+
+An app on a .NET version that has no build of its own, such as .NET 8 or .NET 9, gets the .NET Standard 2.0 build, which is not marked as trimming or Native AOT compatible.
 
 ### Installation
 
@@ -38,44 +37,53 @@ dotnet add package LibArchive.Net
 ```csharp
 using LibArchive.Net;
 
-// Open an archive
-using var reader = LibArchiveReader.Open("archive.7z");
+// Read every entry of an archive
+using (var reader = new LibArchiveReader("archive.7z"))
+{
+    foreach (var entry in reader.Entries())
+    {
+        Console.WriteLine($"File: {entry.Name}, Size: {entry.LengthBytes}");
+        byte[] content = entry.ReadAllBytes();
+    }
+}
 
-// Get current entry information
-var entry = reader.CurrentEntry();
-Console.WriteLine($"File: {entry.Name}, Size: {entry.Size}");
-
-// Extract current entry
-reader.ExtractCurrentEntry("output/path");
+// Write a gzip-compressed TAR archive
+using (var writer = new LibArchiveWriter("archive.tar.gz", ArchiveFormat.Tar, CompressionType.Gzip))
+{
+    writer.AddFile("document.txt");
+}
 ```
+
+See [README.md](README.md) and [docs/WRITE-SUPPORT.md](docs/WRITE-SUPPORT.md) for more.
 
 ### Multi-Volume Archive Support
 
-LibArchive.Net supports multi-volume RAR archives. All volume files must be in the same directory:
+LibArchive.Net supports multi-volume RAR archives. Pass every volume, in order:
 
 ```csharp
-// Open the first volume of a multi-volume RAR archive
-using var reader = LibArchiveReader.Open("archive.part00001.rar");
-// The library automatically finds and reads subsequent volumes
+var volumes = new[] { "archive.part00001.rar", "archive.part00002.rar", "archive.part00003.rar" };
+using var reader = new LibArchiveReader(volumes);
 ```
 
 ### Platform-Specific Notes
 
 #### Windows
 - ARM64 support requires Windows 10 ARM64 or later
-- Native libraries are built with MinGW (LLVM for ARM64)
+- Native libraries are built with MinGW-w64 (LLVM-MinGW for ARM64)
+- ZIP encryption uses the operating system's cryptography (CNG)
 
 #### Linux
-- Native library built with musl-libc for maximum portability
+- Native library built with musl-libc and linked into one self-contained file, so the same library serves the glibc and musl runtimes
 - Compatible with both glibc and musl-based distributions
+- No XAR support: libarchive needs an XML library for it, and the Linux libraries are built without one
 
 #### macOS
 - Universal binary supporting both Intel (x64) and Apple Silicon (ARM64)
-- Minimum supported version: macOS 10.15 (Catalina)
+- ZIP encryption uses the operating system's cryptography (CommonCrypto)
 
 ### Native AOT and Trimming
 
-LibArchive.Net is fully compatible with Native AOT and assembly trimming:
+On .NET 10 and later, LibArchive.Net is compatible with Native AOT and assembly trimming:
 
 ```xml
 <PropertyGroup>
@@ -88,22 +96,19 @@ The package is annotated with trim analysis attributes to ensure safe trimming b
 
 ### Known Limitations
 
-1. **Read-Only**: Currently only supports reading archives (no write/create support)
-2. **Multi-Volume Archives**: Only RAR multi-volume archives are tested; all volumes must be in the same directory
+1. **Encryption**: ZIP only. libarchive can neither read nor write encrypted 7-Zip or RAR archives, and its ZIP writer has no AES-192 (reading handles it)
+2. **XAR**: Not available on Linux (see above)
+3. **Multi-Volume Archives**: Only RAR multi-volume archives are tested
 
-### Build Information
+### Bundled Native Libraries
 
-- **Native libarchive version**: 3.7.3
-- **Compression libraries included**:
-  - lz4 1.9.4
-  - zstd 1.5.6
-  - lzokay (commit db2df1f; provides lzop support in place of the GPL-licensed liblzo2)
-  - libxml2 2.12.6
-  - zlib 1.3.1
-  - xz 5.4.6
-  - bzip2 1.0.8
-- **Cryptography library included (Linux only)**:
-  - mbedTLS 3.6.8 (its crypto library only, for ZIP AES encryption and digests; the macOS and Windows libraries use the operating system's cryptography instead)
+Each native library is libarchive with these libraries statically linked into it. Their versions are pinned in [native/build-config.sh](native/build-config.sh), and their licence notices are in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt), which the package also contains.
+
+- **All platforms**: zlib, bzip2, liblzma (XZ Utils), Zstandard, LZ4, and lzokay, which provides lzop support in place of the GPL-licensed liblzo2
+- **Windows and macOS**: libxml2, for the XAR format
+- **Linux**: the Mbed TLS crypto library (for ZIP AES encryption and digests; Windows and macOS use the operating system's cryptography instead) and musl libc
+
+They also contain some code from their build toolchains, which THIRD-PARTY-NOTICES.txt describes as well.
 
 ### License
 

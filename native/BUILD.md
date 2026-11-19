@@ -82,7 +82,7 @@ This will automatically detect your platform and build the appropriate libraries
 ./build-all.sh --all --package
 ```
 
-`--linux` builds the Linux x64, ARMv7 and ARM64 libraries. On Linux, `--all` builds Linux and Windows, skipping macOS with a warning, and stops with an error if a MinGW cross-compiler is missing (see the [Windows requirements](#windows-x86-x64-arm64)). On macOS it builds macOS and skips Linux and Windows with a warning. Unless it has stopped, it then creates the package. `--package` packs version `$PACKAGE_VERSION`, or `0.0.0-dev` if it is not set (for example `PACKAGE_VERSION=1.2.3 ./build-all.sh --package`), into the repository root.
+`--linux` builds the Linux x64, ARMv7 and ARM64 libraries. On Linux, `--all` builds Linux and Windows, skipping macOS with a warning, and stops with an error if a MinGW cross-compiler is missing (see the [Windows requirements](#windows-x86-x64-arm64)). On macOS it builds macOS and skips Linux and Windows with a warning. Unless it has stopped, it then creates and tests the package. `--package` packs version `$PACKAGE_VERSION`, or `0.0.0-dev` if it is not set (for example `PACKAGE_VERSION=1.2.3 ./build-all.sh --package`), and runs the tests against that package as CI does, following [Testing a package locally](#testing-a-package-locally): on the test project's .NET target, and on Windows on .NET Framework 4.6.2 as well. A package that passes them is put in the repository root. The version must be a SemVer 2.0 version; build metadata (after a `+`) is not part of a package version, so `1.2.3+abc` is packed as `1.2.3`.
 
 ## Platform-Specific Requirements
 
@@ -96,7 +96,9 @@ This will automatically detect your platform and build the appropriate libraries
 - make
 - sccache (the scripts compile through it)
 - autoconf, automake, libtool and pkg-config (libxml2 is built with its `autogen.sh`)
-- unzip
+- tar, gzip, xz and bzip2, which unpack the downloads (`.tar.gz`, `.tar.xz` and `.tar.bz2` archives)
+- file (each script runs it on the library it built)
+- unzip, to list a package's contents (see [Testing Changes](#testing-changes))
 - For the ARMv7 and ARM64 load tests: QEMU user-mode emulation (`qemu-arm`,
   `qemu-aarch64`; Debian/Ubuntu package `qemu-user`)
 
@@ -108,6 +110,27 @@ linked into it, so the same file loads in glibc and musl processes.
 - Uses musl-libc cross-compiler for maximum portability
 - All dependencies are statically linked
 - Build time: ~20-30 minutes (the musl toolchain is a Bootlin prebuilt release, downloaded rather than built)
+
+**Bootlin toolchains:** each script downloads its toolchain (`TOOLCHAIN_*_URL` in
+`build-config.sh`, release `BOOTLIN_RELEASE`) with `download_toolchain`, which verifies
+it against the `<release>.sha256` file that Bootlin publishes beside each
+`<release>.tar.xz`:
+- The tarball is downloaded to a temporary file in the download cache, checked, and
+  only then renamed into place, so a download that fails or is cut short is never
+  used. An interrupted download can leave a `*.tmp.XXXXXX` file behind; nothing reads
+  it, and it can be deleted.
+- The checksum file is kept beside the tarball, so a cached tarball, including one
+  restored by CI's cache, is checked again on every use without a download. One that
+  does not match is deleted and downloaded again.
+- This catches a truncated or corrupted download, an error page served in place of the
+  tarball, and a damaged cache. It does not protect against a compromise of
+  toolchains.bootlin.com, which serves the checksum as well as the tarball.
+- Pinning the hashes in `build-config.sh` would close that gap, but Renovate updates
+  `BOOTLIN_RELEASE` (`.github/renovate.json`), and its datasource, Bootlin's listing
+  page, gives it release names and no hashes. Every toolchain update would then need
+  three hashes added by hand, and fail CI without them, so they are not pinned. The
+  library sources, whose updates (`scripts/check-native-updates.sh`) compute their
+  hashes, are pinned.
 
 **How the library is linked and tested** (all three Linux scripts use the functions
 in `build-linux-common.sh`):
@@ -214,6 +237,8 @@ LibArchive.Net/runtimes/
 
 Run on their own, the Linux and macOS scripts leave their library in `~/libarchive-native/`, and `build-windows.sh` leaves its DLL in the current directory.
 
+All the scripts keep two caches between builds, in a directory of their own, `$XDG_CACHE_HOME/libarchive-net/` (`~/.cache/libarchive-net/` when `XDG_CACHE_HOME` is unset): `downloads/` holds the downloaded source and toolchain tarballs, and `config-cache/` the configure results. Set `XDG_CACHE_HOME` to move them. CI caches the same two directories.
+
 ## Updating Library Versions
 
 A weekly workflow runs `scripts/check-native-updates.sh`, which looks for new releases and opens a pull request that updates their version and checksum variables; see [scripts/README.md](../scripts/README.md). To update library versions by hand:
@@ -247,7 +272,7 @@ The built libraries are cached between runs, keyed on the contents of `native/**
 **Problem:** "Failed to download ... toolchain" or "Toolchain compiler not found"
 - Check internet connectivity to toolchains.bootlin.com (the scripts download a prebuilt Bootlin musl toolchain)
 - Check that `BOOTLIN_RELEASE` in `build-config.sh` names a published Bootlin release
-- Delete the toolchain tarball from the download cache (`~/downloads`) if an earlier download was cut short: a cached tarball is reused without being checked
+- A cached toolchain is checked on every use, and downloaded again if it does not match Bootlin's checksum (see "Bootlin toolchains" above). If every attempt reports that the download does not match, the server is serving a tarball that differs from its own published checksum: try again later rather than working around the check
 
 ### macOS Build Issues
 
@@ -294,13 +319,41 @@ Also add it to the update checker: see "Adding a library" in [scripts/README.md]
 unzip -l ../LibArchive.Net.*.nupkg | grep runtimes
 ```
 
+### Testing a package locally
+
+CI packs the libraries of all eleven runtimes and runs the tests against that package rather than the project (the package and test-net462 jobs in `.github/workflows/build.yml`). To do the same locally, first put native libraries in `LibArchive.Net/runtimes/<rid>/native/`, laid out as in [Directory Structure](#directory-structure): `build-all.sh` puts there what it builds, and libraries built elsewhere, such as the artifacts of a CI run, can be copied in. Git ignores those folders, so none of them can be committed by accident. The tests load the library of the machine's own runtime, so the package needs at least that one. A pack that lacks the library of any runtime warns (`LIBARCHIVENET001`) and names those runtimes: the package installs on them, but fails there at run time.
+
+Then, from the repository root:
+
+```bash
+VERSION=0.0.0-local
+# MinVer sets the version from the git tags, overriding PackageVersion; MinVerVersionOverride
+# fixes it, so that the tests can ask for that version
+dotnet pack LibArchive.Net/LibArchive.Net.csproj -c Release -o artifacts/package "-p:MinVerVersionOverride=$VERSION"
+# A NuGet config under which LibArchive.Net comes from artifacts/package only, never from a
+# cache or nuget.org. Run it again after every pack: it empties the packages folder it sets up
+./scripts/write-package-test-nuget-config.sh artifacts/package artifacts/package-test
+# Restore, build and run the tests against the package (UseLocalPackage) instead of the project
+dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --configfile artifacts/package-test/nuget.config -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$VERSION"
+# The test project's .NET target: the first netN.N in its TargetFrameworks (see below)
+TFM=$(dotnet msbuild Test.LibArchive.Net/Test.LibArchive.Net.csproj -getProperty:TargetFrameworks | tr -d '\r' | tr ';' '\n' | grep -m1 -E '^net[0-9]+\.[0-9]+$')
+dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework "$TFM" -c Release --no-restore -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$VERSION"
+```
+
+`TFM` is the test project's .NET target, the first one in `Test.LibArchive.Net/Directory.Build.props`, which `scripts/generate-build-props.sh` writes for the installed SDK. On Windows, `--framework net462` runs the tests on .NET Framework, as the test-net462 job does. `artifacts/` is ignored by git.
+
+`./build-all.sh --package` (see [Quick Start](#quick-start)) runs these steps itself, with the version from `PACKAGE_VERSION`, the .NET target read from the test project as CI reads it, and net462 on Windows only. It packs into a temporary directory, which also holds the NuGet config and its packages folder and is deleted when the script ends, and copies the package to the repository root only if the tests pass.
+
 ### Cleaning Build Artifacts
 
 ```bash
 # Clean downloaded sources and build artifacts
 rm -rf local* {bzip2,libarchive,libxml2,lz4,lzokay,mbedtls,xz,zlib,zstd}-*
-# Linux and macOS build directories, their output, and the configure cache
-rm -rf ~/libarchive-linux-* ~/libarchive-macos ~/libarchive-native ~/config-cache
+# Linux and macOS build directories, their output, and the configure cache. The cache
+# directory is chosen as build-config.sh chooses it: XDG_CACHE_HOME if it is an absolute
+# path, ~/.cache otherwise
+case "${XDG_CACHE_HOME:-}" in /*) cache_home=$XDG_CACHE_HOME ;; *) cache_home=$HOME/.cache ;; esac
+rm -rf ~/libarchive-linux-* ~/libarchive-macos ~/libarchive-native "$cache_home/libarchive-net/config-cache"
 rm -f *.so *.dylib *.dll test nativetest
 ```
 
@@ -314,7 +367,7 @@ Build times on GitHub Actions runners (approximate):
 
 Optimization strategies:
 - Use ccache and sccache (already enabled in workflow)
-- Cache `~/config-cache` between runs (already enabled)
+- Cache the download and configure caches (`~/.cache/libarchive-net/`) between runs (already enabled)
 - Pre-built Bootlin musl toolchains (already used)
 
 ## License
@@ -326,8 +379,10 @@ The libraries being built have their own licenses:
 - zlib: Zlib
 - bzip2: BSD-like
 - lz4: BSD-2-Clause
-- zstd: BSD + GPLv2
+- zstd: BSD-3-Clause (upstream offers BSD OR GPLv2)
 - lzokay: MIT
-- xz (liblzma): Public Domain
+- xz (liblzma): 0BSD (BSD Zero Clause) since XZ Utils 5.6.0; earlier releases were public domain
 - libxml2: MIT
 - mbedTLS (Linux only): Apache-2.0 (upstream offers Apache-2.0 OR GPL-2.0-or-later)
+
+[THIRD-PARTY-NOTICES.txt](../THIRD-PARTY-NOTICES.txt), which the package also contains, has their full notices, and those of the code that the build toolchains link into the native libraries.
