@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using LibArchive.Net;
 using NUnit.Framework;
 
@@ -52,13 +54,21 @@ public class BlockSizeTests
         Assert.That(memoryWriter.ToArray(), Has.Length.EqualTo(expectedSize), "memory, default block size");
     }
 
+    // The same entries make the same bytes whatever the block size, and whether they go to a file,
+    // a stream or memory. Every entry has the same modification time; ISO 9660 images also record
+    // the time they were written, which WithoutWriteTime takes out.
     [TestCase(ArchiveFormat.Tar)]
     [TestCase(ArchiveFormat.Pax)]
+    [TestCase(ArchiveFormat.Ustar)]
+    [TestCase(ArchiveFormat.Cpio)]
     [TestCase(ArchiveFormat.Zip)]
     [TestCase(ArchiveFormat.SevenZip)]
+    [TestCase(ArchiveFormat.Iso9660)]
     public void TestBlockSizeDoesNotChangeTheArchive(ArchiveFormat format)
     {
-        var reference = WriteToStream(format, 10240, large: true);
+        byte[] Comparable(byte[] archive) => format == ArchiveFormat.Iso9660 ? WithoutWriteTime(archive) : archive;
+
+        var reference = Comparable(WriteToStream(format, 10240, large: true));
 
         foreach (var blockSize in BlockSizes)
         {
@@ -68,15 +78,60 @@ public class BlockSizeTests
                 writer.AddEntry("b.bin", Large, MTime);
             }
 
-            var stream = WriteToStream(format, blockSize, large: true);
-            var memory = WriteToMemory(format, blockSize, large: true);
-
-            Assert.That(File.ReadAllBytes(_path), Has.Length.EqualTo(reference.Length), $"file, blockSize {blockSize}");
-            Assert.That(stream, Has.Length.EqualTo(reference.Length), $"stream, blockSize {blockSize}");
-            Assert.That(memory, Has.Length.EqualTo(reference.Length), $"memory, blockSize {blockSize}");
-            // The memory writer is a stream writer with a MemoryStream of its own
-            Assert.That(memory, Is.EqualTo(stream), $"memory and stream, blockSize {blockSize}");
+            Assert.That(Comparable(File.ReadAllBytes(_path)), Is.EqualTo(reference), $"file, blockSize {blockSize}");
+            Assert.That(Comparable(WriteToStream(format, blockSize, large: true)), Is.EqualTo(reference), $"stream, blockSize {blockSize}");
+            Assert.That(Comparable(WriteToMemory(format, blockSize, large: true)), Is.EqualTo(reference), $"memory, blockSize {blockSize}");
         }
+    }
+
+    // An ISO 9660 image records the time libarchive wrote it out (time() when the writer closes:
+    // archive_write_set_format_iso9660.c:1857-1877) in three forms. Each volume descriptor's
+    // creation, modification and effective dates hold it as 17 bytes ("YYYYMMDDhhmmsscc" and the
+    // offset from GMT, ECMA-119 8.4.26.1), the directories that libarchive adds itself (the root
+    // here) have it as their 7-byte recording date (9.1.5) and Rock Ridge TF times, and the
+    // information block after the descriptors starts with "INFO " and its ctime() text. This zeroes
+    // every occurrence of the image's own time in each form, taken from its primary volume
+    // descriptor, so that images written at different times compare equal when every other byte
+    // does.
+    private static byte[] WithoutWriteTime(byte[] iso)
+    {
+        const int primaryVolumeDescriptor = 16 * 2048;
+        Assert.That(Encoding.ASCII.GetString(iso, primaryVolumeDescriptor + 1, 5), Is.EqualTo("CD001"));
+
+        var dateTime = iso.Skip(primaryVolumeDescriptor + 813).Take(17).ToArray();
+        var digits = Encoding.ASCII.GetString(dateTime, 0, 14);
+        byte Field(int offset, int length, int bias = 0) =>
+            (byte)(int.Parse(digits.Substring(offset, length), NumberStyles.None, CultureInfo.InvariantCulture) - bias);
+        var recordingDate = new[]
+        {
+            Field(0, 4, 1900), Field(4, 2), Field(6, 2), Field(8, 2), Field(10, 2), Field(12, 2), dateTime[16],
+        };
+
+        var result = (byte[])iso.Clone();
+        Assert.That(ZeroEvery(result, dateTime), Is.EqualTo(6), "creation, modification and effective dates of two descriptors");
+        Assert.That(ZeroEvery(result, recordingDate), Is.GreaterThan(0), "recording dates");
+
+        // ctime() text: "Www Mmm dd hh:mm:ss yyyy\n", 25 characters
+        var info = NameEncodingTests.IndexOf(result, Encoding.ASCII.GetBytes("INFO "));
+        Assert.That(info, Is.GreaterThan(primaryVolumeDescriptor), "information block");
+        Assert.That(result[info + 5 + 24], Is.EqualTo((byte)'\n'), "ctime() text");
+        Array.Clear(result, info + 5, 25);
+        return result;
+    }
+
+    // Zeroes each occurrence of the pattern, and returns how many there were
+    private static int ZeroEvery(byte[] data, byte[] pattern)
+    {
+        var count = 0;
+        for (var i = 0; i + pattern.Length <= data.Length; i++)
+        {
+            if (!data.AsSpan(i, pattern.Length).SequenceEqual(pattern))
+                continue;
+            Array.Clear(data, i, pattern.Length);
+            count++;
+            i += pattern.Length - 1;
+        }
+        return count;
     }
 
     // libarchive writes a block to the file as soon as it is full, so the bytes on disk before
