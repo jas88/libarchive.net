@@ -119,10 +119,11 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     /// <param name="password">Optional password for encrypted archives. Supports ZIP archives with traditional PKWARE or AES encryption. RAR and 7z encrypted archives are not supported by libarchive.</param>
     /// <remarks>
     /// A single compressed file that is not an archive, such as a plain <c>.gz</c>, <c>.bz2</c>
-    /// or <c>.xz</c> file, is read as an archive holding one entry; see <see cref="Entries"/>.
+    /// or <c>.xz</c> file, is read as an archive holding one entry; see <see cref="Entries"/>. An
+    /// empty file opens as an archive with no entries.
     /// </remarks>
     /// <exception cref="ApplicationException">Thrown when the archive cannot be opened, including when the file is
-    /// neither an archive nor compressed (message "Unrecognized archive format").</exception>
+    /// not empty and is neither an archive nor compressed (message "Unrecognized archive format").</exception>
     /// <exception cref="NotSupportedException">Thrown when attempting to read an encrypted RAR or 7z archive (not supported by libarchive).</exception>
     public LibArchiveReader(string filename, uint blockSize = 1<<20, string? password = null) : base(true)
     {
@@ -171,7 +172,8 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     /// single entry. The raw format is not simply registered with the others because it accepts
     /// any data, and libarchive only reports the format it chose once a header has been read: data
     /// that is neither an archive nor compressed would then open without error. Such data still
-    /// fails here with libarchive's own error, "Unrecognized archive format".
+    /// fails here with libarchive's own error, "Unrecognized archive format", unless it is empty:
+    /// libarchive's empty format reads empty data as an archive with no entries.
     /// Compressed text can also be claimed by the mtree format and fail only at its first header;
     /// <see cref="ReadNextHeader"/> then reads it as raw data.
     /// </remarks>

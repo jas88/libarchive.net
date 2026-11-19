@@ -175,8 +175,8 @@ public class CompressedFileTests
         Assert.That(ex!.Message, Is.EqualTo("Truncated tar archive detected while reading pax attribute name"));
     }
 
-    // Data that is neither an archive nor compressed fails as it did before the raw format
-    // was supported: in the constructor, with libarchive's own message.
+    // Non-empty data that is neither an archive nor compressed fails as it did before the raw
+    // format was supported: in the constructor, with libarchive's own message.
     [Test]
     public void TestUncompressedNonArchiveStillThrows()
     {
@@ -195,12 +195,35 @@ public class CompressedFileTests
         Assert.That(fromNonSeekable!.Message, Is.EqualTo(UnrecognizedFormat));
     }
 
+    // Empty data is not an unrecognized format: libarchive reads it as an archive with no
+    // entries, from a stream (seekable or not), a file or a single volume alike.
     [Test]
     public void TestEmptyDataIsStillAnEmptyArchive()
     {
-        using var reader = new LibArchiveReader(new MemoryStream());
+        using (var reader = new LibArchiveReader(new MemoryStream()))
+        {
+            Assert.That(reader.FirstEntry(), Is.Null);
+            reader.Reset();
+            Assert.That(reader.Entries(), Is.Empty, "after Reset");
+        }
 
-        Assert.That(reader.FirstEntry(), Is.Null);
+        using (var nonSeekable = new ReaderApiTests.NonSeekableStream(new MemoryStream()))
+        using (var reader = new LibArchiveReader(nonSeekable))
+            Assert.That(reader.Entries(), Is.Empty, "non-seekable stream");
+
+        var emptyFile = Path.Combine(Path.GetTempPath(), $"empty-{Guid.NewGuid():N}.bin");
+        File.WriteAllBytes(emptyFile, Array.Empty<byte>());
+        try
+        {
+            using (var reader = new LibArchiveReader(emptyFile))
+                Assert.That(reader.Entries(), Is.Empty, "file");
+            using (var reader = new LibArchiveReader(new[] { emptyFile }))
+                Assert.That(reader.Entries(), Is.Empty, "single volume");
+        }
+        finally
+        {
+            File.Delete(emptyFile);
+        }
     }
 
     private static void AssertEntries(LibArchiveReader reader, string expectedName)

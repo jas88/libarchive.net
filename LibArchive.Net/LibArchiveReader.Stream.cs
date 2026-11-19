@@ -50,10 +50,12 @@ public partial class LibArchiveReader
     /// A single compressed file that is not an archive, such as a plain gzip stream, is read as
     /// an archive holding one entry (see <see cref="Entries"/>); for a non-seekable stream, the
     /// bytes read while detecting this are kept in memory until the reader has opened, and for
-    /// compressed data until the first entry's header has been read.
+    /// compressed data until the first entry's header has been read. Empty data opens as an archive
+    /// with no entries.
     /// </remarks>
     /// <exception cref="ApplicationException">Thrown when the archive cannot be opened, including when the
-    /// data is neither an archive nor compressed (message "Unrecognized archive format").</exception>
+    /// data is not empty and is neither an archive nor compressed (message "Unrecognized archive
+    /// format").</exception>
     public LibArchiveReader(Stream inputStream, string? password = null, uint blockSize = 1 << 20)
         : base(true)
     {
