@@ -103,7 +103,9 @@ public class UnicodeNameTests
         "Ordner-é/中文-ä.txt",
     };
 
-    private static string ContentOf(string name) => "content of " + name;
+    // ASCII only, so that the names' bytes can be found only in an archive's metadata, but
+    // different for each entry, by its index in EntryNames
+    private static string ContentOf(string name) => "content of entry " + Array.IndexOf(EntryNames, name);
 
     public enum WriterKind { File, Stream, Memory }
 
@@ -117,7 +119,9 @@ public class UnicodeNameTests
         ArchiveFormat.Pax, ArchiveFormat.Cpio,
     };
 
-    // Those that store names as UTF-8 (7-Zip stores them as UTF-16LE)
+    // Those that store each name as its UTF-8 bytes, uncompressed: ZIP (with the UTF-8 flag), pax
+    // path records and the ustar header (Tar, Pax), ustar and cpio. (7-Zip stores names as
+    // UTF-16LE.)
     private static readonly ArchiveFormat[] Utf8Formats =
     {
         ArchiveFormat.Zip, ArchiveFormat.Tar, ArchiveFormat.Ustar, ArchiveFormat.Pax, ArchiveFormat.Cpio,
@@ -178,7 +182,8 @@ public class UnicodeNameTests
     [Test]
     public void NonAsciiEntryNamesAreStoredAsUtf8Bytes([ValueSource(nameof(Utf8Formats))] ArchiveFormat format)
     {
-        // Each name must be in the archive as its UTF-8 encoding, not as '?' or another code page
+        // Each name must be in the archive as its UTF-8 encoding, not as '?' or another code page.
+        // The contents are ASCII (see ContentOf), so only a name in the metadata can match.
         var bytes = WriteArchive(format, WriterKind.Memory, out _);
         foreach (var name in EntryNames)
             Assert.That(IndexOf(bytes, Encoding.UTF8.GetBytes(name)), Is.GreaterThanOrEqualTo(0), name);
