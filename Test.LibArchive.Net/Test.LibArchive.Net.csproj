@@ -36,6 +36,8 @@
         <None Update="rawtest*" CopyToOutputDirectory="PreserveNewest" />
         <!-- Written by GNU gzip and bsdtar; see MtreeTextTests.cs -->
         <None Update="mtreetest*" CopyToOutputDirectory="PreserveNewest" />
+        <!-- Written by Info-ZIP, Python, bsdtar, GNU tar, p7zip and hdiutil; see NameFixtureTests.cs -->
+        <None Update="nametest-*" CopyToOutputDirectory="PreserveNewest" />
         <None Update="rartest.part00001.rar" CopyToOutputDirectory="PreserveNewest" />
         <None Update="rartest.part00002.rar" CopyToOutputDirectory="PreserveNewest" />
         <None Update="rartest.part00003.rar" CopyToOutputDirectory="PreserveNewest" />

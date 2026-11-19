@@ -9,7 +9,7 @@ namespace Test.LibArchive.Net
 {
 /// <summary>
 /// Archives whose file paths contain characters outside ASCII. None of these tests depends on the
-/// machine's locale: .NET never calls setlocale, so libarchive always runs in the "C" locale.
+/// process locale (see NameEncodingTests).
 /// </summary>
 [TestFixture]
 public class UnicodeNameTests
@@ -107,18 +107,21 @@ public class UnicodeNameTests
 
     public enum WriterKind { File, Stream, Memory }
 
-    // The formats that store an entry's name as the bytes they are given: libarchive passes
-    // the UTF-8 bytes through, and reads them back unchanged, whatever the locale.
-    //
-    // Not covered, because libarchive 3.8.11 cannot keep a non-ASCII name in them in the "C"
-    // locale a .NET process runs in on Unix (measured on macOS): every name in pax (ArchiveFormat.Tar
-    // and Pax) and XAR is converted to UTF-8, and in 7-Zip to UTF-16, from the locale's ASCII.
-    // Writing pax or XAR then fails with "Can't translate pathname ... to UTF-8" (ARCHIVE_WARN,
-    // which the writer reports as an error); a 7-Zip archive is written, but reading it fails with
-    // "Pathname cannot be converted from UTF-16LE to current locale". ISO 9660 warns that the name
-    // cannot be converted to UTF-16BE for Joliet. On Windows these conversions go through UTF-16
-    // and behave differently, so the outcome is platform-dependent.
-    private static readonly ArchiveFormat[] ByteFormats = { ArchiveFormat.Zip, ArchiveFormat.Ustar, ArchiveFormat.Cpio };
+    // The formats whose writers keep each entry's path as it is given, nested ones included. The
+    // ISO 9660 and XAR writers build a directory tree, adding the parent directories themselves,
+    // so NameEncodingTests covers them, with names that have no directory part, as it covers the
+    // bytes every format stores.
+    private static readonly ArchiveFormat[] PathFormats =
+    {
+        ArchiveFormat.Zip, ArchiveFormat.SevenZip, ArchiveFormat.Tar, ArchiveFormat.Ustar,
+        ArchiveFormat.Pax, ArchiveFormat.Cpio,
+    };
+
+    // Those that store names as UTF-8 (7-Zip stores them as UTF-16LE)
+    private static readonly ArchiveFormat[] Utf8Formats =
+    {
+        ArchiveFormat.Zip, ArchiveFormat.Tar, ArchiveFormat.Ustar, ArchiveFormat.Pax, ArchiveFormat.Cpio,
+    };
 
     private byte[] WriteArchive(ArchiveFormat format, WriterKind kind, out string path)
     {
@@ -155,7 +158,7 @@ public class UnicodeNameTests
 
     [Test]
     public void NonAsciiEntryNamesRoundTrip(
-        [ValueSource(nameof(ByteFormats))] ArchiveFormat format,
+        [ValueSource(nameof(PathFormats))] ArchiveFormat format,
         [Values] WriterKind kind)
     {
         var bytes = WriteArchive(format, kind, out var path);
@@ -173,7 +176,7 @@ public class UnicodeNameTests
     }
 
     [Test]
-    public void NonAsciiEntryNamesAreStoredAsUtf8Bytes([ValueSource(nameof(ByteFormats))] ArchiveFormat format)
+    public void NonAsciiEntryNamesAreStoredAsUtf8Bytes([ValueSource(nameof(Utf8Formats))] ArchiveFormat format)
     {
         // Each name must be in the archive as its UTF-8 encoding, not as '?' or another code page
         var bytes = WriteArchive(format, WriterKind.Memory, out _);
@@ -182,7 +185,7 @@ public class UnicodeNameTests
     }
 
     [Test]
-    public void AddFileUsesNonAsciiSourceFileName([ValueSource(nameof(ByteFormats))] ArchiveFormat format)
+    public void AddFileUsesNonAsciiSourceFileName([ValueSource(nameof(PathFormats))] ArchiveFormat format)
     {
         var source = Path.Combine(testDirectory, "Quelle-ß-日本-\U0001F600.txt");
         File.WriteAllText(source, "from disk");
