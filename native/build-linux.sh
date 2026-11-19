@@ -16,6 +16,7 @@ mkdir -p "$OUTPUT_DIR"
 cd "$BUILD_DIR"
 
 # Load shared configuration
+# shellcheck source-path=SCRIPTDIR
 . "${SCRIPT_DIR}/build-config.sh"
 
 # Load the helpers shared by the Linux builds (mbedTLS build, final link, checks, load tests)
@@ -102,7 +103,7 @@ cp bzlib.h "$PREFIX/include/"
 cd ..
 
 # lzop (LZO1X) support: lzokay behind the liblzo2 API, in place of the GPL-licensed liblzo2
-# shellcheck source-path=SCRIPTDIR disable=SC1091
+# shellcheck source-path=SCRIPTDIR
 . "${SCRIPT_DIR}/build-lzo-shim.sh"
 build_lzo_shim "${SCRIPT_DIR}/lzo-shim" "lzokay-${LZOKAY_COMMIT}" "$CXXFLAGS"
 

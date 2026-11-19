@@ -82,9 +82,13 @@ build_lzo_shim() (
 
     # The shim's own <lzo/*.h> come first, ahead of any -I in the platform flags, so
     # that it is always compiled against the headers it is installed with.
-    # shellcheck disable=SC2086  # $cxx, $platform_flags and the flag list are word lists
+    # $platform_flags and $LZO_SHIM_CXXFLAGS each hold a list of flags in one string, as
+    # $cxx can hold a compiler launcher and the compiler, and are split into words on
+    # purpose: this file must stay POSIX sh, which has no arrays. set -f above keeps the
+    # split from expanding wildcards.
+    # shellcheck disable=SC2086  # flag lists, split on purpose (see above)
     $cxx -I"$shim_dir/include" -I. $platform_flags $LZO_SHIM_CXXFLAGS -c lzokay.cpp -o lzokay.o || exit
-    # shellcheck disable=SC2086
+    # shellcheck disable=SC2086  # flag lists, split on purpose (see above)
     $cxx -I"$shim_dir/include" -I. $platform_flags $LZO_SHIM_CXXFLAGS -c "$shim_dir/lzo-shim.cpp" -o lzo-shim.o || exit
 
     mkdir -p "$PREFIX/lib" "$PREFIX/include/lzo" || exit

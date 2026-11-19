@@ -8,6 +8,7 @@ set -e
 ARCH="${ARCH:-x86_64}"
 
 # Load shared configuration
+# shellcheck source-path=SCRIPTDIR
 . "$(dirname "$0")/build-config.sh"
 
 # Absolute path of this script's directory: the lzop shim sources are found relative to
@@ -135,7 +136,7 @@ make -j"$NCPU" install
 cd ..
 
 # lzop (LZO1X) support: lzokay behind the liblzo2 API, in place of the GPL-licensed liblzo2
-# shellcheck source-path=SCRIPTDIR disable=SC1091
+# shellcheck source-path=SCRIPTDIR
 . "${SCRIPT_DIR}/build-lzo-shim.sh"
 build_lzo_shim "${SCRIPT_DIR}/lzo-shim" "lzokay-${LZOKAY_COMMIT}" "$CXXFLAGS"
 

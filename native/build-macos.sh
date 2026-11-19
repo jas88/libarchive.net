@@ -16,6 +16,7 @@ mkdir -p "$OUTPUT_DIR"
 cd "$BUILD_DIR"
 
 # Load shared configuration
+# shellcheck source-path=SCRIPTDIR
 . "${SCRIPT_DIR}/build-config.sh"
 
 # Ensure build tools are available (libxml2's autogen.sh runs autoreconf)
@@ -74,7 +75,7 @@ cp "bzip2-${BZIP2_VERSION}/bzlib.h" "$PREFIX/include/"
 # back to the clang++ that belongs to the clang of the final link - for this one command
 # only, so that the configure runs below see the same environment as before.
 # CFLAGS is passed because it carries the two -arch flags that make the objects universal.
-# shellcheck source-path=SCRIPTDIR disable=SC1091
+# shellcheck source-path=SCRIPTDIR
 . "${SCRIPT_DIR}/build-lzo-shim.sh"
 CXX="${CXX:-clang++}" build_lzo_shim "${SCRIPT_DIR}/lzo-shim" "lzokay-${LZOKAY_COMMIT}" "$CFLAGS"
 
