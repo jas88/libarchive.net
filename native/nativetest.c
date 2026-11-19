@@ -8,6 +8,12 @@
 static const char name_utf8[] = "Gr\xc3\xb6\xc3\x9f" "e.txt";
 static const wchar_t name_wcs[] = { 'G', 'r', 0xF6, 0xDF, 'e', '.', 't', 'x', 't', 0 };
 
+/* A string from libarchive that can be NULL (an error or version string), for printing */
+static const char *text(const char *s)
+{
+  return s != NULL ? s : "(null)";
+}
+
 /*
  * Fail unless libarchive's narrow strings are UTF-8 (native/libarchive-narrow-utf8.patch).
  * This program never calls setlocale(), so it runs in the "C" locale, as a .NET process
@@ -25,6 +31,10 @@ static int check_utf8_names(void)
 
   /* Narrow to wide and back: archive_wstring_append_from_mbs, archive_string_append_from_wcs */
   e = archive_entry_new();
+  if (e == NULL) {
+    printf("FAIL: archive_entry_new returned NULL\n");
+    return 0;
+  }
   archive_entry_set_pathname(e, name_utf8);
   w = archive_entry_pathname_w(e);
   if (w == NULL || wcscmp(w, name_wcs) != 0) {
@@ -44,14 +54,18 @@ static int check_utf8_names(void)
   archive_entry_set_perm(e, 0644);
   archive_entry_set_size(e, 0);
   a = archive_write_new();
-  if (archive_write_set_format_zip(a) != ARCHIVE_OK
+  if (a == NULL) {
+    printf("FAIL: archive_write_new returned NULL\n");
+    ok = 0;
+  } else if (archive_write_set_format_zip(a) != ARCHIVE_OK
       || archive_write_open_memory(a, buf, sizeof buf, &used) != ARCHIVE_OK
       || archive_write_header(a, e) != ARCHIVE_OK
       || archive_write_close(a) != ARCHIVE_OK) {
-    printf("FAIL: writing the zip entry: %s\n", archive_error_string(a));
+    printf("FAIL: writing the zip entry: %s\n", text(archive_error_string(a)));
     ok = 0;
   }
-  archive_write_free(a);
+  if (a != NULL)
+    archive_write_free(a);
   archive_entry_free(e);
   if (!ok)
     return 0;
@@ -62,10 +76,14 @@ static int check_utf8_names(void)
     return 0;
   }
   a = archive_read_new();
+  if (a == NULL) {
+    printf("FAIL: archive_read_new returned NULL\n");
+    return 0;
+  }
   if (archive_read_support_format_zip(a) != ARCHIVE_OK
       || archive_read_open_memory(a, buf, used) != ARCHIVE_OK
       || archive_read_next_header(a, &e) != ARCHIVE_OK) {
-    printf("FAIL: reading the zip entry: %s\n", archive_error_string(a));
+    printf("FAIL: reading the zip entry: %s\n", text(archive_error_string(a)));
     ok = 0;
   } else if ((p = archive_entry_pathname(e)) == NULL || strcmp(p, name_utf8) != 0) {
     printf("FAIL: the zip entry's name does not read back as the same (NFC) UTF-8\n");
@@ -77,17 +95,17 @@ static int check_utf8_names(void)
   return ok;
 }
 
-int main(int argc,char **argv) {
+int main(void) {
   int ok=1;
-  printf("archive_zlib_version=%s\n",archive_zlib_version());
+  printf("archive_zlib_version=%s\n",text(archive_zlib_version()));
   ok = (archive_zlib_version() != NULL)?ok:0;
-  printf("archive_liblzma_version=%s\n",archive_liblzma_version());
+  printf("archive_liblzma_version=%s\n",text(archive_liblzma_version()));
   ok = (archive_liblzma_version() != NULL)?ok:0;
-  printf("archive_bzlib_version=%s\n",archive_bzlib_version());
+  printf("archive_bzlib_version=%s\n",text(archive_bzlib_version()));
   ok = (archive_bzlib_version() != NULL)?ok:0;
-  printf("archive_liblz4_version=%s\n",archive_liblz4_version());
+  printf("archive_liblz4_version=%s\n",text(archive_liblz4_version()));
   ok = (archive_liblz4_version() != NULL)?ok:0;
-  printf("archive_libzstd_version=%s\n",archive_libzstd_version());
+  printf("archive_libzstd_version=%s\n",text(archive_libzstd_version()));
   ok = (archive_libzstd_version() != NULL)?ok:0;
   ok = check_utf8_names()?ok:0;
   return ok==0;

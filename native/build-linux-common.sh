@@ -343,11 +343,14 @@ static int check_utf8_names(void)
     set_perm(entry, 0644);
     set_size(entry, 0);
     a = write_new();
-    if (a == NULL || set_format_zip(a) != ARCHIVE_OK
+    if (a == NULL) {
+        fprintf(stderr, "FAIL: archive_write_new returned NULL\n");
+        ok = 0;
+    } else if (set_format_zip(a) != ARCHIVE_OK
         || write_open_memory(a, buf, sizeof buf, &used) != ARCHIVE_OK
         || write_header(a, entry) != ARCHIVE_OK || write_close(a) != ARCHIVE_OK) {
-        p = a != NULL ? error_string(a) : NULL;
-        fprintf(stderr, "FAIL: writing a zip entry: %s\n", p != NULL ? p : "");
+        p = error_string(a);
+        fprintf(stderr, "FAIL: writing a zip entry: %s\n", p != NULL ? p : "(no error string)");
         ok = 0;
     }
     if (a != NULL)
@@ -362,10 +365,13 @@ static int check_utf8_names(void)
         return 0;
     }
     a = read_new();
-    if (a == NULL || support_format_zip(a) != ARCHIVE_OK || open_memory(a, buf, used) != ARCHIVE_OK
+    if (a == NULL) {
+        fprintf(stderr, "FAIL: archive_read_new returned NULL\n");
+        ok = 0;
+    } else if (support_format_zip(a) != ARCHIVE_OK || open_memory(a, buf, used) != ARCHIVE_OK
         || next_header(a, &entry) != ARCHIVE_OK) {
-        p = a != NULL ? error_string(a) : NULL;
-        fprintf(stderr, "FAIL: reading the zip entry: %s\n", p != NULL ? p : "");
+        p = error_string(a);
+        fprintf(stderr, "FAIL: reading the zip entry: %s\n", p != NULL ? p : "(no error string)");
         ok = 0;
     } else if ((p = pathname(entry)) == NULL || strcmp(p, name_utf8) != 0) {
         fprintf(stderr, "FAIL: the zip entry's name does not read back as the same UTF-8\n");
@@ -444,13 +450,14 @@ int main(int argc, char **argv)
     }
     if (!failed && (result = open_memory(reader, "", 0)) != ARCHIVE_OK) {
         text = error_string(reader);
-        fprintf(stderr, "FAIL: archive_read_open_memory returned %d: %s\n", result, text != NULL ? text : "");
+        fprintf(stderr, "FAIL: archive_read_open_memory returned %d: %s\n", result,
+            text != NULL ? text : "(no error string)");
         failed = 1;
     }
     if (!failed && (result = next_header(reader, &entry)) != ARCHIVE_EOF) {
         text = error_string(reader);
         fprintf(stderr, "FAIL: archive_read_next_header on an empty input returned %d, not ARCHIVE_EOF: %s\n",
-            result, text != NULL ? text : "");
+            result, text != NULL ? text : "(no error string)");
         failed = 1;
     }
     if ((result = read_free(reader)) != ARCHIVE_OK) {
