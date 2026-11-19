@@ -474,6 +474,30 @@ public class WriterTests
         Assert.That(extractedHash, Is.EqualTo(originalHash));
     }
 
+    // AddFile reads a file of more than 2 MB and less than 64 MB through a 1 MiB pooled buffer on
+    // every target framework (smaller files go through other paths on .NET 9 and later): this one
+    // takes three full reads and a short last one.
+    [Test]
+    public void TestRoundTripOfFileReadThroughPooledBuffer()
+    {
+        var sourceFile = Path.Combine(testDirectory, "pooled.dat");
+        var data = new byte[3 * 1024 * 1024 + 123];
+        new Random(456).NextBytes(data);
+        File.WriteAllBytes(sourceFile, data);
+
+        var archivePath = Path.Combine(testDirectory, "pooled.tar");
+        using (var writer = new LibArchiveWriter(archivePath, ArchiveFormat.Tar))
+        {
+            writer.AddFile(sourceFile);
+        }
+
+        using var reader = new LibArchiveReader(archivePath);
+        var entry = reader.Entries().First();
+        Assert.That(entry.Name, Is.EqualTo("pooled.dat"));
+        Assert.That(entry.LengthBytes, Is.EqualTo(data.Length));
+        Assert.That(hasher.ComputeHash(entry.Stream), Is.EqualTo(hasher.ComputeHash(data)));
+    }
+
     #endregion
 
     #region Compression Tests

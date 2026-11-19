@@ -411,24 +411,24 @@ public partial class LibArchiveWriter
                 if (read > bufferSize)
                     throw new InvalidOperationException("Stream.Read returned more bytes than requested");
 
-                fixed (byte* ptr = buffer)
+                // Each call gets a pinned slice of the bytes still to be written, not an offset added
+                // to a pointer into the rented buffer: AsSpan and Slice check each range against the
+                // bytes read, which the check above keeps within bufferSize. (ArrayPool.Rent is
+                // virtual, so CodeQL's cs/unvalidated-local-pointer-arithmetic flags any pointer
+                // arithmetic on the buffer it returns, whatever checks precede it.)
+                var pending = buffer.AsSpan(0, read);
+                while (!pending.IsEmpty)
                 {
-                    int writeOffset = 0;
-                    int writeRemaining = read;
-                    while (writeRemaining > 0)
+                    nint written;
+                    fixed (byte* ptr = pending)
                     {
-                        // Validate entire write range is within buffer bounds before pointer arithmetic
-                        // Explicit writeOffset >= bufferSize check satisfies CodeQL taint sanitizer detection
-                        if (writeOffset < 0 || writeOffset >= bufferSize || writeRemaining < 0 || writeOffset + writeRemaining > bufferSize)
-                            throw new InvalidOperationException("Write range out of bounds");
-                        nint written = archive_write_data(handle, ptr + writeOffset, (nuint)writeRemaining);
-                        if (written < 0)
-                            Throw();
-                        if (written == 0)
-                            throw new ApplicationException("archive_write_data returned 0 bytes written");
-                        writeOffset += (int)written;
-                        writeRemaining -= (int)written;
+                        written = archive_write_data(handle, ptr, (nuint)pending.Length);
                     }
+                    if (written < 0)
+                        Throw();
+                    if (written == 0)
+                        throw new ApplicationException("archive_write_data returned 0 bytes written");
+                    pending = pending.Slice((int)written);
                 }
             }
         }
