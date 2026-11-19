@@ -177,7 +177,7 @@ for lib in libarchive libxml2 libz liblzma liblzo2 libzstd liblz4 libbz2; do
         echo "ERROR: $PREFIX/lib/${lib}.a not found!"
         exit 1
     fi
-    echo "$PREFIX/lib/${lib}.a: $(ls -lh $PREFIX/lib/${lib}.a | awk '{print $5}')"
+    echo "$PREFIX/lib/${lib}.a: $(wc -c < "$PREFIX/lib/${lib}.a" | tr -d ' ') bytes"
 done
 # Use --start-group for all dependency libraries to allow multi-pass symbol resolution
 # This is needed because libxml2 depends on libz
