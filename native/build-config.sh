@@ -422,6 +422,12 @@ patch_libarchive() (
         echo "ERROR: patch_libarchive needs the patch program"
         exit 1
     fi
+    # Sources that an earlier build left behind are already patched; patch -N would refuse
+    # them too, but as if the patch no longer applied to this libarchive release
+    if grep -q LIBARCHIVE_NET_NARROW_UTF8 "$2/libarchive/archive_string.c" 2>/dev/null; then
+        echo "ERROR: $2 is already patched: unpack it afresh (download_all_libraries) first"
+        exit 1
+    fi
     echo "Applying ${LIBARCHIVE_PATCH} to $2..."
     if ! patch -p1 -N -F 0 -d "$2" < "$1/${LIBARCHIVE_PATCH}"; then
         echo "ERROR: ${LIBARCHIVE_PATCH} does not apply to libarchive ${LIBARCHIVE_VERSION}."

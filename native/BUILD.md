@@ -88,9 +88,10 @@ as on every other platform instead of NFD, and the zip writer sets the UTF-8 fla
 names. The description at the top of the patch lists each change.
 
 - `patch_libarchive` (in `build-config.sh`) applies it to the freshly unpacked sources in every
-  build script: `build-macos.sh`, the three `build-linux*.sh` scripts and `build-windows.sh`. It
-  fails the build unless every hunk applies without fuzz, and unless each file the patch changes
-  has its `LIBARCHIVE_NET_NARROW_UTF8` marker.
+  build script: `build-macos.sh`, the three `build-linux*.sh` scripts and `build-windows.sh`, each
+  of which unpacks the sources afresh on every run. It fails the build unless every hunk applies
+  without fuzz, and unless each file the patch changes has its `LIBARCHIVE_NET_NARROW_UTF8`
+  marker; given sources that an earlier build left patched, it fails and says so.
 - The macOS native test (`nativetest.c`) and the Linux load test (`write_load_test_source` in
   `build-linux-common.sh`) fail the build unless the linked library behaves that way in the "C"
   locale: a name converts between narrow and wide strings as UTF-8, and a zip entry keeps its UTF-8

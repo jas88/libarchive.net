@@ -314,9 +314,7 @@ jobs:
         run: |
           mkdir -p build-win native-out
           cd build-win
-          # Unpack sources with bash first: build-windows.sh runs under /bin/sh and
-          # only downloads them itself when they are missing.
-          bash -c '. ../native/build-config.sh && download_all_libraries'
+          # build-windows.sh downloads (into the cache) and unpacks the sources itself
           PREFIX="$(pwd)/local" ARCH=${{ matrix.arch }} ../native/build-windows.sh
           cp ${{ matrix.output }} ../native-out/
           cd ..
