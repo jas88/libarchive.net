@@ -33,6 +33,14 @@ export CPPFLAGS="-I$PREFIX/include"
 export LDFLAGS="-L$PREFIX/lib -liconv"
 export CFLAGS="-fPIC -O2 -D_FILE_OFFSET_BITS=64 -arch arm64 -arch x86_64"
 
+# The answer to libtool's configure check "for -single_module linker flag", given as a
+# configure cache variable so that the check does not run. It links a test library
+# with the flag and copies the linker's warning about it into the configure output
+# ("ld: warning: -single_module is obsolete", from the current Xcode linker), then
+# answers "no". The answer only matters to libtool's shared library links, and every
+# library built with libtool here is static.
+export lt_cv_apple_cc_single_mod=no
+
 # Download and unpack fresh copies of all libraries
 echo "Setting up library sources..."
 download_all_libraries

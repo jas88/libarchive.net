@@ -269,6 +269,33 @@ ARCH=i686 ./build-windows.sh
 ARCH=aarch64 ./build-windows.sh
 ```
 
+## Build warnings
+
+The builds are kept free of compiler, linker and configure warnings. Of lz4, zstd and
+bzip2 every script builds just the static library (bzip2's `bzip2recover` warned), no
+script builds libarchive's programs, and only macOS and Windows, which link libxml2, build
+it. Warnings that came from the dependencies' own build machinery are avoided as follows:
+
+- **lz4's deprecated `LZ4_resetStreamHC()`**, which libarchive's lz4 writer called: the
+  libarchive patch replaces the call (see "The libarchive patch" above).
+- **libtool's `-single_module` check (macOS).** It links a test library with that
+  linker flag and copies the linker's warning about it ("-single_module is obsolete")
+  into the configure output. `build-macos.sh` gives the check's answer, `no`, as the
+  configure cache variable `lt_cv_apple_cc_single_mod`, so it does not run. Only
+  libtool's shared library links would use the flag, and every library that libtool
+  builds here is static.
+- **Universal archives (macOS).** The objects are built for both architectures at once.
+  Apple's `ar`, asked to index an archive of them itself (`ar rcs`), warns that it "will
+  be fat and ar(1) will not be able to operate on it"; `ranlib` run on its own makes the
+  same archive without a warning. lz4's and zstd's Makefiles are given `ARFLAGS=rc` and
+  their archives indexed with `ranlib`, and `build_lzo_shim` archives the same way.
+
+Do not silence a new warning with `-w`, a broad `-Wno-*` or the like. Stop building what
+the libraries do not ship, or fix the flags or code at fault; for a warning in a
+dependency's own sources, make a small, provably equivalent change (for libarchive, in
+the libarchive patch) or use a switch the dependency provides for that one warning,
+scoped to its build, and record it here.
+
 ## Directory Structure
 
 After building, `build-all.sh` places the libraries in:
