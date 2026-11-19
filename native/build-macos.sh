@@ -72,7 +72,10 @@ cd ..
 
 echo "Building libxml2 ${LIBXML2_VERSION}..."
 cd libxml2-${LIBXML2_VERSION}
-./autogen.sh --cache-file=$(get_config_cache darwin-universal) --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib=$PREFIX/../zlib-${ZLIB_VERSION} --with-lzma=$PREFIX/../xz-${XZ_VERSION}
+# --with-zlib names where zlib was installed above: libxml2 adds -I<dir>/include and
+# -L<dir>/lib, and records them for whatever links it. libxml2 has had no lzma
+# support (and no --with-lzma option) since 2.14.
+./autogen.sh --cache-file=$(get_config_cache darwin-universal) --enable-silent-rules --disable-shared --enable-static --prefix=$PREFIX --without-python --with-zlib="$PREFIX"
 make -sj$NCPU install
 cd ..
 
@@ -87,7 +90,7 @@ cd libarchive-${LIBARCHIVE_VERSION}
 # host's libtool.m4 while leaving the tarball's older ltmain.sh in place, which fails
 # with "libtool: Version mismatch error" once the runner's libtool outpaces it.
 export LIBXML2_PC_CFLAGS=-I$PREFIX/include/libxml2
-export LIBXML2_PC_LIBS="-L$PREFIX -lxml2"
+export LIBXML2_PC_LIBS="-L$PREFIX/lib -lxml2"
 ./configure --cache-file=$(get_config_cache darwin-universal) --prefix=$PREFIX --enable-silent-rules --disable-dependency-tracking --enable-static --disable-shared --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-rpath --enable-posix-regex-lib=libc --enable-xattr --enable-acl --enable-largefile --with-pic --with-zlib --with-bz2lib --with-libb2 --with-iconv --with-lz4 --with-zstd --with-lzma --with-lzo2 --with-cng
 make -sj$NCPU install
 cd ..
