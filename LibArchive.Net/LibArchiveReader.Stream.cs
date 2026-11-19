@@ -86,10 +86,29 @@ public partial class LibArchiveReader
                 archive_read_free(handle);
             handle = IntPtr.Zero;
             CleanupCallbacks();
-            _recordedChunks = null;
-            _replayChunks = null;
+            DropRecordedChunks();
             throw;
         }
+    }
+
+    /// <summary>
+    /// Frees the native reader, if there is one, and then the chunks recorded from a
+    /// non-seekable stream.
+    /// </summary>
+    /// <param name="disposing">true when called from <see cref="SafeHandle.Dispose()"/>, false
+    /// when called from the finalizer.</param>
+    protected override void Dispose(bool disposing)
+    {
+        // Once the native reader is freed (ReleaseHandle), nothing can replay the chunks. (When
+        // RewindSource() frees one, it keeps them for the native reader that replays them.)
+        base.Dispose(disposing);
+        DropRecordedChunks();
+    }
+
+    private void DropRecordedChunks()
+    {
+        _recordedChunks = null;
+        _replayChunks = null;
     }
 
     // Opens the stream with the native reader that Open() created. While the first native reader
