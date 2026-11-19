@@ -4,9 +4,10 @@ using NUnit.Framework;
 
 namespace Test.LibArchive.Net;
 
-// Entry names outside ASCII in archives written by other tools. Each nametest-* fixture except the
-// legacy ones holds three files whose names are NFC, created on macOS (APFS keeps a name's form)
-// in an en_US.UTF-8 locale with COPYFILE_DISABLE=1, each holding a line of ASCII text:
+// Entry names outside ASCII in archives written by other tools. The legacy fixtures and
+// nametest-bad-unicode-path.zip, described at the end, hold one file each. Each of the other
+// nametest-* fixtures holds three files whose names are NFC, created on macOS (APFS keeps a name's
+// form) in an en_US.UTF-8 locale with COPYFILE_DISABLE=1, each holding a line of ASCII text:
 //
 //     printf 'latin\n' > Größe.txt; printf 'cjk\n' > 日本語.txt; printf 'emoji\n' > 😀.txt
 //     touch -t 202601010000.00 Größe.txt 日本語.txt 😀.txt
