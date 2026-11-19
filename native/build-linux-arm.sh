@@ -70,6 +70,9 @@ echo ""
 echo "Setting up library sources..."
 download_all_libraries
 
+# Every narrow string UTF-8, whatever the locale (see "The libarchive patch" in BUILD.md)
+patch_libarchive "${SCRIPT_DIR}" "libarchive-${LIBARCHIVE_VERSION}"
+
 # Build compression libraries (static only to avoid conflicts with -static LDFLAGS)
 echo "Building lz4 ${LZ4_VERSION}..."
 cd lz4-${LZ4_VERSION}/lib

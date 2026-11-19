@@ -55,6 +55,42 @@ it, so libarchive itself is not patched.
   strong (non-weak) unresolved symbol as well (see "How the library is linked and
   tested" below).
 
+### The libarchive patch
+
+LibArchive.Net passes UTF-8 to libarchive's narrow (`char *`) functions and decodes every narrow
+string that libarchive returns as UTF-8. libarchive itself takes narrow strings to be in the
+character set of the process locale (`nl_langinfo(CODESET)`), and converts them to and from wide
+strings with `mbrtowc` and `wcrtomb`. A .NET process never calls `setlocale`, so on macOS that
+locale is "C", whose character set is US-ASCII; the Linux libraries contain their own copy of musl,
+in which nothing ever calls `setlocale`, so it is always "C" there. Unpatched, non-ASCII names then
+fail in several formats: the pax, 7-Zip, ISO 9660 (Joliet) and XAR writers warn and store them
+wrongly or not at all, the 7-Zip, XAR, zip (with the UTF-8 flag) and Joliet readers return no name
+for them, and the zip writer leaves out the UTF-8 flag.
+
+`libarchive-narrow-utf8.patch` makes libarchive's narrow strings UTF-8 on macOS and Linux whatever
+the locale, without changing any locale, process-wide or per thread: the current character set is
+always UTF-8, narrow and wide strings are converted with libarchive's own UTF-8 code, names read on
+macOS are NFC (composed) as on every other platform instead of NFD, and the zip writer sets the
+UTF-8 flag on non-ASCII names. The description at the top of the patch lists each change.
+
+- `patch_libarchive` (in `build-config.sh`) applies it to the freshly unpacked sources in
+  `build-macos.sh` and the three `build-linux*.sh` scripts. It fails the build unless every hunk
+  applies without fuzz, and unless each file the patch changes has its `LIBARCHIVE_NET_NARROW_UTF8`
+  marker.
+- The macOS native test (`nativetest.c`) and the Linux load test (`write_load_test_source` in
+  `build-linux-common.sh`) fail the build unless the linked library behaves that way in the "C"
+  locale: a name converts between narrow and wide strings as UTF-8, and a zip entry keeps its UTF-8
+  name, with the UTF-8 flag, and reads back unchanged.
+- The Windows builds do not apply it. libarchive uses code pages there, the patch changes only code
+  that Windows builds do not compile, and LibArchive.Net uses the wide-character functions on
+  Windows.
+- `scripts/check-native-updates.sh` proposes a new libarchive release only if the patch still
+  applies to it the same way (a dry run, without fuzz), and otherwise reports a failed check. To
+  rework the patch for a new release, apply it to the new sources, resolve any rejected hunks
+  keeping each change's marker comment, and write it again with `diff -u` for each changed file,
+  relative to the unpacked release (`a/libarchive/...` and `b/libarchive/...`), below the
+  description.
+
 ## Quick Start
 
 ### Build for Current Platform
@@ -247,7 +283,8 @@ A weekly workflow runs `scripts/check-native-updates.sh`, which looks for new re
 2. Update the version variables (e.g., `LIBARCHIVE_VERSION="3.8.0"`)
 3. Update the matching `*_SHA256` variables to the SHA256 of each new tarball: the builds verify each library tarball against them and fail on a mismatch
 4. Update the URLs if the download pattern changed
-5. Test the build on each platform
+5. For a new libarchive release, check that `libarchive-narrow-utf8.patch` still applies, and rework it if not (see "The libarchive patch" above): the macOS and Linux builds fail otherwise
+6. Test the build on each platform
 
 ## CI/CD Integration
 
