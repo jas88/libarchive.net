@@ -81,6 +81,12 @@ v0.3.2 - November 16, 2026
 - Unpack fresh sources on every Windows native build, so a second local build no longer fails on the libarchive tree that the first one patched
 - Keep the plain-text test fixtures byte-exact on Windows checkouts
 - `scripts/generate-build-props.sh`: the .NET 13 SDK targets net12.0 and net13.0, and the .NET 14 SDK follows the same rule instead of targeting net14.0 alone
+- Build the native libraries without compiler, linker, libtool or configure warnings:
+  - build only the dependency libraries that are linked: no `bzip2recover`, no lz4 programs, and no libxml2 on Linux, where nothing links it;
+  - pass libxml2 only the options it has;
+  - stop libarchive's lz4 writer calling lz4's deprecated `LZ4_resetStreamHC`, through a hunk in the libarchive patch;
+  - name the cross tools for cross-compiling configure runs.
+- Make the build scripts pass shellcheck
 - The Linux libraries are built with zig. CI load-tests each of them in containers of old and current distributions, and runs the package's tests on .NET in Alpine x64 as well as on Ubuntu.
 
 **Documentation:**
