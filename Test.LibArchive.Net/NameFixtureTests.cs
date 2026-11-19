@@ -43,6 +43,11 @@ namespace Test.LibArchive.Net;
 //                            -cf ... Größe.txt (the name is 47 72 94 E1 65 2E 74 78 74, no UTF-8 flag)
 // nametest-legacy-latin1.tar bsdtar 3.8.11 --format=ustar --options hdrcharset=ISO-8859-1 -b 1
 //                            $owner -cf ... Größe.txt (the name is 47 72 F6 DF 65 2E 74 78 74)
+//
+// nametest-bad-unicode-path.zip holds a.txt ("bad unicode path\n"), written by Python 3.15 zipfile,
+// ZIP_STORED, with info = ZipInfo("a.txt", date_time=(2026, 1, 1, 0, 0, 0)),
+// info.external_attr = 0o100644 << 16 and info.extra = an Info-ZIP Unicode Path field: header ID
+// 0x7075, size 10, version 1, the CRC-32 of "a.txt", then FF 2E 74 78 74, which is not UTF-8.
 [TestFixture]
 public class NameFixtureTests
 {
@@ -90,7 +95,20 @@ public class NameFixtureTests
         Assert.That(files, Is.EqualTo(new[] { (expected, "latin\n") }));
     }
 
-    // The same through a stream, which reads the whole fixture as libarchive reads a file
+    // A Unicode Path field whose CRC-32 matches the name replaces it, and libarchive drops the name
+    // altogether when that field's bytes are not UTF-8 (archive_string.c:4334-4347), though it
+    // reads the header without a warning (archive_read_support_format_zip.c:1148-1156). The entry
+    // is still returned, with an empty name, rather than left out.
+    [Test]
+    public void EntryWhoseNameLibarchiveDropsIsStillReturned()
+    {
+        using var reader = new LibArchiveReader("nametest-bad-unicode-path.zip");
+        var files = reader.Entries().Select(e => (e.Name, Text: e.ReadAllText())).ToArray();
+
+        Assert.That(files, Is.EqualTo(new[] { (string.Empty, "bad unicode path\n") }));
+    }
+
+    // Names written by other tools, read through a stream rather than from a file
     [Test]
     public void ReadsNamesFromAStream([Values("nametest-python.zip", "nametest-gnutar-posix.tar", "nametest-p7zip.7z")] string fixture)
     {
