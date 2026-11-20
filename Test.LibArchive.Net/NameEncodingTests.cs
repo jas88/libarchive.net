@@ -319,7 +319,7 @@ public class NameEncodingTests
         : $"<name enctype=\"base64\">{Convert.ToBase64String(Encoding.UTF8.GetBytes(name))}</name>";
 
     // The XML table of contents, which is zlib-compressed after the header (28 bytes)
-    private static string XarTableOfContents(byte[] xar)
+    internal static string XarTableOfContents(byte[] xar)
     {
         Assert.That(Encoding.ASCII.GetString(xar, 0, 4), Is.EqualTo("xar!"));
         var headerSize = ReadUInt16BigEndian(xar, 4);
