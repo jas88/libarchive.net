@@ -95,6 +95,97 @@ static int check_utf8_names(void)
   return ok;
 }
 
+/* The one entry of the XAR test archive */
+static const char xar_name[] = "xar-test.txt";
+static const char xar_data[] = "XAR native test\n";
+
+/*
+ * Fail unless a XAR archive written to memory reads back: one entry, its name and its data.
+ * libarchive built without libxml2 (or zlib, MD5 and SHA-1) has stubs in place of its XAR
+ * reader and writer, which return ARCHIVE_WARN with the message "Xar not supported on this
+ * platform". The XAR writer keeps entry data in a temporary file until the archive is closed.
+ */
+static int check_xar(void)
+{
+  static char buf[65536];
+  char data[64];
+  size_t used = 0, len = sizeof xar_data - 1, got = 0;
+  struct archive *a;
+  struct archive_entry *e;
+  const char *p;
+  la_ssize_t n;
+  int r, ok = 1;
+
+  e = archive_entry_new();
+  if (e == NULL) {
+    printf("FAIL: archive_entry_new returned NULL\n");
+    return 0;
+  }
+  archive_entry_set_pathname(e, xar_name);
+  archive_entry_set_filetype(e, AE_IFREG);
+  archive_entry_set_perm(e, 0644);
+  archive_entry_set_size(e, (la_int64_t)len);
+  a = archive_write_new();
+  if (a == NULL) {
+    printf("FAIL: archive_write_new returned NULL\n");
+    ok = 0;
+  } else if ((r = archive_write_set_format_xar(a)) != ARCHIVE_OK) {
+    printf("FAIL: archive_write_set_format_xar returned %d: %s\n", r, text(archive_error_string(a)));
+    ok = 0;
+  } else if (archive_write_open_memory(a, buf, sizeof buf, &used) != ARCHIVE_OK
+      || archive_write_header(a, e) != ARCHIVE_OK
+      || archive_write_data(a, xar_data, len) != (la_ssize_t)len
+      || archive_write_close(a) != ARCHIVE_OK) {
+    printf("FAIL: writing the XAR entry: %s\n", text(archive_error_string(a)));
+    ok = 0;
+  }
+  if (a != NULL)
+    archive_write_free(a);
+  archive_entry_free(e);
+  if (!ok)
+    return 0;
+  if (used < 4 || memcmp(buf, "xar!", 4) != 0) {
+    printf("FAIL: the XAR archive does not start with the XAR magic number\n");
+    return 0;
+  }
+
+  a = archive_read_new();
+  if (a == NULL) {
+    printf("FAIL: archive_read_new returned NULL\n");
+    return 0;
+  }
+  if ((r = archive_read_support_format_xar(a)) != ARCHIVE_OK) {
+    printf("FAIL: archive_read_support_format_xar returned %d: %s\n", r, text(archive_error_string(a)));
+    ok = 0;
+  } else if (archive_read_open_memory(a, buf, used) != ARCHIVE_OK
+      || archive_read_next_header(a, &e) != ARCHIVE_OK) {
+    printf("FAIL: reading the XAR entry: %s\n", text(archive_error_string(a)));
+    ok = 0;
+  } else if ((p = archive_entry_pathname(e)) == NULL || strcmp(p, xar_name) != 0) {
+    printf("FAIL: the XAR entry's name does not read back\n");
+    ok = 0;
+  } else {
+    n = 0;
+    while (got < sizeof data && (n = archive_read_data(a, data + got, sizeof data - got)) > 0)
+      got += (size_t)n;
+    if (n < 0) {
+      printf("FAIL: reading the XAR entry's data: %s\n", text(archive_error_string(a)));
+      ok = 0;
+    } else if (got != len || memcmp(data, xar_data, len) != 0) {
+      printf("FAIL: the XAR entry's data does not read back\n");
+      ok = 0;
+    } else if ((r = archive_read_next_header(a, &e)) != ARCHIVE_EOF) {
+      printf("FAIL: archive_read_next_header after the XAR entry returned %d, not ARCHIVE_EOF: %s\n",
+          r, text(archive_error_string(a)));
+      ok = 0;
+    }
+  }
+  archive_read_free(a);
+  if (ok)
+    printf("XAR round trip: OK\n");
+  return ok;
+}
+
 int main(void) {
   int ok=1;
   printf("archive_zlib_version=%s\n",text(archive_zlib_version()));
@@ -108,5 +199,6 @@ int main(void) {
   printf("archive_libzstd_version=%s\n",text(archive_libzstd_version()));
   ok = (archive_libzstd_version() != NULL)?ok:0;
   ok = check_utf8_names()?ok:0;
+  ok = check_xar()?ok:0;
   return ok==0;
 }

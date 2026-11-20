@@ -194,6 +194,104 @@ verify_crypto_backend() {
     echo "mbedTLS crypto backend present, no unresolved mbedtls_/psa_ symbols"
 }
 
+# Fail the build unless libarchive's configure enabled its XAR reader and writer. They need
+# an XML library that can both read and write (libxml2), zlib, and MD5 and SHA-1 (from
+# mbedTLS here, as musl has neither). If any of them is missing, libarchive compiles both
+# as stubs that fail with "Xar not supported on this platform" (the #if at the top of
+# archive_read_support_format_xar.c and archive_write_set_format_xar.c), and configure does
+# not fail: given --with-xml2, it still goes on without libxml2 if pkg-config does not find
+# it. Run it after libarchive's configure, before make.
+# Usage: verify_xar_configured <libarchive's config.h>
+verify_xar_configured() {
+    local config="${1:-}"
+    if [ -z "$config" ]; then
+        echo "ERROR: verify_xar_configured needs libarchive's config.h as its argument"
+        return 1
+    fi
+    if [ ! -f "$config" ]; then
+        echo "ERROR: ${config} does not exist: run libarchive's configure first"
+        return 1
+    fi
+
+    echo "=== Verifying that libarchive's configure enabled XAR ==="
+    # libxml2, linkable and with the headers of its reader and writer; zlib's header; and
+    # mbedTLS's MD5 and SHA-1, from which archive_digest_private.h defines ARCHIVE_HAS_MD5
+    # and ARCHIVE_HAS_SHA1. configure writes "#define <macro> 1" for each one it found and
+    # "/* #undef <macro> */" for each one it did not.
+    local macro
+    local -a missing=()
+    for macro in HAVE_LIBXML2 HAVE_LIBXML_XMLREADER_H HAVE_LIBXML_XMLWRITER_H HAVE_ZLIB_H \
+        ARCHIVE_CRYPTO_MD5_MBEDTLS ARCHIVE_CRYPTO_SHA1_MBEDTLS; do
+        if ! awk -v macro="$macro" '$1 == "#define" && $2 == macro {found = 1} END {exit !found}' "$config"; then
+            missing+=("$macro")
+        fi
+    done
+    if [ ${#missing[@]} -gt 0 ]; then
+        echo "ERROR: ${config} does not define these, so libarchive would have no XAR reader or writer:"
+        printf '  %s\n' "${missing[@]}"
+        echo "See libarchive's configure output above and its config.log. It finds libxml2 with"
+        echo "pkg-config, in PKG_CONFIG_LIBDIR (${PKG_CONFIG_LIBDIR:-unset}), and MD5 and SHA-1 in mbedTLS."
+        return 1
+    fi
+    echo "libxml2's reader and writer, zlib, and mbedTLS's MD5 and SHA-1 found"
+}
+
+# Fail the build unless a linked library has libarchive's XAR reader and writer, and the
+# libxml2 code that they call, none of it left undefined.
+# Usage: verify_xar_support <library>
+# Uses AR to find the toolchain's nm and strings.
+verify_xar_support() {
+    local lib="${1:-}"
+    if [ -z "$lib" ]; then
+        echo "ERROR: verify_xar_support needs the library to check as its argument"
+        return 1
+    fi
+    if [ -z "${AR:-}" ]; then
+        echo "ERROR: verify_xar_support needs AR to be set"
+        return 1
+    fi
+
+    echo "=== Verifying XAR support ==="
+    # Only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
+    local nm="${AR%ar}nm" strings="${AR%ar}strings"
+    local symbols undefined text
+    if ! symbols=$("$nm" "$lib") || ! undefined=$("$nm" -D --undefined-only "$lib"); then
+        echo "ERROR: could not read the symbols of ${lib} with ${nm}"
+        return 1
+    fi
+    if ! text=$("$strings" -a "$lib"); then
+        echo "ERROR: could not read the strings of ${lib} with ${strings}"
+        return 1
+    fi
+
+    local failed=0 function unresolved
+    # The libxml2 functions with which the XAR reader and writer start. They are local (t),
+    # as libxml2 is compiled with -fvisibility=hidden (see build_libxml2).
+    for function in xmlReaderForIO xmlNewTextWriterMemory; do
+        if ! awk -v name="$function" 'NF >= 3 && ($2 == "T" || $2 == "t") && $3 == name {found = 1} END {exit !found}' <<< "$symbols"; then
+            echo "ERROR: ${function} is not defined in ${lib}: libxml2 was not linked in."
+            failed=1
+        fi
+    done
+    # libxml2's names begin with "xml" ("html" for its HTML parser). Weak references count
+    # too: nothing outside the library should supply any part of libxml2.
+    unresolved=$(awk 'NF >= 2 && $NF ~ /^(xml|html)/ {print "  " $NF}' <<< "$undefined")
+    if [ -n "$unresolved" ]; then
+        echo "ERROR: ${lib} leaves these libxml2 symbols undefined:"
+        echo "$unresolved"
+        failed=1
+    fi
+    # The stubs' message (see verify_xar_configured) is in no other libarchive code
+    if awk 'index($0, "Xar not supported on this platform") {found = 1} END {exit !found}' <<< "$text"; then
+        echo "ERROR: ${lib} contains the message of libarchive's XAR stubs, \"Xar not supported on this platform\"."
+        failed=1
+    fi
+    if [ "$failed" -ne 0 ]; then
+        return 1
+    fi
+    echo "XAR reader and writer present, with libxml2 linked in and none of it undefined"
+}
+
 # Fail the build unless a linked library is self-contained: no DT_NEEDED entry (no other
 # library it needs at run time) and no strong undefined dynamic symbol (one that the
 # process loading it would have to supply). Weak undefined symbols are allowed, and
@@ -257,7 +355,9 @@ verify_self_contained() {
 # Besides loading the library and reading an empty archive, it fails unless names are
 # UTF-8 in the "C" locale, which it never leaves, as a .NET process never does:
 # libarchive-narrow-utf8.patch is in the library (see "The libarchive patches" in
-# BUILD.md).
+# BUILD.md). It also writes a XAR archive and reads it back, which only the real XAR
+# reader and writer can do, using libxml2, zlib and mbedTLS's SHA-1. The XAR writer
+# keeps entry data in a temporary file ($TMPDIR, or /tmp) until the archive is closed.
 # Usage: write_load_test_source <file>
 write_load_test_source() {
     if [ -z "${1:-}" ]; then
@@ -269,7 +369,8 @@ write_load_test_source() {
  * Load test for a freshly linked libarchive.so, from build-linux-common.sh.
  * Usage: loadtest <path to libarchive.so>
  * Exits non-zero unless the library loads with every symbol bound at once
- * (RTLD_NOW), a little of its API works, and names are UTF-8 in the "C" locale.
+ * (RTLD_NOW), a little of its API works, names are UTF-8 in the "C" locale, and
+ * a XAR archive written in memory reads back.
  */
 #include <dlfcn.h>
 #include <stdint.h>
@@ -428,6 +529,141 @@ static int check_utf8_names(void)
     return ok;
 }
 
+/* The one entry of the XAR test archive */
+static const char xar_name[] = "xar-test.txt";
+static const char xar_data[] = "XAR load test\n";
+
+/*
+ * Fail unless a XAR archive written to memory reads back: one entry, its name and its
+ * data. libarchive built without libxml2 (or zlib, MD5 and SHA-1) has stubs in place of
+ * its XAR reader and writer, which return ARCHIVE_WARN with the message "Xar not
+ * supported on this platform".
+ */
+static int check_xar(void)
+{
+    struct archive_entry *(*entry_new)(void);
+    void (*entry_free)(struct archive_entry *);
+    void (*set_pathname)(struct archive_entry *, const char *);
+    const char *(*pathname)(struct archive_entry *);
+    void (*set_filetype)(struct archive_entry *, unsigned int);
+    void (*set_perm)(struct archive_entry *, mode_t);
+    void (*set_size)(struct archive_entry *, int64_t);
+    struct archive *(*write_new)(void);
+    int (*set_format_xar)(struct archive *);
+    int (*write_open_memory)(struct archive *, void *, size_t, size_t *);
+    int (*write_header)(struct archive *, struct archive_entry *);
+    ssize_t (*write_data)(struct archive *, const void *, size_t);
+    int (*write_close)(struct archive *);
+    int (*write_free)(struct archive *);
+    struct archive *(*read_new)(void);
+    int (*support_format_xar)(struct archive *);
+    int (*open_memory)(struct archive *, const void *, size_t);
+    int (*next_header)(struct archive *, struct archive_entry **);
+    ssize_t (*read_data)(struct archive *, void *, size_t);
+    const char *(*error_string)(struct archive *);
+    int (*read_free)(struct archive *);
+    static unsigned char buf[65536];
+    char data[64];
+    size_t used = 0, len = sizeof xar_data - 1, got = 0;
+    struct archive *a;
+    struct archive_entry *entry;
+    const char *p;
+    ssize_t n;
+    int result, ok = 1;
+
+    if (!FIND("archive_entry_new", entry_new) || !FIND("archive_entry_free", entry_free)
+        || !FIND("archive_entry_set_pathname", set_pathname)
+        || !FIND("archive_entry_pathname", pathname)
+        || !FIND("archive_entry_set_filetype", set_filetype)
+        || !FIND("archive_entry_set_perm", set_perm) || !FIND("archive_entry_set_size", set_size)
+        || !FIND("archive_write_new", write_new)
+        || !FIND("archive_write_set_format_xar", set_format_xar)
+        || !FIND("archive_write_open_memory", write_open_memory)
+        || !FIND("archive_write_header", write_header) || !FIND("archive_write_data", write_data)
+        || !FIND("archive_write_close", write_close) || !FIND("archive_write_free", write_free)
+        || !FIND("archive_read_new", read_new)
+        || !FIND("archive_read_support_format_xar", support_format_xar)
+        || !FIND("archive_read_open_memory", open_memory)
+        || !FIND("archive_read_next_header", next_header) || !FIND("archive_read_data", read_data)
+        || !FIND("archive_error_string", error_string) || !FIND("archive_read_free", read_free))
+        return 0;
+
+    entry = entry_new();
+    if (entry == NULL) {
+        fprintf(stderr, "FAIL: archive_entry_new returned NULL\n");
+        return 0;
+    }
+    set_pathname(entry, xar_name);
+    set_filetype(entry, AE_IFREG);
+    set_perm(entry, 0644);
+    set_size(entry, (int64_t)len);
+    a = write_new();
+    if (a == NULL) {
+        fprintf(stderr, "FAIL: archive_write_new returned NULL\n");
+        ok = 0;
+    } else if ((result = set_format_xar(a)) != ARCHIVE_OK) {
+        p = error_string(a);
+        fprintf(stderr, "FAIL: archive_write_set_format_xar returned %d: %s\n", result,
+            p != NULL ? p : "(no error string)");
+        ok = 0;
+    } else if (write_open_memory(a, buf, sizeof buf, &used) != ARCHIVE_OK
+        || write_header(a, entry) != ARCHIVE_OK || write_data(a, xar_data, len) != (ssize_t)len
+        || write_close(a) != ARCHIVE_OK) {
+        p = error_string(a);
+        fprintf(stderr, "FAIL: writing a XAR entry: %s\n", p != NULL ? p : "(no error string)");
+        ok = 0;
+    }
+    if (a != NULL)
+        write_free(a);
+    entry_free(entry);
+    if (!ok)
+        return 0;
+    if (used < 4 || memcmp(buf, "xar!", 4) != 0) {
+        fprintf(stderr, "FAIL: the XAR archive does not start with the XAR magic number\n");
+        return 0;
+    }
+
+    a = read_new();
+    if (a == NULL) {
+        fprintf(stderr, "FAIL: archive_read_new returned NULL\n");
+        return 0;
+    }
+    if ((result = support_format_xar(a)) != ARCHIVE_OK) {
+        p = error_string(a);
+        fprintf(stderr, "FAIL: archive_read_support_format_xar returned %d: %s\n", result,
+            p != NULL ? p : "(no error string)");
+        ok = 0;
+    } else if (open_memory(a, buf, used) != ARCHIVE_OK || next_header(a, &entry) != ARCHIVE_OK) {
+        p = error_string(a);
+        fprintf(stderr, "FAIL: reading the XAR entry: %s\n", p != NULL ? p : "(no error string)");
+        ok = 0;
+    } else if ((p = pathname(entry)) == NULL || strcmp(p, xar_name) != 0) {
+        fprintf(stderr, "FAIL: the XAR entry's name does not read back\n");
+        ok = 0;
+    } else {
+        n = 0;
+        while (got < sizeof data && (n = read_data(a, data + got, sizeof data - got)) > 0)
+            got += (size_t)n;
+        if (n < 0) {
+            p = error_string(a);
+            fprintf(stderr, "FAIL: reading the XAR entry's data: %s\n", p != NULL ? p : "(no error string)");
+            ok = 0;
+        } else if (got != len || memcmp(data, xar_data, len) != 0) {
+            fprintf(stderr, "FAIL: the XAR entry's data does not read back\n");
+            ok = 0;
+        } else if ((result = next_header(a, &entry)) != ARCHIVE_EOF) {
+            p = error_string(a);
+            fprintf(stderr, "FAIL: archive_read_next_header after the XAR entry returned %d, not ARCHIVE_EOF: %s\n",
+                result, p != NULL ? p : "(no error string)");
+            ok = 0;
+        }
+    }
+    read_free(a);
+    if (ok)
+        printf("OK: a XAR archive written to memory reads back\n");
+    return ok;
+}
+
 int main(int argc, char **argv)
 {
     const char *(*version_string)(void);
@@ -509,6 +745,8 @@ int main(int argc, char **argv)
         failed = 1;
     }
     if (!check_utf8_names())
+        failed = 1;
+    if (!check_xar())
         failed = 1;
     if (failed)
         return 1;

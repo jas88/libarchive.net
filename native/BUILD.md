@@ -47,6 +47,11 @@ this platform". On Linux:
 - libxml2 is compiled with `-fvisibility=hidden`, as mbedTLS is. `libarchive.so`
   therefore does not export libxml2's functions, and another libxml2 in the process can
   neither clash with them nor take their place.
+- The builds fail unless libarchive's configure enabled XAR and the linked library has
+  it (see "How the library is linked and tested" below).
+
+The macOS native test and the Linux load test each write a XAR archive in memory and
+read it back.
 
 ### lzop support
 
@@ -237,6 +242,11 @@ it against the `<release>.sha256` file that Bootlin publishes beside each
 
 **How the library is linked and tested** (all three Linux scripts use the functions
 in `build-linux-common.sh`):
+- `verify_xar_configured` fails the build, before libarchive is compiled, unless its
+  configure found libxml2 (with pkg-config, in the `.pc` files under `$PREFIX`) with the
+  headers of its reader and writer, zlib, and mbedTLS's MD5 and SHA-1, which its
+  `config.h` records. configure does not fail without them, even given `--with-xml2`:
+  libarchive then builds its XAR stubs.
 - `link_libarchive` links all of `libarchive.a` with the other static libraries,
   the toolchain's own `libgcc.a` (`$CC -print-libgcc-file-name`) and musl's static
   `libc.a`, with `-nostdlib`. No shared library is linked, not even `libgcc_s`.
@@ -247,6 +257,9 @@ in `build-linux-common.sh`):
   (non-weak) unresolved symbol: the toolchain links with `-z now` (BIND_NOW), so such
   a symbol left for the loader to find would make the library fail to load in any
   process that does not happen to define it.
+- `verify_xar_support` fails the build unless the library defines libxml2's
+  `xmlReaderForIO` and `xmlNewTextWriterMemory`, leaves no libxml2 symbol undefined,
+  weak or strong, and does not contain the stubs' message.
 - `verify_self_contained` then fails the build if the library has a DT_NEEDED
   entry or a strong undefined dynamic symbol. Weak undefined symbols, such as
   zstd's optional `ZSTD_trace_*` hooks, are allowed: they resolve to null.
@@ -255,9 +268,10 @@ in `build-linux-common.sh`):
   so that the process contains nothing but musl and the library: natively for x64,
   and under QEMU user-mode emulation for ARMv7 and ARM64. The program
   loads `./libarchive.so` with `RTLD_NOW`, calls a few of its functions (including
-  reading an empty archive) and fails the build on any error. If QEMU is missing,
-  the ARMv7 and ARM64 tests fail the build under GitHub Actions and are skipped
-  with a warning elsewhere.
+  reading an empty archive, and writing a XAR archive in memory and reading it back,
+  for which the XAR writer needs a temporary file in `$TMPDIR` or `/tmp`) and fails
+  the build on any error. If QEMU is missing, the ARMv7 and ARM64 tests fail the
+  build under GitHub Actions and are skipped with a warning elsewhere.
 - The x64 build also loads the library in the same program built with the host's
   `gcc` and C library (glibc on the CI runners).
 

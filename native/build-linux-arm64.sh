@@ -132,6 +132,8 @@ cd "libarchive-${LIBARCHIVE_VERSION}"
 # --with-xml2 --without-expat: XAR through the libxml2 built above, which configure finds
 # with pkg-config. expat can read XAR but not write it.
 ./configure --cache-file="$(get_config_cache aarch64-linux)" --build=x86_64-pc-linux-gnu --host=aarch64-linux --prefix="$PREFIX" --disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip --enable-posix-regex-lib=libc --with-pic --with-lzo2 --disable-shared --enable-static --with-mbedtls --without-openssl --with-xml2 --without-expat
+# Fail the build unless configure enabled the XAR reader and writer (see build-linux-common.sh)
+verify_xar_configured config.h
 make -sj"$NCPU" install
 cd ..
 
@@ -143,6 +145,9 @@ link_libarchive libarchive.so
 
 # Fail the build unless the mbedTLS crypto backend was linked in (see build-linux-common.sh)
 verify_crypto_backend libarchive.so
+
+# Fail the build unless the XAR reader and writer were linked in, with libxml2 (see build-linux-common.sh)
+verify_xar_support libarchive.so
 
 # Fail the build unless the library needs nothing at run time and loads in a process
 # that contains only musl, run under QEMU user-mode emulation (see build-linux-common.sh)
