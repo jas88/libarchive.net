@@ -1,13 +1,15 @@
 using System.Text;
 using LibArchive.Net;
 using NUnit.Framework;
+using static Test.LibArchive.Net.ArchiveLayout;
 
 namespace Test.LibArchive.Net;
 
 // Reads Zstandard (method 93) zip entries whose data ends just as libarchive's zip reader fills
 // its buffer of ZSTD_DStreamOutSize() bytes, 128 KiB: entries of 128 KiB or of a multiple of it.
 // Unpatched, libarchive 3.8.11 does not see the end of such an entry, and the next read fails with
-// "Truncated zstd file body" (see native/libarchive-zip-zstd-end-of-entry.patch).
+// "Truncated zstd file body" (see native/libarchive-zip-zstd-end-of-entry.patch). The entries are
+// in a fixture that another tool wrote, and in archives that LibArchiveWriter writes.
 //
 // The fixture is written by Python 3.15's zipfile, which writes each entry's sizes in its local
 // header, so that every way of reading it knows them. It was created on macOS with this script,
@@ -56,12 +58,31 @@ public class ZipZstdTests
         ("65536+131072+131072.txt", 327680),
     };
 
+    // What the writer compresses: two multiples of 128 KiB, and a size on either side of it
+    private static readonly (string Name, byte[] Data)[] Written =
+    {
+        ("131072.txt", CompressibleText(131072, seed: 1)), ("262144.txt", CompressibleText(262144, seed: 2)),
+        ("131071.txt", CompressibleText(131071, seed: 3)), ("131073.txt", CompressibleText(131073, seed: 4)),
+    };
+
     public enum Source { Path, Stream, NonSeekableStream }
+
+    private string testDirectory = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        testDirectory = Path.Combine(Path.GetTempPath(), $"zip-zstd-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(testDirectory);
+    }
+
+    [TearDown]
+    public void Teardown() => Directory.Delete(testDirectory, true);
 
     [Test]
     public void ReadsEveryEntryInFull([Values] Source source)
     {
-        using var reader = Open(source);
+        using var reader = Open(source, Fixture);
 
         AssertEntries(reader);
     }
@@ -74,18 +95,40 @@ public class ZipZstdTests
     [Test]
     public void ReadsEveryEntryInFullFromAStreamOneByteAtATime()
     {
-        using var reader = Open(Source.Stream, 1);
+        using var reader = Open(Source.Stream, Fixture, 1);
 
         AssertEntries(reader);
     }
 
-    // The reader does not own a stream it is given; a MemoryStream needs no disposal.
-    private static LibArchiveReader Open(Source source, uint blockSize = 1 << 20) => source switch
+    // What the writer compresses with Zstandard reads back in full. libarchive's zip writer puts each
+    // entry's sizes in a data descriptor after its data, which a reader of a non-seekable stream meets
+    // only once it has read the data: libarchive then ends the entry with its frame, and so read these
+    // entries from there even unpatched. From a path or a seekable stream it takes the sizes from the
+    // central directory, and failed.
+    [Test]
+    public void ReadsBackWhatTheWriterCompresses([Values] Source source)
     {
-        Source.Path => new LibArchiveReader(Fixture, blockSize),
-        Source.Stream => new LibArchiveReader(new MemoryStream(File.ReadAllBytes(Fixture)), blockSize: blockSize),
+        var path = Path.Combine(testDirectory, "written.zip");
+        using (var writer = new LibArchiveWriter(path, ArchiveFormat.Zip, CompressionType.Zstd))
+            AddEntries(writer, Written);
+        Assert.That(ZipEntries(File.ReadAllBytes(path)).Select(e => (e.Name, e.Method, e.LocalMethod)),
+            Is.EqualTo(Written.Select(e => (e.Name, (ushort)93, (ushort)93))), "Zstandard (method 93) in both headers");
+
+        using var reader = Open(source, path);
+        var entries = reader.Entries().Select(e => (e.Name, Data: e.ReadAllBytes())).ToList();
+
+        Assert.That(entries.Select(e => e.Name), Is.EqualTo(Written.Select(e => e.Name)));
+        for (var i = 0; i < Written.Length; i++)
+            Assert.That(entries[i].Data, Is.EqualTo(Written[i].Data), Written[i].Name);
+    }
+
+    // The reader does not own a stream it is given; a MemoryStream needs no disposal.
+    private static LibArchiveReader Open(Source source, string path, uint blockSize = 1 << 20) => source switch
+    {
+        Source.Path => new LibArchiveReader(path, blockSize),
+        Source.Stream => new LibArchiveReader(new MemoryStream(File.ReadAllBytes(path)), blockSize: blockSize),
         Source.NonSeekableStream => new LibArchiveReader(
-            new ReaderApiTests.NonSeekableStream(new MemoryStream(File.ReadAllBytes(Fixture))), blockSize: blockSize),
+            new ReaderApiTests.NonSeekableStream(new MemoryStream(File.ReadAllBytes(path))), blockSize: blockSize),
         _ => throw new ArgumentOutOfRangeException(nameof(source)),
     };
 

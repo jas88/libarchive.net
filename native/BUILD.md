@@ -149,7 +149,9 @@ holds them, as Python's zipfile writes them. The patch ends such an entry once
 `ZSTD_decompressStream()` reports the end of a frame and none of the entry's compressed bytes are
 left; any that are left hold another frame, so an entry of several frames still reads in full. An
 entry whose sizes follow its data (`ZIP_LENGTH_AT_END`), read from a non-seekable stream, still
-ends with its first frame, as before.
+ends with its first frame, as before. `Test.LibArchive.Net/ZipZstdTests.cs` reads such entries, as
+Python's zipfile and LibArchive.Net's own writer write them, from a path, a seekable stream and a
+non-seekable stream.
 
 - `patch_libarchive` (in `build-config.sh`) applies them to the freshly unpacked sources in every
   build script: `build-macos.sh`, the three `build-linux*.sh` scripts and `build-windows.sh`, each
