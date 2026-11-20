@@ -32,9 +32,13 @@ usage() {
 # - QEMU and LOADER, for a glibc library of another architecture than x64: the QEMU
 #   user-mode emulator that runs its load test, and the dynamic loader of Ubuntu's cross
 #   runtime of glibc that it runs the program with (see test_load_glibc).
+# - STACK_GUARD, for the 32-bit ARM libraries: linux-arm-stack-guard.c, which gives the
+#   stack protector a guard seeded from the process's random bytes, in place of zig's
+#   constant one (see that file).
 ARM_CPU="-mcpu=generic+v7a+vfp3d16-neon-vfp3-vfp3sp-d32"
 QEMU=""
 LOADER=""
+STACK_GUARD=""
 case "${1:-}" in
     linux-x64)
         LIBC=glibc ZIG_TARGET=x86_64-linux-gnu.2.28 ZIG_TARGET_FLAGS="" HOST=x86_64-linux-gnu
@@ -47,6 +51,7 @@ case "${1:-}" in
         LIBC=glibc ZIG_TARGET=arm-linux-gnueabihf.2.34 HOST=arm-linux-gnueabihf
         ZIG_TARGET_FLAGS="$ARM_CPU -D_TIME_BITS=64 -D_FILE_OFFSET_BITS=64"
         QEMU=qemu-arm LOADER=/usr/arm-linux-gnueabihf/lib/ld-linux-armhf.so.3
+        STACK_GUARD=linux-arm-stack-guard.c
         ;;
     linux-musl-x64)
         LIBC=musl ZIG_TARGET=x86_64-linux-musl ZIG_TARGET_FLAGS="" HOST=x86_64-linux-musl
@@ -56,6 +61,7 @@ case "${1:-}" in
         ;;
     linux-musl-arm)
         LIBC=musl ZIG_TARGET=arm-linux-musleabihf ZIG_TARGET_FLAGS="$ARM_CPU" HOST=arm-linux-musleabihf
+        STACK_GUARD=linux-arm-stack-guard.c
         ;;
     -h | --help)
         usage
@@ -229,9 +235,10 @@ make -sj"$NCPU" install
 cd ..
 
 echo "Creating final shared library..."
-# libarchive.a and the libraries it uses, linked against the C library, failing on any
-# unresolved symbol, and exporting archive_* only (see build-linux-common.sh)
-link_libarchive libarchive.so
+# libarchive.a and the libraries it uses (and on 32-bit ARM, linux-arm-stack-guard.c), linked
+# against the C library, failing on any unresolved symbol, and exporting archive_* only (see
+# build-linux-common.sh)
+link_libarchive libarchive.so ${STACK_GUARD:+"${SCRIPT_DIR}/${STACK_GUARD}"}
 
 # Fail the build unless the mbedTLS crypto backend was linked in (see build-linux-common.sh)
 verify_crypto_backend libarchive.so
@@ -251,6 +258,12 @@ fi
 # Fail the build unless the library exports libarchive's API alone, with every function that
 # LibArchive.Net imports (see verify-exports.sh)
 READELF="${AR%ar}readelf" "${SCRIPT_DIR}/verify-exports.sh" libarchive.so
+
+# On 32-bit ARM, fail the build unless the stack protector's guard is the one that
+# linux-arm-stack-guard.c seeds when the library loads (see build-linux-common.sh)
+if [ -n "$STACK_GUARD" ]; then
+    verify_stack_guard libarchive.so
+fi
 
 # The load test program, which is kept beside the library for CI to run with it in
 # containers. A glibc library is load tested here too, in a glibc process: natively for

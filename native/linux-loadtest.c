@@ -1,8 +1,8 @@
 /*
  * Load test for a freshly linked libarchive.so, which build_load_test in
  * build-linux-common.sh builds for the library's own C library, from this file,
- * linux-loadtest-files.c and linux-loadtest-lfs32.c (see linux-loadtest.h), and
- * test_load_glibc there runs with a glibc library.
+ * linux-loadtest-files.c, linux-loadtest-lfs32.c and linux-loadtest-guard.c (see
+ * linux-loadtest.h), and test_load_glibc there runs with a glibc library.
  * Usage: loadtest <path to libarchive.so>
  * Exits non-zero unless the library loads with every symbol bound at once
  * (RTLD_NOW), a little of its API works, names are UTF-8 in the "C" locale, a XAR
@@ -10,7 +10,8 @@
  * full, and archives that the library writes to files read back whole through each of
  * libarchive's ways of reading a file (check_file_io). In a 32-bit glibc process it also
  * fails if the library calls any of glibc's file functions with a 32-bit off_t
- * (check_lfs32).
+ * (check_lfs32), and on 32-bit ARM unless the library's stack protector guard holds the
+ * process's random bytes (check_stack_guard).
  *
  * Names must be UTF-8 in the "C" locale, which the program never leaves, as a .NET process
  * never does: libarchive-narrow-utf8.patch is in the library (see "The libarchive patches"
@@ -522,6 +523,8 @@ int main(int argc, char **argv)
     if (!check_file_io())
         failed = 1;
     if (!check_lfs32())
+        failed = 1;
+    if (!check_stack_guard(argv[1]))
         failed = 1;
     if (failed)
         return 1;

@@ -183,8 +183,11 @@ build_libxml2() {
 # The version script linux-exports.map (in this directory) exports libarchive's API, the
 # archive_* functions, and nothing else (see that file).
 #
+# Any C sources named after the library are compiled for the target too, and linked in ahead
+# of the archives: linux-arm-stack-guard.c, for the 32-bit ARM libraries.
+#
 # To link another static library, add it to the archive list below.
-# Usage: link_libarchive <library>
+# Usage: link_libarchive <library> [<C source>...]
 # Uses CC, PREFIX and SCRIPT_DIR.
 link_libarchive() {
     local lib="${1:-}"
@@ -192,6 +195,7 @@ link_libarchive() {
         echo "ERROR: link_libarchive needs the library to create as its argument"
         return 1
     fi
+    shift
     local var
     for var in CC PREFIX SCRIPT_DIR; do
         if [ -z "${!var:-}" ]; then
@@ -212,9 +216,18 @@ link_libarchive() {
         "$PREFIX/lib/liblz4.a"
         "$PREFIX/lib/libmbedcrypto.a"
     )
+    local -a objects=()
+    local source object
+    for source in "$@"; do
+        object="${source##*/}"
+        object="${object%.c}.o"
+        "$CC" -c -O2 -fPIC -Wall -Wextra -o "$object" "$source" || return
+        objects+=("$object")
+    done
     local -a link=(
         "$CC" -shared -o "$lib" "-Wl,-z,defs" "-Wl,-z,relro" "-Wl,-z,now"
         "-Wl,--version-script=${SCRIPT_DIR}/linux-exports.map"
+        "${objects[@]}"
         "-Wl,--whole-archive" "$PREFIX/lib/libarchive.a" "-Wl,--no-whole-archive"
         "-Wl,--start-group" "${archives[@]}" "-Wl,--end-group"
     )
@@ -484,6 +497,64 @@ verify_glibc_imports() {
         echo "Weak unversioned imports (allowed, null when nothing defines them):"
         echo "$weak"
     fi
+}
+
+# Fail the build unless a 32-bit ARM library checks its stack protector against a guard that
+# is seeded from the process's random bytes (see linux-arm-stack-guard.c, in this directory):
+# its __stack_chk_guard must be the one of that file, which is uninitialised data (.bss)
+# until its constructor seeds it, not the initialised one (.data) of zig's compiler-rt, which
+# holds a constant, and that constructor must be in .init_array, where the dynamic loader
+# finds what to run when it loads the library.
+# Usage: verify_stack_guard <library>
+# Uses AR to find nm and readelf.
+verify_stack_guard() {
+    local lib="${1:-}"
+    if [ -z "$lib" ]; then
+        echo "ERROR: verify_stack_guard needs the library to check as its argument"
+        return 1
+    fi
+    if [ -z "${AR:-}" ]; then
+        echo "ERROR: verify_stack_guard needs AR to be set"
+        return 1
+    fi
+
+    echo "=== Verifying the stack protector guard of ${lib} ==="
+    # Only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
+    local nm="${AR%ar}nm" readelf="${AR%ar}readelf"
+    local symbols sections guard seed section entries position
+    if ! symbols=$("$nm" "$lib") || ! sections=$("$readelf" -W -S "$lib"); then
+        echo "ERROR: could not read ${lib} with ${nm} and ${readelf}"
+        return 1
+    fi
+    guard=$(awk '$3 == "__stack_chk_guard" {print $2}' <<< "$symbols")
+    if [ "$guard" != b ] && [ "$guard" != B ]; then
+        echo "ERROR: ${lib}'s __stack_chk_guard (nm type: ${guard:-none}) is not the uninitialised one of"
+        echo "linux-arm-stack-guard.c, so the library's stack protector would check its frames against zig's constant."
+        return 1
+    fi
+    seed=$(awk '$3 == "libarchive_net_seed_stack_guard" {print $1}' <<< "$symbols")
+    # .init_array's file offset and size: the third and fourth fields after its name, which
+    # readelf can print as the second or the third field of the line ("[ 9]" or "[19]")
+    section=$(awk '{ for (i = 1; i < NF; i++) if ($i == ".init_array") { print $(i + 3), $(i + 4); exit } }' <<< "$sections")
+    if [ -z "$seed" ] || [ -z "$section" ]; then
+        echo "ERROR: ${lib} has no constructor libarchive_net_seed_stack_guard (${seed:-missing}) or no .init_array (${section:-missing})"
+        return 1
+    fi
+    # The section's entries, 32-bit addresses: od prints them in the build machine's byte
+    # order, which is little-endian, as 32-bit ARM's is, and with -v prints every line
+    # shellcheck disable=SC2086  # the offset and size, split on purpose
+    set -- $section
+    if ! entries=$(od -v -A n -t x4 -j "$((16#$1))" -N "$((16#$2))" "$lib"); then
+        echo "ERROR: could not read the .init_array of ${lib}"
+        return 1
+    fi
+    # Compared as strings: awk would take an address such as 0024e510 for a number
+    position=$(awk -v seed="$seed" '{ for (i = 1; i <= NF; i++) { n++; if (($i "") == (seed "")) { print n; exit } } }' <<< "$entries")
+    if [ -z "$position" ]; then
+        echo "ERROR: the constructor that seeds the guard (at ${seed}) is not in ${lib}'s .init_array: ${entries}"
+        return 1
+    fi
+    echo "__stack_chk_guard is linux-arm-stack-guard.c's (nm: ${guard}), seeded by the constructor at ${seed}, entry ${position} of .init_array"
 }
 
 # Fail the build unless a library linked against musl needs musl's libc.so and nothing else
