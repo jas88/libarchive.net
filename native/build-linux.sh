@@ -248,6 +248,10 @@ else
     verify_musl_imports libarchive.so
 fi
 
+# Fail the build unless the library exports libarchive's API alone, with every function that
+# LibArchive.Net imports (see verify-exports.sh)
+READELF="${AR%ar}readelf" "${SCRIPT_DIR}/verify-exports.sh" libarchive.so
+
 # The load test program, which is kept beside the library for CI to run with it in
 # containers. A glibc library is load tested here too, in a glibc process: natively for
 # x64, and under QEMU user-mode emulation for arm64 and arm (see build-linux-common.sh).

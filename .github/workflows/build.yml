@@ -425,6 +425,10 @@ jobs:
           done
 
           ls -lR "$R"
+      # Each Linux library must export libarchive's API alone, and every function that
+      # LibArchive.Net imports from it (native/verify-exports.sh)
+      - name: Check the exports of the Linux libraries
+        run: ./native/verify-exports.sh LibArchive.Net/runtimes/linux-*/native/libarchive.so
       - name: Pack
         id: pack
         run: |

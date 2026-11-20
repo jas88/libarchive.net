@@ -4,7 +4,7 @@
  * does, and nothing else. The code of zlib, xz, zstd, lz4, bzip2, libxml2, mbedTLS, the lzop
  * shim and zig's compiler-rt that is linked into it stays local to it, so that no other
  * code in the process can bind to it, or take its place by defining a symbol of the same
- * name.
+ * name. verify-exports.sh checks the result.
  */
 {
     global: archive_*;
