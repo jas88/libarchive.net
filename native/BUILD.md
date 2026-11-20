@@ -120,6 +120,8 @@ crypto backends of the builds (CommonCrypto on macOS, CNG on Windows and mbedTLS
 24-byte AES key as they take the others. The patch changes `archive_write_set_format_zip.c`, as
 `libarchive-narrow-utf8.patch` does, so its hunks are against that file as that patch leaves it.
 LibArchive.Net's `EncryptionType.AES192` sets the option that the patch adds, `encryption=aes192`.
+`Test.LibArchive.Net/ZipAesTests.cs` checks the headers and the encryption of what the writer
+writes, and reads an archive that 7-Zip encrypted with AES-192.
 
 - `patch_libarchive` (in `build-config.sh`) applies them to the freshly unpacked sources in every
   build script: `build-macos.sh`, the three `build-linux*.sh` scripts and `build-windows.sh`, each
