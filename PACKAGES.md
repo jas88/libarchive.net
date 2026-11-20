@@ -11,7 +11,7 @@ LibArchive.Net is a .NET wrapper for the native libarchive library, providing re
 ### Key Features
 
 - **Reading**: zip, rar, 7zip, tar, cpio, ISO 9660 and other archive formats, compressed with gzip, bzip2, xz, lzma, lzop, zstd, lz4 and more, including password-protected ZIP archives (traditional PKWARE and AES)
-- **Writing**: ZIP, 7-Zip, TAR (also Ustar and PAX), CPIO, ISO 9660 and XAR archives (XAR not on Linux), compressed with Gzip, Bzip2, XZ, LZMA, LZ4, Zstd, Compress or LZIP, and encrypted ZIP archives (AES-128, AES-256 or traditional PKWARE)
+- **Writing**: ZIP, 7-Zip, TAR (also Ustar and PAX), CPIO, ISO 9660 and XAR archives (XAR not on Linux), compressed with Gzip, Bzip2, XZ, LZMA, LZ4, Zstd, Compress or LZIP, and encrypted ZIP archives (AES-128, AES-192, AES-256 or traditional PKWARE)
 - **Cross-Platform**: Native libraries included for:
   - Windows: x86, x64, ARM64 (`win-x86`, `win-x64`, `win-arm64`)
   - Linux: x64, ARM (32-bit), ARM64, on glibc and on musl (`linux-x64`, `linux-arm`, `linux-arm64`, `linux-musl-x64`, `linux-musl-arm`, `linux-musl-arm64`)
@@ -96,7 +96,7 @@ The package is annotated with trim analysis attributes to ensure safe trimming b
 
 ### Known Limitations
 
-1. **Encryption**: ZIP only. libarchive can neither read nor write encrypted 7-Zip or RAR archives, and its ZIP writer has no AES-192 (reading handles it)
+1. **Encryption**: ZIP only. libarchive can neither read nor write encrypted 7-Zip or RAR archives
 2. **XAR**: Not available on Linux (see above)
 3. **Multi-Volume Archives**: Only RAR multi-volume archives are tested
 

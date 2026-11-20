@@ -71,8 +71,8 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     /// <see cref="int.MaxValue"/>, the largest block size libarchive takes.</exception>
     /// <exception cref="NotSupportedException">
     /// A password was supplied for a format other than ZIP (unless the encryption type is
-    /// <see cref="EncryptionType.None"/>, which ignores the password), or with an encryption type that libarchive
-    /// or this native library build cannot write.
+    /// <see cref="EncryptionType.None"/>, which ignores the password), or this native library build cannot encrypt
+    /// with the encryption type requested, as when it was built without a cryptography backend.
     /// </exception>
     public LibArchiveWriter(
         string filename,
@@ -217,10 +217,9 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
         return encryption switch
         {
             EncryptionType.Default or EncryptionType.AES256 => "zip:encryption=aes256",
+            EncryptionType.AES192 => "zip:encryption=aes192",
             EncryptionType.AES128 => "zip:encryption=aes128",
             EncryptionType.Traditional => "zip:encryption=traditional",
-            EncryptionType.AES192 => throw new NotSupportedException(
-                "AES-192 encryption cannot be written: libarchive's ZIP writer supports AES-128 and AES-256 only."),
             _ => throw new ArgumentException($"Unsupported encryption type for ZIP: {encryption}")
         };
     }
@@ -263,8 +262,7 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     /// <see cref="EncryptionType"/> value.
     /// </exception>
     /// <exception cref="NotSupportedException">
-    /// Encryption other than <see cref="EncryptionType.None"/> was requested for a format other than ZIP,
-    /// or <see cref="EncryptionType.AES192"/> was requested, which libarchive's ZIP writer cannot write.
+    /// Encryption other than <see cref="EncryptionType.None"/> was requested for a format other than ZIP.
     /// This method does not check whether the native library has a cryptography backend: a missing backend
     /// is reported when the writer is created.
     /// </exception>

@@ -187,6 +187,7 @@ public class WriterTests
 
     [TestCase(EncryptionType.Default)]
     [TestCase(EncryptionType.AES256)]
+    [TestCase(EncryptionType.AES192)]
     [TestCase(EncryptionType.AES128)]
     [TestCase(EncryptionType.Traditional)]
     public void TestPasswordProtectedZip(EncryptionType encryption)
@@ -238,23 +239,6 @@ public class WriterTests
         Assert.That(File.ReadAllBytes(archivePath), Is.EqualTo(original));
     }
 
-    [Test]
-    public void TestAes192ZipThrows()
-    {
-        // libarchive's ZIP writer implements AES-128 and AES-256 only
-        var archivePath = Path.Combine(testDirectory, "aes192.zip");
-
-        var ex = Assert.Throws<NotSupportedException>(() =>
-            new LibArchiveWriter(
-                archivePath,
-                ArchiveFormat.Zip,
-                password: Password,
-                encryption: EncryptionType.AES192).Dispose());
-
-        Assert.That(ex!.Message, Does.Contain("AES-128").And.Contain("AES-256"));
-        Assert.That(File.Exists(archivePath), Is.False, "The output file must not be created");
-    }
-
     [TestCase(ArchiveFormat.Zip)]
     [TestCase(ArchiveFormat.SevenZip)]
     [TestCase(ArchiveFormat.Tar)]
@@ -279,9 +263,6 @@ public class WriterTests
     {
         using var sevenZip = new LibArchiveWriter(Path.Combine(testDirectory, "with-password.7z"), ArchiveFormat.SevenZip);
         Assert.Throws<NotSupportedException>(() => sevenZip.WithPassword(Password));
-
-        using var zip = new LibArchiveWriter(Path.Combine(testDirectory, "with-password.zip"), ArchiveFormat.Zip);
-        Assert.Throws<NotSupportedException>(() => zip.WithPassword(Password, EncryptionType.AES192));
     }
 
     [Test]
@@ -299,6 +280,7 @@ public class WriterTests
         // libarchive accepts a passphrase only before the archive is opened, and the constructor opens it
         using var plain = new LibArchiveWriter(Path.Combine(testDirectory, "plain.zip"), ArchiveFormat.Zip);
         Assert.Throws<InvalidOperationException>(() => plain.WithPassword(Password));
+        Assert.Throws<InvalidOperationException>(() => plain.WithPassword(Password, EncryptionType.AES192));
 
         using var encrypted = new LibArchiveWriter(
             Path.Combine(testDirectory, "encrypted.zip"),
