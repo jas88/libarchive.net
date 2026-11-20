@@ -26,20 +26,51 @@ libraries are built without one (`native/build-linux*.sh` configure libarchive w
 archives cannot be read either. The Windows and macOS native libraries are built with libxml2 and
 support XAR.
 
-### ✅ Compression Algorithms
+### ✅ Compression
 
-- **Gzip** - Fast, widely supported (.gz)
-- **Bzip2** - Better compression than gzip (.bz2)
-- **XZ** - Excellent compression, LZMA2 (.xz)
-- **LZMA** - High compression ratio (.lzma)
-- **LZ4** - Extremely fast (.lz4)
-- **Zstd** - Modern, excellent balance (.zst)
-- **Compress** - Legacy Unix (.Z)
-- **LZIP** - LZMA with integrity checking (.lz)
+ZIP, 7-Zip and XAR archives compress each entry themselves, with a method of their own. For these
+formats, `compression` selects the method and `compressionLevel` its level, and no filter is added, so
+the archive is still one that ZIP, 7-Zip or XAR tools can open. `CompressionType.None` keeps the
+format's default method. The other formats are compressed as a whole by a filter, as in `.tar.gz`, and
+`CompressionType.None` leaves them uncompressed.
 
-The compression type is a filter applied to the whole archive, as in `.tar.gz`. ZIP and 7-Zip compress
-their contents themselves, so they need no filter: leave `compression` at `CompressionType.None`.
-`CompressionType.Deflate` is not a filter, and the writer throws `NotSupportedException` for it.
+| `CompressionType` | ZIP | 7-Zip | XAR | Tar, Ustar, Pax, Cpio, ISO 9660 |
+|-------------------|-----|-------|-----|---------------------------------|
+| `None` | DEFLATE (method 8), the default | LZMA, the default | gzip, the default | No filter |
+| `Deflate` | DEFLATE (method 8) | Deflate | Not supported: use `Gzip` | Not supported: use `Gzip` |
+| `Gzip` | Not supported: use `Deflate` | Not supported: use `Deflate` | gzip (`application/x-gzip`) | gzip filter (`.gz`) |
+| `Bzip2` | BZIP2 (method 12) | BZip2 | bzip2 (`application/x-bzip2`) | bzip2 filter (`.bz2`) |
+| `Lzma` | LZMA (method 14) | LZMA | lzma (`application/x-lzma`) | lzma filter (`.lzma`) |
+| `Xz` | XZ (method 95) | LZMA2 | xz (`application/x-xz`) | xz filter (`.xz`) |
+| `Zstd` | Zstandard (method 93) | Zstandard | Not supported | zstd filter (`.zst`) |
+| `Lz4` | Not supported | Not supported | Not supported | lz4 filter (`.lz4`) |
+| `Compress` | Not supported | Not supported | Not supported | compress filter (`.Z`) |
+| `Lzip` | Not supported | Not supported | Not supported | lzip filter (`.lz`) |
+
+A type that the format does not support throws `NotSupportedException` when the writer is created,
+before the output file is created (or an existing one truncated) or anything is written to the stream;
+the message lists the types the format supports.
+
+- `Deflate` is the method of ZIP and gzip, but libarchive has no DEFLATE filter: use `Gzip` for a
+  gzip-compressed tar, cpio or ISO 9660 archive. XAR's DEFLATE method is the one libarchive calls gzip,
+  which stores each file as a zlib stream that XAR records as `application/x-gzip`.
+- 7-Zip's `Xz` is LZMA2, the method xz uses: a 7-Zip archive holds LZMA2 data, not xz streams. 7-Zip's
+  Zstandard method has the method ID that 7-Zip-zstd uses (`04 F7 11 01`).
+- Not every ZIP tool can extract BZIP2, LZMA, XZ or Zstandard entries, nor every 7-Zip build Zstandard
+  ones: the defaults, DEFLATE for ZIP and LZMA for 7-Zip, are the most widely read.
+- libarchive's ZIP reader cannot read a Zstandard entry whose size is a multiple of 128 KiB from a file or
+  a seekable stream, as `LibArchiveReader` reads them: it reports "Truncated zstd file body", although the
+  entry is valid and other tools, such as 7-Zip, read it. It reads such an entry from a stream that cannot
+  seek.
+
+```csharp
+// A ZIP archive whose entries are compressed with Zstandard at level 9
+using var writer = new LibArchiveWriter(
+    "archive.zip",
+    ArchiveFormat.Zip,
+    compression: CompressionType.Zstd,
+    compressionLevel: 9);
+```
 
 ### ✅ Encryption Support
 
@@ -219,7 +250,7 @@ using var writer = LibArchiveWriter.CreateMemoryWriter(64 * 1024, ArchiveFormat.
 ```
 
 The block size comes first so that existing calls such as `CreateMemoryWriter(ArchiveFormat.Zip, 0)` keep
-their meaning (no compression). To give it after the format, name every argument:
+their meaning (`CompressionType.None`). To give it after the format, name every argument:
 `CreateMemoryWriter(format: ArchiveFormat.Zip, blockSize: 4096)`.
 
 ## Performance Tips
@@ -227,14 +258,17 @@ their meaning (no compression). To give it after the format, name every argument
 ### 1. Choose the Right Format
 
 - **ZIP**: Best compatibility, moderate compression
+- **ZIP with `Zstd`, `Xz` or `Bzip2`**: Better compression than DEFLATE, read by fewer tools
 - **7-Zip**: Best compression ratio, slower
 - **TAR + Gzip**: Good for Unix systems, streaming-friendly
 - **TAR + Zstd**: Modern, excellent speed/ratio balance
 
 ### 2. Compression Level Guidelines
 
-The level applies to the compression filter only: with `CompressionType.None` it has no effect, so it does
-not change how ZIP or 7-Zip compress their contents.
+`compressionLevel` goes to the method or the filter that `compression` selects, including a ZIP, 7-Zip or
+XAR archive's default method with `CompressionType.None`. It must be 0 to 9 (default 6), or the writer
+throws `ArgumentOutOfRangeException` before anything is written; a tar, ustar, pax, cpio or ISO 9660
+archive without a filter does not use it, and does not check it.
 
 ```csharp
 // Fast compression (level 1-3)
@@ -246,6 +280,26 @@ compressionLevel: 6  // Default, good balance
 // Maximum compression (level 7-9)
 compressionLevel: 9  // Slowest, smallest files
 ```
+
+What each level does depends on the format and the method:
+
+- **ZIP**: Level 0 stores the entries uncompressed (method 0, store), whatever the compression type:
+  libarchive's ZIP writer switches to store at level 0, and the writer sets the level after the method.
+  Levels 1 to 9 are the method's own, with two exceptions: for LZMA and XZ, level 9 is preset 9 with the
+  extreme flag, and for Zstandard, ZIP makes level 1 Zstandard's fastest level (`ZSTD_minCLevel()`,
+  -131072, which hardly compresses) and levels 2 to 9 Zstandard's levels 2, 5, 8, 11, 13, 16, 19 and 22.
+- **7-Zip**: The method gets the level as it is. Level 0 is LZMA's and LZMA2's fastest preset, preset 0;
+  DEFLATE without compression, in stored blocks; and Zstandard's level 0, which Zstandard takes as its
+  default level, 3. For Zstandard, levels 1 to 9 are its levels 1 to 9, of 22. BZIP2 has levels 1 to 9
+  only, so `CompressionType.Bzip2` at level 0 throws `ArgumentOutOfRangeException`.
+- **XAR**: The method gets the level as it is. Level 0 is gzip without compression, in stored blocks of a
+  zlib stream that is still recorded as gzip, and LZMA's and XZ's fastest preset, preset 0.
+  `CompressionType.Bzip2` at level 0 throws `ArgumentOutOfRangeException`.
+- **Tar, Ustar, Pax, Cpio, ISO 9660**: The filter gets the level, and reads it as libarchive's filter
+  does (see libarchive's `archive_write_set_options(3)`).
+
+The default level, 6, is also the level that libarchive's ZIP, 7-Zip and XAR writers use by default, so a
+writer created without compression arguments writes the archive that libarchive writes by default.
 
 ### 3. Batch Operations
 
@@ -354,7 +408,7 @@ void ExportData(string outputPath, ArchiveFormat format)
     var compression = format switch
     {
         ArchiveFormat.Tar => CompressionType.Gzip,
-        _ => CompressionType.None  // ZIP and 7-Zip compress their contents themselves
+        _ => CompressionType.None  // ZIP and 7-Zip use their default methods, DEFLATE and LZMA
     };
 
     using var writer = new LibArchiveWriter(outputPath, format, compression);
@@ -404,8 +458,8 @@ catch (UnauthorizedAccessException ex)
 public LibArchiveWriter(
     string filename,                          // Output file path
     ArchiveFormat format,                     // Archive format
-    CompressionType compression = None,       // Compression algorithm
-    int compressionLevel = 6,                 // Compression level (0-9)
+    CompressionType compression = None,       // Method (ZIP, 7-Zip, XAR) or filter (other formats)
+    int compressionLevel = 6,                 // Level of the method or filter (0-9)
     uint blockSize = 1048576,                 // Size of libarchive's writes (1 MiB default)
     string? password = null,                  // Optional password (ZIP only)
     EncryptionType encryption = Default)      // Encryption type
