@@ -63,11 +63,13 @@ it, so libarchive itself is not patched.
 
 Every build patches libarchive's sources with this project's patches, which are in this directory,
 one for each change. `LIBARCHIVE_PATCHES` in `build-config.sh` lists them, in the order in which
-they are applied, each with the marker that its changes carry in their comments:
+they are applied, each with its marker, which every file that it changes carries in a comment:
 
 - `libarchive-narrow-utf8.patch` (`LIBARCHIVE_NET_NARROW_UTF8`): every narrow string is UTF-8.
 - `libarchive-lz4-init-stream-hc.patch` (`LIBARCHIVE_NET_LZ4_INIT_STREAM_HC`): no call to lz4's
   deprecated `LZ4_resetStreamHC()`.
+- `libarchive-zip-aes192.patch` (`LIBARCHIVE_NET_ZIP_AES192`): the zip writer can encrypt with WinZip
+  AES-192.
 
 The description at the top of each patch lists its changes.
 
@@ -109,6 +111,14 @@ own `LZ4_resetStreamHC()` is that same initialisation followed by setting the le
 the stream is left exactly as before and compresses to the same bytes. Defining lz4's
 `LZ4_DISABLE_DEPRECATE_WARNINGS` instead would also hide any other deprecated call, such as one
 that a later libarchive release makes.
+
+`libarchive-zip-aes192.patch` adds WinZip AES-192 to libarchive's zip writer, which encrypted with
+AES-128 and AES-256 only, although its reader decrypts all three. The writer handles AES-192
+wherever it handles the other two, with the sizes that the reader reads it with: strength 2 in the
+AES extra field (0x9901), a 12-byte salt, and a 24-byte AES key and a 24-byte HMAC-SHA1 key. The
+crypto backends of the builds (CommonCrypto on macOS, CNG on Windows and mbedTLS on Linux) take a
+24-byte AES key as they take the others. The patch changes `archive_write_set_format_zip.c`, as
+`libarchive-narrow-utf8.patch` does, so its hunks are against that file as that patch leaves it.
 
 - `patch_libarchive` (in `build-config.sh`) applies them to the freshly unpacked sources in every
   build script: `build-macos.sh`, the three `build-linux*.sh` scripts and `build-windows.sh`, each

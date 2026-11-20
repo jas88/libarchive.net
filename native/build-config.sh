@@ -13,6 +13,7 @@ LIBARCHIVE_VERSION="3.8.11"
 LIBARCHIVE_PATCHES="
     libarchive-narrow-utf8.patch:LIBARCHIVE_NET_NARROW_UTF8
     libarchive-lz4-init-stream-hc.patch:LIBARCHIVE_NET_LZ4_INIT_STREAM_HC
+    libarchive-zip-aes192.patch:LIBARCHIVE_NET_ZIP_AES192
 "
 LZ4_VERSION="1.11.1"
 ZSTD_VERSION="1.5.7"
