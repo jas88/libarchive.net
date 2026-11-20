@@ -25,7 +25,8 @@ public enum ArchiveFormat
     /// (<see cref="CompressionType.Lzma"/>, <see cref="CompressionType.Xz"/> for LZMA2,
     /// <see cref="CompressionType.Deflate"/>, <see cref="CompressionType.Bzip2"/> or
     /// <see cref="CompressionType.Zstd"/>) and no filter is added; any other type throws
-    /// <see cref="System.NotSupportedException"/>. The compression level goes to the method as it is.
+    /// <see cref="System.NotSupportedException"/>. Compression level 0 stores the entries uncompressed, with
+    /// 7-Zip's Copy method, whatever the compression type; levels 1 to 9 go to the method.
     /// No encryption: libarchive cannot encrypt 7-Zip archives, so a password with this format throws
     /// <see cref="System.NotSupportedException"/> unless the encryption type is <see cref="EncryptionType.None"/>.
     /// Entry names are stored as UTF-16LE.
@@ -74,8 +75,9 @@ public enum ArchiveFormat
     /// XAR compresses each file itself, with gzip by default: the compression type selects the method
     /// (<see cref="CompressionType.Gzip"/>, <see cref="CompressionType.Bzip2"/>, <see cref="CompressionType.Lzma"/>
     /// or <see cref="CompressionType.Xz"/>) and no filter is added; any other type, including
-    /// <see cref="CompressionType.Deflate"/>, throws <see cref="System.NotSupportedException"/>. The compression
-    /// level goes to the method as it is.
+    /// <see cref="CompressionType.Deflate"/>, throws <see cref="System.NotSupportedException"/>. Compression
+    /// level 0 stores the files uncompressed, with XAR's none method (<c>application/octet-stream</c>),
+    /// whatever the compression type; levels 1 to 9 go to the method.
     /// Entry names are stored as UTF-8 in the table of contents, base64-encoded if they have
     /// characters beyond Latin-1.
     /// </summary>

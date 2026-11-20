@@ -14,7 +14,8 @@ public partial class LibArchiveWriter
     /// <remarks>
     /// ZIP, 7-Zip and XAR archives compress each entry with a method of their own, which libarchive's writer
     /// for the format takes as its <c>compression</c> and <c>compression-level</c> options: no filter is added
-    /// to them. Every other format is compressed as a whole by a filter (see <see cref="AddFilter"/>).
+    /// to them. At level 0 they store the entries uncompressed, whatever the method, as 7-Zip's own
+    /// <c>-mx0</c> does. Every other format is compressed as a whole by a filter (see <see cref="AddFilter"/>).
     /// </remarks>
     /// <returns>The options that select a ZIP, 7-Zip or XAR archive's method and level, in the order they are
     /// to be set; or <c>null</c> for the other formats, which <see cref="AddFilter"/> compresses.</returns>
@@ -36,18 +37,17 @@ public partial class LibArchiveWriter
             return null;
         }
 
+        // The type is checked even at level 0, which stores the entries whatever the method
         var method = GetMethod(format, compression);
         CheckCompressionLevel(compressionLevel);
 
-        // The 7-Zip and XAR writers give the level to BZIP2 as it is, and BZIP2 has no level 0: the first
-        // entry would fail (archive_write_set_format_7zip.c:1953, archive_write_set_format_xar.c:2874)
-        if (compression == CompressionType.Bzip2 && compressionLevel == 0 && format != ArchiveFormat.Zip)
-            throw new ArgumentOutOfRangeException(nameof(compressionLevel), compressionLevel,
-                $"Bzip2 compression takes levels 1 to 9 for the {format} format");
+        // At level 0, 7-Zip stores with its Copy method and XAR with "none", which take no level, so none is
+        // given (archive_write_set_format_7zip.c:418-422, archive_write_set_format_xar.c:470-473)
+        if (compressionLevel == 0 && format != ArchiveFormat.Zip)
+            return new[] { $"{module}:compression={(format == ArchiveFormat.SevenZip ? "store" : "none")}" };
 
         // The method goes first. At level 0 the ZIP writer switches to store, whatever the method set before
-        // it (archive_write_set_format_zip.c:410-412); a method set after it would be used at level 0,
-        // which BZIP2 cannot do.
+        // it (archive_write_set_format_zip.c:410-412), whereas a method set after it would be used at level 0.
         var level = $"{module}:compression-level={compressionLevel.ToString(CultureInfo.InvariantCulture)}";
         return method == null ? new[] { level } : new[] { $"{module}:compression={method}", level };
     }

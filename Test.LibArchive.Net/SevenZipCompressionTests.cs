@@ -103,42 +103,30 @@ public class SevenZipCompressionTests
         AssertFiles(smallest, ("text.txt", Text));
     }
 
-    // Level 0 is LZMA's and LZMA2's preset 0, their fastest, which still compresses
-    [TestCase(CompressionType.None)]
-    [TestCase(CompressionType.Lzma)]
-    [TestCase(CompressionType.Xz)]
-    public void TestLevelZeroIsTheFastestPreset(CompressionType compression)
-    {
-        var archive = Write(ArchiveFormat.SevenZip, compression, 0, ("text.txt", Text));
-
-        AssertCoder(archive, compression, 0);
-        Assert.That(archive, Has.Length.LessThan(Text.Length / 2), "compressed");
-        AssertFiles(archive, ("text.txt", Text));
-    }
-
-    // Level 0 is DEFLATE's level 0, which stores the data in uncompressed blocks
+    // Level 0 stores the entries, whatever the method, with the Copy method (ID 00), whose coder has no
+    // properties. libarchive then leaves the header unencoded even with several entries, and gives each entry
+    // with data a folder of its own (archive_write_set_format_7zip.c:888-890, 1099-1100), whose packed stream
+    // is that data as it is.
     [Test]
-    public void TestLevelZeroDeflateStoresTheData()
+    public void TestLevelZeroStores([ValueSource(nameof(Types))] CompressionType compression)
     {
-        var archive = Write(ArchiveFormat.SevenZip, CompressionType.Deflate, 0, ("text.txt", Text));
+        var entries = new[]
+        {
+            ("first.txt", CompressibleText(16 * 1024, seed: 1)),
+            ("empty.txt", Array.Empty<byte>()),
+            ("second.txt", CompressibleText(8 * 1024, seed: 2)),
+        };
+        var archive = Write(ArchiveFormat.SevenZip, compression, 0, entries);
 
-        AssertCoder(archive, CompressionType.Deflate, 0);
-        Assert.That(archive, Has.Length.GreaterThan(Text.Length), "not compressed");
-        Assert.That(Contains(archive, Text.Take(4096).ToArray()), Is.True, "the text is in the archive as it is");
-        AssertFiles(archive, ("text.txt", Text));
-    }
-
-    // Level 0 is Zstandard's level 0, which zstd takes as its default level, 3: the data is packed as at level 3
-    [Test]
-    public void TestLevelZeroZstdIsLevelThree()
-    {
-        var zero = Write(ArchiveFormat.SevenZip, CompressionType.Zstd, 0, ("text.txt", Text));
-        var three = Write(ArchiveFormat.SevenZip, CompressionType.Zstd, 3, ("text.txt", Text));
-
-        AssertCoder(zero, CompressionType.Zstd, 0);
-        AssertCoder(three, CompressionType.Zstd, 3);
-        Assert.That(SevenZipPackedData(zero), Is.EqualTo(SevenZipPackedData(three)));
-        AssertFiles(zero, ("text.txt", Text));
+        Assert.That(StartsWith(archive, SevenZipSignature), Is.True, "the archive starts with the 7-Zip signature: no filter wraps it");
+        foreach (var coder in SevenZipCoders(archive))
+        {
+            Assert.That(coder.Id, Is.EqualTo(new byte[] { 0x00 }), "Copy coder");
+            Assert.That(coder.Properties, Is.Empty, "Copy coder properties");
+        }
+        Assert.That(SevenZipPackedStreams(archive), Is.EqualTo(new[] { entries[0].Item2, entries[2].Item2 }),
+            "each entry with data is packed as it is");
+        AssertFiles(archive, entries);
     }
 
     // The default call writes what LZMA, 7-Zip's default method, writes at level 6, libarchive's default level

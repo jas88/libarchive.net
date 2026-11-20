@@ -281,22 +281,17 @@ compressionLevel: 6  // Default, good balance
 compressionLevel: 9  // Slowest, smallest files
 ```
 
-What each level does depends on the format and the method:
+Level 0 stores the entries of a ZIP, 7-Zip or XAR archive uncompressed, whatever the compression type, as
+7-Zip's own `-mx0` does. A compression type that the format does not support still throws.
 
-- **ZIP**: Level 0 stores the entries uncompressed (method 0, store), whatever the compression type:
-  libarchive's ZIP writer switches to store at level 0, and the writer sets the level after the method.
-  Levels 1 to 9 are the method's own, with two exceptions: for LZMA and XZ, level 9 is preset 9 with the
-  extreme flag, and for Zstandard, ZIP makes level 1 Zstandard's fastest level (`ZSTD_minCLevel()`,
-  -131072, which hardly compresses) and levels 2 to 9 Zstandard's levels 2, 5, 8, 11, 13, 16, 19 and 22.
-- **7-Zip**: The method gets the level as it is. Level 0 is LZMA's and LZMA2's fastest preset, preset 0;
-  DEFLATE without compression, in stored blocks; and Zstandard's level 0, which Zstandard takes as its
-  default level, 3. For Zstandard, levels 1 to 9 are its levels 1 to 9, of 22. BZIP2 has levels 1 to 9
-  only, so `CompressionType.Bzip2` at level 0 throws `ArgumentOutOfRangeException`.
-- **XAR**: The method gets the level as it is. Level 0 is gzip without compression, in stored blocks of a
-  zlib stream that is still recorded as gzip, and LZMA's and XZ's fastest preset, preset 0.
-  `CompressionType.Bzip2` at level 0 throws `ArgumentOutOfRangeException`.
-- **Tar, Ustar, Pax, Cpio, ISO 9660**: The filter gets the level, and reads it as libarchive's filter
-  does (see libarchive's `archive_write_set_options(3)`).
+| Format | Level 0 | Levels 1 to 9 |
+|--------|---------|---------------|
+| ZIP | Method 0 (store): libarchive's ZIP writer switches to it at level 0, and the writer sets the level after the method | The method's own levels. For LZMA and XZ, level 9 is preset 9 with the extreme flag. For Zstandard, ZIP makes level 1 Zstandard's fastest level (`ZSTD_minCLevel()`, -131072, which hardly compresses) and levels 2 to 9 Zstandard's levels 2, 5, 8, 11, 13, 16, 19 and 22 |
+| 7-Zip | The Copy method, whose packed data is each entry's data as it is | The method's own levels; Zstandard gets levels 1 to 9 as they are, of its 22 |
+| XAR | The none method, which the table of contents records as `application/octet-stream` | The method's own levels |
+| Tar, Ustar, Pax, Cpio, ISO 9660 | The filter's level 0 | The filter's levels |
+
+A filter reads the level as libarchive's filter does (see libarchive's `archive_write_set_options(3)`).
 
 The default level, 6, is also the level that libarchive's ZIP, 7-Zip and XAR writers use by default, so a
 writer created without compression arguments writes the archive that libarchive writes by default.

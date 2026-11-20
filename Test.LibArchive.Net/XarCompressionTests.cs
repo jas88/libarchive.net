@@ -124,39 +124,25 @@ public class XarCompressionTests
         AssertFiles(smallest, ("text.txt", Text));
     }
 
-    // Level 0 is gzip's level 0, which stores the data in uncompressed blocks, still in a zlib stream that the
-    // table of contents records as gzip
-    [TestCase(CompressionType.None)]
-    [TestCase(CompressionType.Gzip)]
-    public void TestLevelZeroGzipStoresTheData(CompressionType compression)
+    // Level 0 stores the files, whatever the method, with XAR's none method, which writes each file's data as
+    // it is and records it as application/octet-stream (archive_write_set_format_xar.c:750-753, 1050-1051)
+    [Test]
+    public void TestLevelZeroStores([ValueSource(nameof(Types))] CompressionType compression)
     {
-        if (XarIsUnavailable(() => Write(ArchiveFormat.Xar, compression, 0, ("text.txt", Text))))
+        if (XarIsUnavailable(() => Write(ArchiveFormat.Xar, compression, 0, Entries)))
             return;
 
-        var xar = Write(ArchiveFormat.Xar, compression, 0, ("text.txt", Text));
+        var xar = Write(ArchiveFormat.Xar, compression, 0, Entries);
 
-        var file = XarFiles(xar).Single();
-        Assert.That(file.Encoding, Is.EqualTo(EncodingOf(compression)));
-        AssertLevel(file.Data, compression, 0);
-        Assert.That(file.Data, Has.Length.GreaterThan(Text.Length), "not compressed");
-        Assert.That(Contains(file.Data, Text.Take(4096).ToArray()), Is.True, "the text is in the archive as it is");
-        AssertFiles(xar, ("text.txt", Text));
-    }
-
-    // Level 0 is LZMA's and XZ's preset 0, their fastest, which still compresses
-    [TestCase(CompressionType.Lzma)]
-    [TestCase(CompressionType.Xz)]
-    public void TestLevelZeroIsTheFastestPreset(CompressionType compression)
-    {
-        if (XarIsUnavailable(() => Write(ArchiveFormat.Xar, compression, 0, ("text.txt", Text))))
-            return;
-
-        var xar = Write(ArchiveFormat.Xar, compression, 0, ("text.txt", Text));
-
-        var file = XarFiles(xar).Single();
-        AssertLevel(file.Data, compression, 0);
-        Assert.That(file.Data, Has.Length.LessThan(Text.Length / 2), "compressed");
-        AssertFiles(xar, ("text.txt", Text));
+        Assert.That(Encoding.ASCII.GetString(xar, 0, 4), Is.EqualTo("xar!"), "the archive starts with the XAR header: no filter wraps it");
+        var files = XarFiles(xar);
+        Assert.That(files.Select(f => f.Name), Is.EquivalentTo(Entries.Select(e => e.Name)));
+        foreach (var file in files)
+        {
+            Assert.That(file.Encoding, Is.EqualTo("application/octet-stream"), $"encoding of {file.Name}");
+            Assert.That(file.Data, Is.EqualTo(Entries.Single(e => e.Name == file.Name).Data), $"{file.Name} is stored as it is");
+        }
+        AssertFiles(xar, Entries);
     }
 
     // The default call writes what gzip, XAR's default method, writes at level 6, libarchive's default level,

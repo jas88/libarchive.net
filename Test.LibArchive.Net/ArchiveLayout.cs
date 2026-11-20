@@ -240,7 +240,7 @@ internal static class ArchiveLayout
 
     internal static readonly byte[] SevenZipSignature = { 0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c };
 
-    /// <summary>The first coder of a 7-Zip archive's first folder, and the size of its packed data.</summary>
+    /// <summary>The coder of a folder of a 7-Zip archive, and the size of the folder's packed stream.</summary>
     internal sealed class SevenZipCoder
     {
         public SevenZipCoder(byte[] id, byte[] properties, long packSize)
@@ -256,15 +256,17 @@ internal static class ArchiveLayout
     }
 
     /// <summary>
-    /// Reads the coder that unpacks a 7-Zip archive's data from its header, which must not be encoded.
+    /// Reads the coder that unpacks each folder of a 7-Zip archive's data from its header, which must not be
+    /// encoded, with the size of the folder's packed stream.
     /// </summary>
     /// <remarks>
     /// After the 32-byte signature header, the header is a property ID (kHeader, 1) followed by the main
     /// streams info (kMainStreamsInfo, 4): the pack info (kPackInfo, 6) gives the position, number and sizes of
     /// the packed streams, and the unpack info (kUnPackInfo, 7) lists the folders (kFolder, 11), each the
-    /// coders that unpack its data, by method ID. Numbers are 7-Zip's variable-length UINT64s.
+    /// coders that unpack its data, by method ID. Numbers are 7-Zip's variable-length UINT64s. Each folder
+    /// libarchive writes has one coder, which unpacks one packed stream.
     /// </remarks>
-    internal static SevenZipCoder SevenZipFirstCoder(byte[] archive)
+    internal static List<SevenZipCoder> SevenZipCoders(byte[] archive)
     {
         Assert.That(archive.Take(6), Is.EqualTo(SevenZipSignature), "7-Zip signature");
         var header = new SevenZipHeader(archive, 32 + (int)ReadUInt64(archive, 12));
@@ -273,30 +275,57 @@ internal static class ArchiveLayout
         header.Expect(0x04, "kMainStreamsInfo");
         header.Expect(0x06, "kPackInfo");
         Assert.That(header.ReadNumber(), Is.Zero, "pack position");
-        var packStreams = header.ReadNumber();
-        ulong packSize = 0;
+        var packStreams = (int)header.ReadNumber();
+        var packSizes = new List<long>();
         for (var property = header.ReadNumber(); property != 0; property = header.ReadNumber())
         {
             Assert.That(property, Is.EqualTo(0x09), "kSize");
-            for (ulong i = 0; i < packStreams; i++)
-                packSize += header.ReadNumber();
+            for (var i = 0; i < packStreams; i++)
+                packSizes.Add((long)header.ReadNumber());
         }
 
         header.Expect(0x07, "kUnPackInfo");
         header.Expect(0x0b, "kFolder");
-        Assert.That(header.ReadNumber(), Is.EqualTo(1), "number of folders");
+        var folders = (int)header.ReadNumber();
+        Assert.That(folders, Is.EqualTo(packStreams), "one packed stream for each folder");
+        Assert.That(packSizes, Has.Count.EqualTo(packStreams), "the size of each packed stream");
         header.Expect(0x00, "folders that are not external");
-        Assert.That(header.ReadNumber(), Is.EqualTo(1), "number of coders");
-        var flags = header.ReadByte();
-        Assert.That(flags & 0x10, Is.Zero, "a simple coder, with one stream in and one out");
-        var id = header.ReadBytes(flags & 0x0f);
-        var properties = (flags & 0x20) != 0 ? header.ReadBytes((int)header.ReadNumber()) : Array.Empty<byte>();
-        return new SevenZipCoder(id, properties, (long)packSize);
+
+        var coders = new List<SevenZipCoder>();
+        for (var i = 0; i < folders; i++)
+        {
+            Assert.That(header.ReadNumber(), Is.EqualTo(1), "number of coders");
+            var flags = header.ReadByte();
+            Assert.That(flags & 0x10, Is.Zero, "a simple coder, with one stream in and one out");
+            var id = header.ReadBytes(flags & 0x0f);
+            var properties = (flags & 0x20) != 0 ? header.ReadBytes((int)header.ReadNumber()) : Array.Empty<byte>();
+            coders.Add(new SevenZipCoder(id, properties, packSizes[i]));
+        }
+        return coders;
     }
 
-    /// <summary>The packed data of a 7-Zip archive with one folder, which starts after the signature header.</summary>
-    internal static byte[] SevenZipPackedData(byte[] archive) =>
-        archive.Skip(32).Take((int)SevenZipFirstCoder(archive).PackSize).ToArray();
+    /// <summary>The coder of a 7-Zip archive with one folder.</summary>
+    internal static SevenZipCoder SevenZipFirstCoder(byte[] archive)
+    {
+        var coders = SevenZipCoders(archive);
+        Assert.That(coders, Has.Count.EqualTo(1), "number of folders");
+        return coders[0];
+    }
+
+    /// <summary>
+    /// The packed stream of each folder of a 7-Zip archive, in order: they follow the signature header.
+    /// </summary>
+    internal static List<byte[]> SevenZipPackedStreams(byte[] archive)
+    {
+        var offset = 32;
+        var streams = new List<byte[]>();
+        foreach (var coder in SevenZipCoders(archive))
+        {
+            streams.Add(archive.Skip(offset).Take((int)coder.PackSize).ToArray());
+            offset += (int)coder.PackSize;
+        }
+        return streams;
+    }
 
     private sealed class SevenZipHeader
     {

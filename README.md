@@ -79,7 +79,7 @@ using var zstdZipWriter = new LibArchiveWriter("archive.zip",
 zstdZipWriter.AddFile("document.txt");
 ```
 
-ZIP, 7-Zip and XAR archives compress each entry themselves: for them `compression` selects the format's method and `compressionLevel` its level, and `CompressionType.None` keeps the default method (DEFLATE, LZMA and gzip respectively). The other formats are compressed as a whole by a filter, as in `.tar.gz`. A compression type that the format does not have, such as `CompressionType.Gzip` for ZIP (whose method is `CompressionType.Deflate`), throws `NotSupportedException` before anything is written. At level 0 a ZIP archive stores its entries uncompressed, whatever the method. See [Compression](docs/WRITE-SUPPORT.md#-compression) for every combination and level.
+ZIP, 7-Zip and XAR archives compress each entry themselves: for them `compression` selects the format's method and `compressionLevel` its level, and `CompressionType.None` keeps the default method (DEFLATE, LZMA and gzip respectively). The other formats are compressed as a whole by a filter, as in `.tar.gz`. A compression type that the format does not have, such as `CompressionType.Gzip` for ZIP (whose method is `CompressionType.Deflate`), throws `NotSupportedException` before anything is written. At level 0, ZIP, 7-Zip and XAR archives store their entries uncompressed, whatever the method. See [Compression](docs/WRITE-SUPPORT.md#-compression) for every combination and level.
 
 ```csharp
 using System.Text;

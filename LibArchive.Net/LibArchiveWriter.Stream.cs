@@ -36,9 +36,9 @@ public partial class LibArchiveWriter
     /// <see cref="CompressionType.None"/>. See <see cref="CompressionType"/> for what each value does with each
     /// format.</param>
     /// <param name="compressionLevel">Compression level 0-9, where 9 is maximum compression (default: 6), for
-    /// the method or the filter. Level 0 stores a ZIP archive's entries uncompressed, whatever the method;
-    /// 7-Zip and XAR give the level to the method as it is (see <see cref="CompressionType"/>). A tar, ustar,
-    /// pax, cpio or ISO 9660 archive without a filter does not use the level, and does not check it.</param>
+    /// the method or the filter. Level 0 stores the entries of a ZIP, 7-Zip or XAR archive uncompressed,
+    /// whatever the method, as 7-Zip's <c>-mx0</c> does (see <see cref="CompressionType"/>). A tar, ustar, pax,
+    /// cpio or ISO 9660 archive without a filter does not use the level, and does not check it.</param>
     /// <param name="password">Optional password for encryption. libarchive can only encrypt ZIP archives.</param>
     /// <param name="encryption">Encryption type when a password is provided (default: AES-256).</param>
     /// <param name="blockSize">Size in bytes of the blocks libarchive writes the archive in (default: 1 MiB);
@@ -46,8 +46,7 @@ public partial class LibArchiveWriter
     /// archive is written, not its size or contents.</param>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="blockSize"/> is greater than
     /// <see cref="int.MaxValue"/>, the largest block size libarchive takes; or <paramref name="compressionLevel"/>
-    /// is used and is less than 0 or greater than 9, or is 0 with <see cref="CompressionType.Bzip2"/> for a
-    /// 7-Zip or XAR archive, as BZIP2 takes levels 1 to 9. Nothing is written to the stream.</exception>
+    /// is used and is less than 0 or greater than 9. Nothing is written to the stream.</exception>
     /// <exception cref="NotSupportedException">
     /// <paramref name="compression"/> is a method that a ZIP, 7-Zip or XAR archive does not have, or
     /// <see cref="CompressionType.Deflate"/> for another format, as libarchive has no DEFLATE filter (see
@@ -213,16 +212,15 @@ public partial class LibArchiveWriter
     /// <see cref="CompressionType.None"/>. See <see cref="CompressionType"/> for what each value does with each
     /// format.</param>
     /// <param name="compressionLevel">Compression level 0-9, where 9 is maximum compression (default: 6), for
-    /// the method or the filter. Level 0 stores a ZIP archive's entries uncompressed, whatever the method;
-    /// 7-Zip and XAR give the level to the method as it is (see <see cref="CompressionType"/>). A tar, ustar,
-    /// pax, cpio or ISO 9660 archive without a filter does not use the level, and does not check it.</param>
+    /// the method or the filter. Level 0 stores the entries of a ZIP, 7-Zip or XAR archive uncompressed,
+    /// whatever the method, as 7-Zip's <c>-mx0</c> does (see <see cref="CompressionType"/>). A tar, ustar, pax,
+    /// cpio or ISO 9660 archive without a filter does not use the level, and does not check it.</param>
     /// <param name="password">Optional password for encryption. libarchive can only encrypt ZIP archives.</param>
     /// <param name="encryption">Encryption type when a password is provided (default: AES-256).</param>
     /// <param name="initialCapacity">Initial capacity of the memory buffer in bytes (default: 64 KB).</param>
     /// <returns>A LibArchiveWriter that writes to memory.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="compressionLevel"/> is used and is less
-    /// than 0 or greater than 9, or is 0 with <see cref="CompressionType.Bzip2"/> for a 7-Zip or XAR archive,
-    /// as BZIP2 takes levels 1 to 9.</exception>
+    /// than 0 or greater than 9.</exception>
     /// <exception cref="NotSupportedException">
     /// <paramref name="compression"/> is a method that a ZIP, 7-Zip or XAR archive does not have, or
     /// <see cref="CompressionType.Deflate"/> for another format, as libarchive has no DEFLATE filter (see
@@ -262,17 +260,16 @@ public partial class LibArchiveWriter
     /// <see cref="CompressionType.None"/>. See <see cref="CompressionType"/> for what each value does with each
     /// format.</param>
     /// <param name="compressionLevel">Compression level 0-9, where 9 is maximum compression (default: 6), for
-    /// the method or the filter. Level 0 stores a ZIP archive's entries uncompressed, whatever the method;
-    /// 7-Zip and XAR give the level to the method as it is (see <see cref="CompressionType"/>). A tar, ustar,
-    /// pax, cpio or ISO 9660 archive without a filter does not use the level, and does not check it.</param>
+    /// the method or the filter. Level 0 stores the entries of a ZIP, 7-Zip or XAR archive uncompressed,
+    /// whatever the method, as 7-Zip's <c>-mx0</c> does (see <see cref="CompressionType"/>). A tar, ustar, pax,
+    /// cpio or ISO 9660 archive without a filter does not use the level, and does not check it.</param>
     /// <param name="password">Optional password for encryption. libarchive can only encrypt ZIP archives.</param>
     /// <param name="encryption">Encryption type when a password is provided (default: AES-256).</param>
     /// <param name="initialCapacity">Initial capacity of the memory buffer in bytes (default: 64 KB).</param>
     /// <returns>A LibArchiveWriter that writes to memory.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="blockSize"/> is greater than
     /// <see cref="int.MaxValue"/>, the largest block size libarchive takes; or <paramref name="compressionLevel"/>
-    /// is used and is less than 0 or greater than 9, or is 0 with <see cref="CompressionType.Bzip2"/> for a
-    /// 7-Zip or XAR archive, as BZIP2 takes levels 1 to 9.</exception>
+    /// is used and is less than 0 or greater than 9.</exception>
     /// <exception cref="NotSupportedException">
     /// <paramref name="compression"/> is a method that a ZIP, 7-Zip or XAR archive does not have, or
     /// <see cref="CompressionType.Deflate"/> for another format, as libarchive has no DEFLATE filter (see

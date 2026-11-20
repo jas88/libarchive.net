@@ -19,14 +19,14 @@ namespace LibArchive.Net;
 /// and <see cref="None"/> leaves them uncompressed.
 /// </para>
 /// <para>
-/// The compression level, 0 to 9, goes to the method or the filter. ZIP stores its entries uncompressed (method
-/// 0) at level 0, whatever the method. For Zstandard, ZIP makes level 1 Zstandard's fastest level
-/// (<c>ZSTD_minCLevel()</c>, -131072) and levels 2 to 9 Zstandard's levels 2, 5, 8, 11, 13, 16, 19 and 22. 7-Zip
-/// and XAR give the level to the method as it is, so level 0 is the method's own: DEFLATE (7-Zip) and gzip (XAR)
-/// store their data in uncompressed blocks, LZMA, LZMA2 and XZ use their fastest preset, preset 0, and Zstandard
-/// (7-Zip) takes it as its default level, 3. BZIP2 has no level 0, so <see cref="Bzip2"/> at level 0 throws
-/// <see cref="System.ArgumentOutOfRangeException"/> for a 7-Zip or XAR archive. A filter reads the level as
-/// libarchive's filter does (see libarchive's <c>archive_write_set_options(3)</c>).
+/// The compression level, 0 to 9, goes to the method or the filter. Level 0 stores the entries of a ZIP, 7-Zip
+/// or XAR archive uncompressed, whatever the compression type, as 7-Zip's own <c>-mx0</c> does: ZIP with method
+/// 0 (store), 7-Zip with its Copy method, and XAR with its none method, which the table of contents records as
+/// <c>application/octet-stream</c>. A type the format has no method for still throws. Levels 1 to 9 go to the
+/// method. For Zstandard, ZIP makes level 1 Zstandard's fastest level (<c>ZSTD_minCLevel()</c>, -131072) and
+/// levels 2 to 9 Zstandard's levels 2, 5, 8, 11, 13, 16, 19 and 22, while 7-Zip gives Zstandard levels 1 to 9
+/// as they are. A filter reads the level as libarchive's filter does (see libarchive's
+/// <c>archive_write_set_options(3)</c>).
 /// </para>
 /// </remarks>
 public enum CompressionType

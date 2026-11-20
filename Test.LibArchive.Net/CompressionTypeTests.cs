@@ -72,13 +72,17 @@ public class CompressionTypeTests
         check(Assert.Throws<T>(() => LibArchiveWriter.CreateMemoryWriter(4096, format, compression, level).Dispose())!);
     }
 
+    // Level 0 too, although it stores the entries whatever the method
     [TestCaseSource(nameof(UnsupportedCombinations))]
-    public void TestUnsupportedCombinationThrowsBeforeWriting(ArchiveFormat format, CompressionType compression, string supported) =>
-        AssertThrowsBeforeWriting<NotSupportedException>(format, compression, 6, ex =>
-        {
-            Assert.That(ex.Message, Does.StartWith($"{compression} compression is not supported for the {format} format: "));
-            Assert.That(ex.Message, Does.Contain(supported));
-        });
+    public void TestUnsupportedCombinationThrowsBeforeWriting(ArchiveFormat format, CompressionType compression, string supported)
+    {
+        foreach (var level in new[] { 6, 0 })
+            AssertThrowsBeforeWriting<NotSupportedException>(format, compression, level, ex =>
+            {
+                Assert.That(ex.Message, Does.StartWith($"{compression} compression is not supported for the {format} format: "));
+                Assert.That(ex.Message, Does.Contain(supported));
+            });
+    }
 
     // The method that the format uses where the one asked for is another's name for it
     [TestCase(ArchiveFormat.Zip, CompressionType.Gzip, "Deflate is the method gzip uses.")]
@@ -111,16 +115,6 @@ public class CompressionTypeTests
 
         AssertFiles(tar, ("a.txt", data));
     }
-
-    // 7-Zip and XAR give the level to BZIP2 as it is, and BZIP2 has no level 0: libarchive would only fail at
-    // the first entry
-    [Test]
-    public void TestBzip2LevelZeroThrowsBeforeWriting([Values(ArchiveFormat.SevenZip, ArchiveFormat.Xar)] ArchiveFormat format) =>
-        AssertThrowsBeforeWriting<ArgumentOutOfRangeException>(format, CompressionType.Bzip2, 0, ex =>
-        {
-            Assert.That(ex.ParamName, Is.EqualTo("compressionLevel"));
-            Assert.That(ex.Message, Does.StartWith($"Bzip2 compression takes levels 1 to 9 for the {format} format"));
-        });
 
     // The start of each filter's output: the gzip, bzip2, xz, LZ4 frame, zstd frame, compress and lzip magic,
     // and for lzma, LZMA alone's properties: lc=3, lp=0, pb=2, the 8 MiB dictionary of preset 6, the level
