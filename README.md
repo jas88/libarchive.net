@@ -155,7 +155,7 @@ Native libraries for all supported platforms are included in the NuGet package.
 | `Name` | Entry filename/path (see [Entry Names](#entry-names)) |
 | `LengthBytes` | Uncompressed size in bytes, or `null` if it is not known |
 | `Type` | Entry type, a `LibArchiveReader.EntryType`: `RegularFile` or `Directory` (other kinds of entry, such as symbolic links, have no named value) |
-| `Warning` | libarchive's warning about the entry, such as a pax attribute that it ignored or a name that it could not convert, or `null` |
+| `Warning` | libarchive's warning about the entry, such as a pax attribute that it ignored or a name that it could not convert, or `null` if there was none. If libarchive gave the warning without a message, it is `libarchive returned ARCHIVE_WARN without a message` |
 | `Stream` | Stream for reading entry content |
 | `ReadAllBytes()` | Read entire content as byte array |
 | `ReadAllText()` | Read entire content as string |
