@@ -84,6 +84,8 @@ they are applied, each with its marker, which every file that it changes carries
   deprecated `LZ4_resetStreamHC()`.
 - `libarchive-zip-aes192.patch` (`LIBARCHIVE_NET_ZIP_AES192`): the zip writer can encrypt with WinZip
   AES-192.
+- `libarchive-zip-zstd-end-of-entry.patch` (`LIBARCHIVE_NET_ZIP_ZSTD_END_OF_ENTRY`): the zip reader
+  ends a Zstandard entry where its data ends, even if that fills the reader's buffer.
 
 The description at the top of each patch lists its changes.
 
@@ -136,6 +138,18 @@ crypto backends of the builds (CommonCrypto on macOS, CNG on Windows and mbedTLS
 LibArchive.Net's `EncryptionType.AES192` sets the option that the patch adds, `encryption=aes192`.
 `Test.LibArchive.Net/ZipAesTests.cs` checks the headers and the encryption of what the writer
 writes, and reads an archive that 7-Zip encrypted with AES-192.
+
+`libarchive-zip-zstd-end-of-entry.patch` fixes a bug in libarchive's zip reader, which libarchive
+3.8.11 and libarchive's master branch both have. The reader decompresses a Zstandard entry
+(method 93) into a buffer of `ZSTD_DStreamOutSize()` bytes, 128 KiB. It ended an entry whose sizes
+it knows only if the entry's data ended with part of that buffer unused, so an entry of 128 KiB, or
+of a multiple of 128 KiB, failed with "Truncated zstd file body". The reader knows the sizes of
+every entry that it reads from a file or a seekable stream, and of an entry whose local header
+holds them, as Python's zipfile writes them. The patch ends such an entry once
+`ZSTD_decompressStream()` reports the end of a frame and none of the entry's compressed bytes are
+left; any that are left hold another frame, so an entry of several frames still reads in full. An
+entry whose sizes follow its data (`ZIP_LENGTH_AT_END`), read from a non-seekable stream, still
+ends with its first frame, as before.
 
 - `patch_libarchive` (in `build-config.sh`) applies them to the freshly unpacked sources in every
   build script: `build-macos.sh`, the three `build-linux*.sh` scripts and `build-windows.sh`, each

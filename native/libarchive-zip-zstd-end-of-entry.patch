@@ -1,0 +1,60 @@
+The ZIP reader ends a Zstandard entry where its data ends, even if that fills its buffer.
+
+One of this project's patches to libarchive, which every build (macOS, Linux and
+Windows) applies with patch_libarchive (native/build-config.sh), to the libarchive
+release pinned there, in the order that LIBARCHIVE_PATCHES there lists them. A build
+fails if any hunk does not apply exactly (no fuzz), and scripts/check-native-updates.sh
+will not propose a libarchive release that it does not apply to. See "The libarchive
+patches" in native/BUILD.md.
+
+The ZIP reader (archive_read_support_format_zip.c) decompresses a Zstandard entry
+(method 93) with ZSTD_decompressStream(), into a buffer of ZSTD_DStreamOutSize()
+bytes, 128 KiB. It ended an entry whose sizes it knows only when
+ZSTD_decompressStream() returned 0, had used all the input it was given, and had not
+filled that buffer. An entry whose data ends just as the buffer fills, such as one of
+128 KiB or of a multiple of 128 KiB, therefore did not end: the next read found none
+of its compressed bytes left and failed with "Truncated zstd file body". The reader
+knows the sizes of every entry that it reads from a file or other seekable source,
+from the central directory, and of an entry whose local header holds them, as
+Python's zipfile writes them. It ends an entry whose sizes follow its data
+(ZIP_LENGTH_AT_END), as libarchive's own zip writer writes them, wherever
+ZSTD_decompressStream() returns 0, so such an entry failed only when read from a
+seekable source.
+
+ZSTD_decompressStream() returns 0 once a frame is decoded and all of its data is
+flushed, whether or not that fills the buffer. The reader now ends an entry whose
+sizes it knows when that happens and none of the entry's compressed bytes are left.
+Any that are left hold another frame, which the next read decodes, so an entry of
+several frames still reads in full. Such an entry also no longer ends early where one
+of its frames ends at the end of the data read so far, which the old test took for
+the end of the entry. An entry whose sizes follow its data still ends with its first
+frame, as before.
+
+libarchive 3.8.11 and libarchive's master branch (432ab464, 16 November 2026) have
+the old test, which came with the reader's Zstandard support (b0ad184f, first in
+libarchive 3.6.0).
+
+The change is marked LIBARCHIVE_NET_ZIP_ZSTD_END_OF_ENTRY, the marker that
+LIBARCHIVE_PATCHES gives this patch: patch_libarchive checks that every file the patch
+changes has it.
+
+--- a/libarchive/archive_read_support_format_zip.c
++++ b/libarchive/archive_read_support_format_zip.c
+@@ -2985,7 +2985,16 @@
+ 
+ 	/* Check end of the stream. */
+ 	if (ret == 0) {
+-		if ((in.pos == in.size) && (out.pos < out.size)) {
++		/*
++		 * LIBARCHIVE_NET_ZIP_ZSTD_END_OF_ENTRY: ZSTD_decompressStream()
++		 * returns 0 once a frame is decoded and flushed, even if that
++		 * fills the output buffer.  An entry of unknown size
++		 * (ZIP_LENGTH_AT_END) ends with the frame, as above; one of
++		 * known size ends with the frame that uses its last
++		 * compressed byte, and any bytes left hold another frame.
++		 */
++		if ((zip->entry->zip_flags & ZIP_LENGTH_AT_END)
++		    || (int64_t)in.pos == zip->entry_bytes_remaining) {
+ 			zip->end_of_entry = 1;
+ 			ZSTD_freeDStream(zip->zstdstream);
+ 			zip->zstdstream_valid = 0;
