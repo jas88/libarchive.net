@@ -45,6 +45,7 @@ v0.3.2 - November 16, 2026
 - Add a `CreateMemoryWriter(uint blockSize, ArchiveFormat format, ...)` overload. The existing signature is unchanged, so compiled callers keep working.
 - Write ZIP archives encrypted with WinZip AES-192 (`EncryptionType.AES192`), which failed in v0.3.1 with an `ApplicationException` reading ``Undefined option: `encryption'``. libarchive's ZIP writer has only AES-128 and AES-256, so the native libraries are built with a patch that adds AES-192.
 - Add `LibArchiveReader.Entry.Warning`: libarchive's warning about the entry, or null if there was none.
+- Read and write XAR archives on Linux, as on macOS and Windows. XAR never worked on Linux: libarchive's XAR support needs MD5 and SHA-1 as well as libxml2, and the Linux libraries had neither until this release. They now link mbedTLS and a minimal libxml2, and the Linux builds fail if XAR is missing.
 
 **Target Frameworks:**
 - Add a `net11.0` build. The package is now built with the .NET 11 SDK.
@@ -58,7 +59,8 @@ v0.3.2 - November 16, 2026
 - Bump lz4 from 1.10.0 to 1.11.1
 - Bump the Bootlin musl toolchains used for the Linux builds from 2025.08-1 to 2026.08-1
 - Replace the GPL-licensed liblzo2 2.10 with lzokay (MIT), pinned to commit `db2df1f`, behind a small shim that provides the part of the liblzo2 API libarchive uses, so lzop-compressed data is still read in-process
-- Add mbedTLS 3.6.8, statically linked into the Linux libraries only, for AES-encrypted ZIP archives
+- Add mbedTLS 3.6.8, statically linked into the Linux libraries only, for AES-encrypted ZIP archives and for the MD5 and SHA-1 that XAR needs
+- Link libxml2 into the Linux libraries as well, for XAR, built with only the parts that libarchive's XAR support uses and seeded from `getentropy`
 - Add `THIRD-PARTY-NOTICES.txt` at the root of the package, with the licence notices for the third-party code linked into the native libraries
 - Stop building and shipping the Linux x86 library, which the loader never supported and for which .NET has no official runtime; a .NET 10+ app on an unofficial Linux x86 runtime, which could previously load the packaged library, now gets a `DllNotFoundException`
 - Patch libarchive at build time, with one patch for each change, in the order that `LIBARCHIVE_PATCHES` in `native/build-config.sh` lists them:
@@ -98,7 +100,7 @@ v0.3.2 - November 16, 2026
 - Keep the plain-text test fixtures byte-exact on Windows checkouts
 - `scripts/generate-build-props.sh`: the .NET 13 SDK targets net12.0 and net13.0, and the .NET 14 SDK follows the same rule instead of targeting net14.0 alone
 - Build the native libraries without compiler, linker, libtool or configure warnings:
-  - build only the dependency libraries that are linked: no `bzip2recover`, no lz4 programs, and no libxml2 on Linux, where nothing links it;
+  - build only the dependency libraries that are linked: no `bzip2recover` and no lz4 programs;
   - pass libxml2 only the options it has;
   - stop libarchive's lz4 writer calling lz4's deprecated `LZ4_resetStreamHC`, through a patch of its own;
   - name the cross tools for cross-compiling configure runs.
@@ -107,10 +109,10 @@ v0.3.2 - November 16, 2026
 
 **Documentation:**
 - The package description and `PACKAGES.md` now describe what the package ships: reading and writing, the supported platforms and runtimes, and the libraries bundled on each platform. `PACKAGES.md`'s code samples now compile
-- Correct API names, target frameworks and the license link in `README.md` and `docs/WRITE-SUPPORT.md`, and note that XAR is not available on Linux
+- Correct API names, target frameworks and the license link in `README.md` and `docs/WRITE-SUPPORT.md`
 - `native/BUILD.md`: liblzma is 0BSD (since XZ Utils 5.6.0), not public domain. It also gains the cache locations and a section on testing a package locally
 - `README.md` and `docs/WRITE-SUPPORT.md` describe how each format stores entry names and how they are read back
-- Correct the doc comments on the ZIP encryption variants, on 7-Zip having no encryption and on XAR being unavailable on Linux. Also correct the error-handling sample in `docs/WRITE-SUPPORT.md`
+- Correct the doc comments on the ZIP encryption variants and on 7-Zip having no encryption. Also correct the error-handling sample in `docs/WRITE-SUPPORT.md`
 - `README.md`, `docs/WRITE-SUPPORT.md` and the doc comments describe the compression methods and levels of each format, and what each filter does with the level
 
 **Tooling Updates:**
