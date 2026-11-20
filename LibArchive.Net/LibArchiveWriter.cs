@@ -60,19 +60,32 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     /// </summary>
     /// <param name="filename">Path to the archive file to create.</param>
     /// <param name="format">Archive format to use.</param>
-    /// <param name="compression">Compression algorithm to apply (default: None).</param>
-    /// <param name="compressionLevel">Compression level 0-9, where 9 is maximum compression (default: 6).</param>
+    /// <param name="compression">How to compress the archive (default: None). ZIP, 7-Zip and XAR archives
+    /// compress their entries themselves: for them this selects the method, and
+    /// <see cref="CompressionType.None"/> keeps the format's default (DEFLATE, LZMA and gzip respectively).
+    /// Every other format is compressed as a whole by this filter, or not at all with
+    /// <see cref="CompressionType.None"/>. See <see cref="CompressionType"/> for what each value does with each
+    /// format.</param>
+    /// <param name="compressionLevel">Compression level 0-9, where 9 is maximum compression (default: 6), for
+    /// the method or the filter. Level 0 stores the entries of a ZIP, 7-Zip or XAR archive uncompressed,
+    /// whatever the method, as 7-Zip's <c>-mx0</c> does (see <see cref="CompressionType"/>). A tar, ustar, pax,
+    /// cpio or ISO 9660 archive without a filter does not use the level, and does not check it.</param>
     /// <param name="blockSize">Size in bytes of the blocks libarchive writes the archive in (default: 1 MiB);
     /// 0 writes data as it is produced. The last block is not padded, so the block size changes how the
     /// archive is written, not its size or contents.</param>
     /// <param name="password">Optional password for encryption. libarchive can only encrypt ZIP archives.</param>
     /// <param name="encryption">Encryption type when a password is provided (default: AES-256).</param>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="blockSize"/> is greater than
-    /// <see cref="int.MaxValue"/>, the largest block size libarchive takes.</exception>
+    /// <see cref="int.MaxValue"/>, the largest block size libarchive takes; or <paramref name="compressionLevel"/>
+    /// is used and is less than 0 or greater than 9. The file is not created, nor an existing file
+    /// truncated.</exception>
     /// <exception cref="NotSupportedException">
-    /// A password was supplied for a format other than ZIP (unless the encryption type is
-    /// <see cref="EncryptionType.None"/>, which ignores the password), or this native library build cannot encrypt
-    /// with the encryption type requested, as when it was built without a cryptography backend.
+    /// <paramref name="compression"/> is a method that a ZIP, 7-Zip or XAR archive does not have, or
+    /// <see cref="CompressionType.Deflate"/> for another format, as libarchive has no DEFLATE filter (see
+    /// <see cref="CompressionType"/>); or a password was supplied for a format other than ZIP (unless the
+    /// encryption type is <see cref="EncryptionType.None"/>, which ignores the password), or this native library
+    /// build cannot encrypt with the encryption type requested, as when it was built without a cryptography
+    /// backend. The file is not created, nor an existing file truncated.
     /// </exception>
     public LibArchiveWriter(
         string filename,
@@ -88,8 +101,9 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
             throw new ArgumentException("Filename cannot be null or empty", nameof(filename));
         CheckBlockSize(blockSize);
 
-        // Reject encryption libarchive cannot provide before the output file is created or truncated
+        // Reject encryption and compression libarchive cannot provide before the output file is created or truncated
         var encryptionOption = GetEncryptionOption(format, password, encryption);
+        var compressionOptions = GetFormatCompressionOptions(format, compression, compressionLevel);
 
         this.format = format;
         this.blockSize = blockSize;
@@ -103,7 +117,7 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
         try
         {
             SetFormat(format);
-            AddFilter(compression, compressionLevel);
+            ConfigureCompression(compressionOptions, compression, compressionLevel);
 
             if (encryptionOption != null)
                 ConfigureEncryption(encryptionOption, password!);
@@ -134,7 +148,7 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
 
     #endregion
 
-    #region Format and Compression Configuration
+    #region Format Configuration
 
     private void SetFormat(ArchiveFormat format)
     {
@@ -152,38 +166,6 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
         };
 
         ThrowUnlessOk(result);
-    }
-
-    private void AddFilter(CompressionType compression, int level)
-    {
-        if (compression == CompressionType.None)
-            return;
-
-        var result = compression switch
-        {
-            CompressionType.Gzip => archive_write_add_filter_gzip(handle),
-            CompressionType.Bzip2 => archive_write_add_filter_bzip2(handle),
-            CompressionType.Xz => archive_write_add_filter_xz(handle),
-            CompressionType.Lzma => archive_write_add_filter_lzma(handle),
-            CompressionType.Lz4 => archive_write_add_filter_lz4(handle),
-            CompressionType.Zstd => archive_write_add_filter_zstd(handle),
-            CompressionType.Compress => archive_write_add_filter_compress(handle),
-            CompressionType.Lzip => archive_write_add_filter_lzip(handle),
-            _ => throw new NotSupportedException($"Compression type {compression} is not supported")
-        };
-
-        ThrowUnlessOk(result);
-
-        // Set compression level (0-9)
-        if (level < 0 || level > 9)
-            throw new ArgumentOutOfRangeException(nameof(level), "Compression level must be between 0 and 9");
-
-        // Set compression level via filter options
-        // The option name varies by filter: "compression-level" is the common name
-        using var optionName = new SafeStringBuffer("compression-level");
-        using var optionValue = new SafeStringBuffer(level.ToString());
-        // Ignore result - not all filters support compression-level, and that's ok
-        archive_write_set_filter_option(handle, IntPtr.Zero, optionName.Ptr, optionValue.Ptr);
     }
 
     #endregion
@@ -589,7 +571,7 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
 
     #endregion
 
-    #region P/Invoke Declarations - Encryption Functions
+    #region P/Invoke Declarations - Option and Encryption Functions
 
 #if NET7_0_OR_GREATER
     [LibraryImport("archive")]

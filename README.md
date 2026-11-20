@@ -9,7 +9,7 @@
 
 - **Read** archives: ZIP, RAR, 7-Zip, TAR, gzip, bzip2, xz, lzma, lzop (decoded by [lzokay](https://github.com/AxioDL/lzokay)), and more
 - **Write** archives: ZIP, 7-Zip, TAR, Ustar, PAX, CPIO, ISO 9660, XAR (not on Linux, see below)
-- **Compression**: Gzip, Bzip2, XZ, LZMA, LZ4, Zstd, Compress, LZIP
+- **Compression**: ZIP, 7-Zip and XAR entries with the format's own methods (ZIP: DEFLATE, BZIP2, LZMA, XZ, Zstandard; 7-Zip: LZMA, LZMA2, DEFLATE, BZIP2, Zstandard; XAR: gzip, BZIP2, LZMA, XZ), and other archives with Gzip, Bzip2, XZ, LZMA, LZ4, Zstd, Compress or LZIP filters
 - **Encryption**: ZIP only, for reading and writing: AES-128, AES-192, AES-256 and traditional PKWARE. 7-Zip encryption is not supported by libarchive
 - **Platform support**: Windows (x86, x64, ARM64), Linux (x64, ARM64, ARM), macOS (x64, ARM64)
 - **Native AOT** and trimming compatible (.NET 10+)
@@ -69,6 +69,17 @@ using var tarWriter = new LibArchiveWriter("archive.tar.gz",
 tarWriter.AddFile("document.txt");
 tarWriter.AddDirectory("folder/", recursive: true);
 ```
+
+```csharp
+// Create a ZIP archive whose entries are compressed with Zstandard
+using var zstdZipWriter = new LibArchiveWriter("archive.zip",
+    ArchiveFormat.Zip,
+    CompressionType.Zstd,
+    compressionLevel: 9);
+zstdZipWriter.AddFile("document.txt");
+```
+
+ZIP, 7-Zip and XAR archives compress each entry themselves: for them `compression` selects the format's method and `compressionLevel` its level, and `CompressionType.None` keeps the default method (DEFLATE, LZMA and gzip respectively). The other formats are compressed as a whole by a filter, as in `.tar.gz`. A compression type that the format does not have, such as `CompressionType.Gzip` for ZIP (whose method is `CompressionType.Deflate`), throws `NotSupportedException` before anything is written. At level 0, ZIP, 7-Zip and XAR archives store their entries uncompressed, whatever the method. See [Compression](docs/WRITE-SUPPORT.md#-compression) for every combination and level.
 
 ```csharp
 using System.Text;
