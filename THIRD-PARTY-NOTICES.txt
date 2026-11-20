@@ -165,7 +165,7 @@ Summary
    4  XZ Utils (liblzma)      BSD Zero Clause (0BSD)            all
    5  Zstandard (libzstd)     BSD (chosen from BSD or GPLv2)    all
    6  LZ4 (liblz4)            BSD 2-Clause                      all
-   7  libxml2                 MIT                               macOS, Windows
+   7  libxml2                 MIT                               all
    8  Mbed TLS                Apache 2.0 (chosen from           Linux
       (libmbedcrypto)         Apache 2.0 or GPLv2 or later)
    9  lzokay                  MIT; parts as noted               all
@@ -684,8 +684,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 7. libxml2
 ==============================================================================
 
-Applies to:  macOS and Windows native binaries (not the Linux ones; see
-             the end of this section)
+Applies to:  all native binaries (Linux, macOS, Windows)
 Source:      https://gitlab.gnome.org/GNOME/libxml2 (release pinned in
              native/build-config.sh)
 Licence:     MIT licence (SPDX identifier: MIT)
@@ -761,29 +760,32 @@ with different Copyright notices". These are their notices:
  */
 ----- END libxml2: list.c (notice) -----
 
-Linux: this section does not apply. libxml2.a is named on the link commands
-of native/build-linux*.sh, but libarchive uses libxml2 only for its XAR
-format support, which the Linux libraries do not have: they contain the
-stub of libarchive that reports "Xar not supported on this platform", and
-the Linux build scripts configure libarchive with --without-xml2. The
-linker therefore takes nothing from libxml2.a. As none of libxml2's code is
-in the Linux libraries, its notice is not needed for them.
+libarchive uses libxml2 for its XAR format support. The Linux build scripts
+link it too: they configure libarchive with --with-xml2, and build_libxml2
+in native/build-linux-common.sh builds libxml2.a from the release without
+the optional parts of libxml2 that libarchive does not use, compiled with
+-fvisibility=hidden so that the Linux libraries do not export libxml2's
+symbols. The libxml2 code that libarchive calls uses dict.c and list.c, so
+their notices above apply to the Linux libraries as well.
 
 Verified on the binaries inspected (see "How this file is maintained"), in
-all three packages: libxml2 code is inside the macOS library and the three
-DLLs, and not inside any of the Linux libraries. The Linux symbol tables
-define and refer to no libxml2 name (none beginning with "xml" or "html")
-and name no source file of libxml2: the objects taken from libz.a are
-followed directly by those taken from liblzma.a, the libraries on either
-side of libxml2.a on the link command. Each half of the macOS library
-defines over 2,500 libxml2 names, among them xmlTextReaderRead and
-xmlNewTextWriter. The DLLs are stripped, so they were searched instead for
-three strings of libxml2's code: a message of its text writer
-("xmlTextWriterStartDocument : invalid writer!"), an error message of its
-parser ("Extra content at the end of the document") and the XML namespace
-name "http://www.w3.org/XML/1998/namespace". The search finds all three in
-every DLL and in both halves of every macOS library, and none of them in
-any Linux library.
+all three packages, which were built before the Linux libraries linked
+libxml2: libxml2 code is inside the macOS library and the three DLLs, and
+not inside any of the Linux libraries, which had libarchive's XAR stub
+("Xar not supported on this platform") in its place. The Linux symbol
+tables define and refer to no libxml2 name (none beginning with "xml" or
+"html") and name no source file of libxml2: the objects taken from libz.a
+are followed directly by those taken from liblzma.a, the libraries on
+either side of libxml2.a on the link command of the time. Each half of the
+macOS library defines over 2,500 libxml2 names, among them
+xmlTextReaderRead and xmlNewTextWriter. The DLLs are stripped, so they were
+searched instead for three strings of libxml2's code: a message of its text
+writer ("xmlTextWriterStartDocument : invalid writer!"), an error message
+of its parser ("Extra content at the end of the document") and the XML
+namespace name "http://www.w3.org/XML/1998/namespace". The search finds all
+three in every DLL and in both halves of every macOS library, and none of
+them in any Linux library. No Linux library that links libxml2 has been
+inspected yet: when one has been, record here what was found in it.
 
 
 ==============================================================================
