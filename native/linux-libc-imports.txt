@@ -39,6 +39,17 @@ __lutimes_time64                 # arm only, musl's lutimes with a 64-bit time_t
 __mktime64                       # arm only, musl's mktime with a 64-bit time_t; glibc 2.34+ has it too
 __pthread_cond_timedwait_time64  # arm only, musl's pthread_cond_timedwait with a 64-bit time_t; not in glibc, so musl's runs, on a condition variable that glibc's functions initialise (liblzma's multithreaded encoder)
 __sched_cpucount
+# The stack protector, which the Bootlin toolchains enable (-fstack-protector-strong).
+# __stack_chk_fail is void, takes no arguments and does not return, in glibc (GLIBC_2.4;
+# GLIBC_2.17 on arm64) and musl alike. __stack_chk_guard, the canary, is a uintptr_t that
+# only arm64 and arm use: on x64 the canary is at %fs:0x28, in the thread control block of
+# either C library. glibc's dynamic loader (on arm64 and arm) and musl's libc.so define
+# __stack_chk_guard and set it at start-up, and the library's references bind to theirs.
+# Its own copy is used only in a process that defines none, where nothing sets it, so the
+# canary is 0: a weaker check, but no false alarm. glibc on x64 defines none, so x64 code
+# has to keep reading the canary from %fs:0x28.
+__stack_chk_fail
+__stack_chk_guard
 __stat_time64                    # arm only, musl's stat with a 64-bit time_t; not in glibc, so musl's runs
 __time64                         # arm only, musl's time with a 64-bit time_t; glibc 2.34+ has it too
 __timegm_time64                  # arm only, musl's timegm with a 64-bit time_t; not in glibc, so musl's runs
