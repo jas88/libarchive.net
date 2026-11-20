@@ -223,6 +223,11 @@ internal static class WinZipAes
     {
         using var aes = Aes.Create();
         aes.Key = ZipEntryHeaders.Slice(keys, 0, keyLength);
+        // WinZip AES is AES in CTR mode, which .NET does not provide. CTR's keystream is AES applied
+        // to each counter value in turn, which is what a one-block ECB transform computes, so no data
+        // is encrypted with ECB here. libarchive builds its CTR mode from ECB in the same way, on every
+        // crypto backend (archive_cryptor.c). Each entry has its own salt and so its own key, and the
+        // counter never repeats within an entry, so no keystream block is used twice.
         aes.Mode = CipherMode.ECB;
         aes.Padding = PaddingMode.None;
         using var encryptor = aes.CreateEncryptor();
