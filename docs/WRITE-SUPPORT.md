@@ -48,8 +48,11 @@ format's default method. The other formats are compressed as a whole by a filter
 | `Lzip` | Not supported | Not supported | Not supported | lzip filter (`.lz`) |
 
 A type that the format does not support throws `NotSupportedException` when the writer is created,
-before the output file is created (or an existing one truncated) or anything is written to the stream;
-the message lists the types the format supports.
+before the output file is created (or an existing one truncated) or anything is written to the stream.
+For ZIP, 7-Zip and XAR, the message lists the types the format supports, and names the format's method
+for the one asked for when that is another name for it: `Deflate` for `Gzip` with ZIP or 7-Zip, and
+`Gzip` for `Deflate` with XAR. For the other formats, whose only unsupported type is `Deflate`, the
+message says that libarchive has no DEFLATE filter, and to use `Gzip`.
 
 - `Deflate` is the method of ZIP and gzip, but libarchive has no DEFLATE filter: use `Gzip` for a
   gzip-compressed tar, cpio or ISO 9660 archive. XAR's DEFLATE method is the one libarchive calls gzip,
