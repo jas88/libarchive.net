@@ -29,19 +29,32 @@ public partial class LibArchiveWriter
     /// </summary>
     /// <param name="outputStream">The stream to write the archive to. Must be writable.</param>
     /// <param name="format">Archive format to use.</param>
-    /// <param name="compression">Compression algorithm to apply (default: None).</param>
-    /// <param name="compressionLevel">Compression level 0-9, where 9 is maximum compression (default: 6).</param>
+    /// <param name="compression">How to compress the archive (default: None). ZIP, 7-Zip and XAR archives
+    /// compress their entries themselves: for them this selects the method, and
+    /// <see cref="CompressionType.None"/> keeps the format's default (DEFLATE, LZMA and gzip respectively).
+    /// Every other format is compressed as a whole by this filter, or not at all with
+    /// <see cref="CompressionType.None"/>. See <see cref="CompressionType"/> for what each value does with each
+    /// format.</param>
+    /// <param name="compressionLevel">Compression level 0-9, where 9 is maximum compression (default: 6), for
+    /// the method or the filter. Level 0 stores a ZIP archive's entries uncompressed, whatever the method;
+    /// 7-Zip and XAR give the level to the method as it is (see <see cref="CompressionType"/>). A tar, ustar,
+    /// pax, cpio or ISO 9660 archive without a filter does not use the level, and does not check it.</param>
     /// <param name="password">Optional password for encryption. libarchive can only encrypt ZIP archives.</param>
     /// <param name="encryption">Encryption type when a password is provided (default: AES-256).</param>
     /// <param name="blockSize">Size in bytes of the blocks libarchive writes the archive in (default: 1 MiB);
     /// 0 writes data as it is produced. The last block is not padded, so the block size changes how the
     /// archive is written, not its size or contents.</param>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="blockSize"/> is greater than
-    /// <see cref="int.MaxValue"/>, the largest block size libarchive takes.</exception>
+    /// <see cref="int.MaxValue"/>, the largest block size libarchive takes; or <paramref name="compressionLevel"/>
+    /// is used and is less than 0 or greater than 9, or is 0 with <see cref="CompressionType.Bzip2"/> for a
+    /// 7-Zip or XAR archive, as BZIP2 takes levels 1 to 9. Nothing is written to the stream.</exception>
     /// <exception cref="NotSupportedException">
-    /// A password was supplied for a format other than ZIP (unless the encryption type is
-    /// <see cref="EncryptionType.None"/>, which ignores the password), or this native library build cannot encrypt
-    /// with the encryption type requested, as when it was built without a cryptography backend.
+    /// <paramref name="compression"/> is a method that a ZIP, 7-Zip or XAR archive does not have, or
+    /// <see cref="CompressionType.Deflate"/> for another format, as libarchive has no DEFLATE filter (see
+    /// <see cref="CompressionType"/>); or a password was supplied for a format other than ZIP (unless the
+    /// encryption type is <see cref="EncryptionType.None"/>, which ignores the password), or this native library
+    /// build cannot encrypt with the encryption type requested, as when it was built without a cryptography
+    /// backend. Nothing is written to the stream.
     /// </exception>
     public LibArchiveWriter(
         Stream outputStream,
@@ -59,8 +72,9 @@ public partial class LibArchiveWriter
             throw new ArgumentException("Stream must be writable", nameof(outputStream));
         CheckBlockSize(blockSize);
 
-        // Reject encryption libarchive cannot provide before anything is written to the stream
+        // Reject encryption and compression libarchive cannot provide before anything is written to the stream
         var encryptionOption = GetEncryptionOption(format, password, encryption);
+        var compressionOptions = GetFormatCompressionOptions(format, compression, compressionLevel);
 
         this.outputStream = outputStream;
         this.format = format;
@@ -75,7 +89,7 @@ public partial class LibArchiveWriter
         try
         {
             SetFormat(format);
-            AddFilter(compression, compressionLevel);
+            ConfigureCompression(compressionOptions, compression, compressionLevel);
 
             if (encryptionOption != null)
                 ConfigureEncryption(encryptionOption, password!);
@@ -192,16 +206,30 @@ public partial class LibArchiveWriter
     /// <see cref="CreateMemoryWriter(uint, ArchiveFormat, CompressionType, int, string, EncryptionType, int)"/>.
     /// </remarks>
     /// <param name="format">Archive format to use.</param>
-    /// <param name="compression">Compression algorithm to apply (default: None).</param>
-    /// <param name="compressionLevel">Compression level 0-9, where 9 is maximum compression (default: 6).</param>
+    /// <param name="compression">How to compress the archive (default: None). ZIP, 7-Zip and XAR archives
+    /// compress their entries themselves: for them this selects the method, and
+    /// <see cref="CompressionType.None"/> keeps the format's default (DEFLATE, LZMA and gzip respectively).
+    /// Every other format is compressed as a whole by this filter, or not at all with
+    /// <see cref="CompressionType.None"/>. See <see cref="CompressionType"/> for what each value does with each
+    /// format.</param>
+    /// <param name="compressionLevel">Compression level 0-9, where 9 is maximum compression (default: 6), for
+    /// the method or the filter. Level 0 stores a ZIP archive's entries uncompressed, whatever the method;
+    /// 7-Zip and XAR give the level to the method as it is (see <see cref="CompressionType"/>). A tar, ustar,
+    /// pax, cpio or ISO 9660 archive without a filter does not use the level, and does not check it.</param>
     /// <param name="password">Optional password for encryption. libarchive can only encrypt ZIP archives.</param>
     /// <param name="encryption">Encryption type when a password is provided (default: AES-256).</param>
     /// <param name="initialCapacity">Initial capacity of the memory buffer in bytes (default: 64 KB).</param>
     /// <returns>A LibArchiveWriter that writes to memory.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="compressionLevel"/> is used and is less
+    /// than 0 or greater than 9, or is 0 with <see cref="CompressionType.Bzip2"/> for a 7-Zip or XAR archive,
+    /// as BZIP2 takes levels 1 to 9.</exception>
     /// <exception cref="NotSupportedException">
-    /// A password was supplied for a format other than ZIP (unless the encryption type is
-    /// <see cref="EncryptionType.None"/>, which ignores the password), or this native library build cannot encrypt
-    /// with the encryption type requested, as when it was built without a cryptography backend.
+    /// <paramref name="compression"/> is a method that a ZIP, 7-Zip or XAR archive does not have, or
+    /// <see cref="CompressionType.Deflate"/> for another format, as libarchive has no DEFLATE filter (see
+    /// <see cref="CompressionType"/>); or a password was supplied for a format other than ZIP (unless the
+    /// encryption type is <see cref="EncryptionType.None"/>, which ignores the password), or this native library
+    /// build cannot encrypt with the encryption type requested, as when it was built without a cryptography
+    /// backend.
     /// </exception>
     public static LibArchiveWriter CreateMemoryWriter(
         ArchiveFormat format,
@@ -220,25 +248,38 @@ public partial class LibArchiveWriter
     /// </summary>
     /// <remarks>
     /// The block size comes first so that <c>CreateMemoryWriter(format, 0)</c> still calls the overload without
-    /// it, with no compression. To give the block size after the format, name every argument:
-    /// <c>CreateMemoryWriter(format: ArchiveFormat.Zip, blockSize: 4096)</c>.
+    /// it, with <see cref="CompressionType.None"/>. To give the block size after the format, name every
+    /// argument: <c>CreateMemoryWriter(format: ArchiveFormat.Zip, blockSize: 4096)</c>.
     /// </remarks>
     /// <param name="blockSize">Size in bytes of the blocks libarchive writes the archive to the buffer in
     /// (1 MiB in the overload without this parameter); 0 writes data as it is produced. The last block is not
     /// padded, so the block size changes how the archive is written, not its size or contents.</param>
     /// <param name="format">Archive format to use.</param>
-    /// <param name="compression">Compression algorithm to apply (default: None).</param>
-    /// <param name="compressionLevel">Compression level 0-9, where 9 is maximum compression (default: 6).</param>
+    /// <param name="compression">How to compress the archive (default: None). ZIP, 7-Zip and XAR archives
+    /// compress their entries themselves: for them this selects the method, and
+    /// <see cref="CompressionType.None"/> keeps the format's default (DEFLATE, LZMA and gzip respectively).
+    /// Every other format is compressed as a whole by this filter, or not at all with
+    /// <see cref="CompressionType.None"/>. See <see cref="CompressionType"/> for what each value does with each
+    /// format.</param>
+    /// <param name="compressionLevel">Compression level 0-9, where 9 is maximum compression (default: 6), for
+    /// the method or the filter. Level 0 stores a ZIP archive's entries uncompressed, whatever the method;
+    /// 7-Zip and XAR give the level to the method as it is (see <see cref="CompressionType"/>). A tar, ustar,
+    /// pax, cpio or ISO 9660 archive without a filter does not use the level, and does not check it.</param>
     /// <param name="password">Optional password for encryption. libarchive can only encrypt ZIP archives.</param>
     /// <param name="encryption">Encryption type when a password is provided (default: AES-256).</param>
     /// <param name="initialCapacity">Initial capacity of the memory buffer in bytes (default: 64 KB).</param>
     /// <returns>A LibArchiveWriter that writes to memory.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="blockSize"/> is greater than
-    /// <see cref="int.MaxValue"/>, the largest block size libarchive takes.</exception>
+    /// <see cref="int.MaxValue"/>, the largest block size libarchive takes; or <paramref name="compressionLevel"/>
+    /// is used and is less than 0 or greater than 9, or is 0 with <see cref="CompressionType.Bzip2"/> for a
+    /// 7-Zip or XAR archive, as BZIP2 takes levels 1 to 9.</exception>
     /// <exception cref="NotSupportedException">
-    /// A password was supplied for a format other than ZIP (unless the encryption type is
-    /// <see cref="EncryptionType.None"/>, which ignores the password), or this native library build cannot encrypt
-    /// with the encryption type requested, as when it was built without a cryptography backend.
+    /// <paramref name="compression"/> is a method that a ZIP, 7-Zip or XAR archive does not have, or
+    /// <see cref="CompressionType.Deflate"/> for another format, as libarchive has no DEFLATE filter (see
+    /// <see cref="CompressionType"/>); or a password was supplied for a format other than ZIP (unless the
+    /// encryption type is <see cref="EncryptionType.None"/>, which ignores the password), or this native library
+    /// build cannot encrypt with the encryption type requested, as when it was built without a cryptography
+    /// backend.
     /// </exception>
     public static LibArchiveWriter CreateMemoryWriter(
         uint blockSize,
