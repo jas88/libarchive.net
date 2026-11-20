@@ -196,11 +196,13 @@ The native binaries for every platform (Linux, macOS and Windows) are built
 from modified sources: this project's patches change three of its files.
 native/libarchive-narrow-utf8.patch changes libarchive/archive_string.c and
 libarchive/archive_write_set_format_zip.c, so that every narrow string is
-UTF-8 whatever the locale of the process, and
+UTF-8 whatever the locale of the process;
 native/libarchive-lz4-init-stream-hc.patch changes
 libarchive/archive_write_add_filter_lz4.c, so that it no longer calls a
-function that lz4 deprecates. The patches leave their copyright notices and
-licence terms as they are.
+function that lz4 deprecates; and native/libarchive-zip-aes192.patch changes
+libarchive/archive_write_set_format_zip.c again, so that it can encrypt with
+WinZip AES-192. The patches leave their copyright notices and licence terms
+as they are.
 
 libarchive's COPYING file, in full. It is the project's own statement of what
 applies to the library, and it says that "the actual statements in the files

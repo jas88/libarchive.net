@@ -1,0 +1,174 @@
+WinZip AES-192 encryption in libarchive's zip writer.
+
+One of this project's patches to libarchive, which every build (macOS, Linux and
+Windows) applies with patch_libarchive (native/build-config.sh), to the libarchive
+release pinned there, in the order that LIBARCHIVE_PATCHES there lists them. A build
+fails if any hunk does not apply exactly (no fuzz), and scripts/check-native-updates.sh
+will not propose a libarchive release that it does not apply to. See "The libarchive
+patches" in native/BUILD.md.
+
+libarchive's zip writer encrypts with WinZip AES-128 (encryption=aes128) and AES-256
+(encryption=aes256), but not AES-192, although its zip reader decrypts all three
+(strengths 1, 2 and 3 in init_WinZip_AES_decryption()). The crypto backends that the
+builds use take a 24-byte AES key as they take a 16- or a 32-byte one: CommonCrypto
+on macOS, CNG (BCrypt) on Windows and mbedTLS on Linux. Their PBKDF2 and HMAC-SHA1
+take any length.
+
+This patch adds encryption=aes192, which writes WinZip AES-192 as the zip reader
+reads it: strength 2 in the AES extra field (0x9901), a 12-byte salt, and a 24-byte
+AES key and a 24-byte HMAC-SHA1 key, which PBKDF2 derives from the passphrase as for
+the other key sizes. The 2-byte password verification value and the 10-byte
+authentication code are as before, and so are AES-128 and AES-256. In the zip writer:
+
+1. The encryption option accepts aes192 if the crypto backend can encrypt with it,
+   as it accepts aes128 and aes256 (is_winzip_aes_encryption_supported()).
+2. ENCRYPTION_WINZIP_AES192 and WINZIP_AES192_HEADER_SIZE (12 + 2) are added beside
+   the AES-128 and AES-256 ones, and ENCRYPTION_WINZIP_AES192 is handled wherever
+   those are: such an entry is encrypted, has compression method 99 and the AES
+   extra field in its local and central directory headers, and the size of a stored
+   one allows for its salt, password verification value and authentication code.
+3. The AES extra field gives strength 2 for it.
+4. init_winzip_aes_encryption() and is_winzip_aes_encryption_supported() take a
+   12-byte salt and a 24-byte key for it.
+
+libarchive's manual pages, which list the values of the encryption option
+(archive_write_set_options.3 and bsdtar.1), and its tests are not changed: this
+project ships neither.
+
+The new encryption value is marked LIBARCHIVE_NET_ZIP_AES192, the marker that
+LIBARCHIVE_PATCHES gives this patch: patch_libarchive checks that every file the
+patch changes has it. Every other change names ENCRYPTION_WINZIP_AES192 or
+WINZIP_AES192_HEADER_SIZE.
+
+--- a/libarchive/archive_write_set_format_zip.c
++++ b/libarchive/archive_write_set_format_zip.c
+@@ -108,6 +108,11 @@
+ 	ENCRYPTION_NONE	= 0,
+ 	ENCRYPTION_TRADITIONAL, /* Traditional PKWARE encryption. */
+ 	ENCRYPTION_WINZIP_AES128, /* WinZIP AES-128 encryption. */
++	/*
++	 * LIBARCHIVE_NET_ZIP_AES192: WinZip AES-192 (strength 2), which the
++	 * zip reader already decrypts, can be written as encryption=aes192.
++	 */
++	ENCRYPTION_WINZIP_AES192, /* WinZIP AES-192 encryption. */
+ 	ENCRYPTION_WINZIP_AES256, /* WinZIP AES-256 encryption. */
+ };
+ 
+@@ -121,6 +126,7 @@
+ /* A WinZip AES header size which is stored at the beginning of
+  * file contents. */
+ #define WINZIP_AES128_HEADER_SIZE	(8 + 2)
++#define WINZIP_AES192_HEADER_SIZE	(12 + 2)
+ #define WINZIP_AES256_HEADER_SIZE	(16 + 2)
+ /* AES vendor version. */
+ #define AES_VENDOR_AE_1 0x0001
+@@ -486,6 +492,15 @@
+ 				archive_set_error(&a->archive, ARCHIVE_ERRNO_MISC,
+ 				    "encryption not supported");
+ 			}
++		} else if (strcmp(val, "aes192") == 0) {
++			if (is_winzip_aes_encryption_supported(
++			    ENCRYPTION_WINZIP_AES192)) {
++				zip->encryption_type = ENCRYPTION_WINZIP_AES192;
++				ret = ARCHIVE_OK;
++			} else {
++				archive_set_error(&a->archive, ARCHIVE_ERRNO_MISC,
++				    "encryption not supported");
++			}
+ 		} else if (strcmp(val, "aes256") == 0) {
+ 			if (is_winzip_aes_encryption_supported(
+ 			    ENCRYPTION_WINZIP_AES256)) {
+@@ -855,6 +870,7 @@
+ 		switch (zip->encryption_type) {
+ 		case ENCRYPTION_TRADITIONAL:
+ 		case ENCRYPTION_WINZIP_AES128:
++		case ENCRYPTION_WINZIP_AES192:
+ 		case ENCRYPTION_WINZIP_AES256:
+ 			zip->entry_flags |= ZIP_ENTRY_FLAG_ENCRYPTED;
+ 			zip->entry_encryption = zip->encryption_type;
+@@ -1046,6 +1062,11 @@
+ 				    + AUTH_CODE_SIZE;
+ 				MIN_VERSION_NEEDED(20);
+ 				break;
++			case ENCRYPTION_WINZIP_AES192:
++				additional_size = WINZIP_AES192_HEADER_SIZE
++				    + AUTH_CODE_SIZE;
++				MIN_VERSION_NEEDED(20);
++				break;
+ 			case ENCRYPTION_WINZIP_AES256:
+ 				additional_size = WINZIP_AES256_HEADER_SIZE
+ 				    + AUTH_CODE_SIZE;
+@@ -1139,6 +1160,7 @@
+ 			switch (zip->entry_encryption) {
+ 			case ENCRYPTION_TRADITIONAL:
+ 			case ENCRYPTION_WINZIP_AES128:
++			case ENCRYPTION_WINZIP_AES192:
+ 			case ENCRYPTION_WINZIP_AES256:
+ 				MIN_VERSION_NEEDED(20);
+ 				break;
+@@ -1155,6 +1177,7 @@
+ 	archive_le16enc(local_header + 4, version_needed);
+ 	archive_le16enc(local_header + 6, zip->entry_flags);
+ 	if (zip->entry_encryption == ENCRYPTION_WINZIP_AES128
++	    || zip->entry_encryption == ENCRYPTION_WINZIP_AES192
+ 	    || zip->entry_encryption == ENCRYPTION_WINZIP_AES256)
+ 		archive_le16enc(local_header + 8, WINZIP_AES_ENCRYPTION);
+ 	else
+@@ -1186,6 +1209,7 @@
+ 	archive_le16enc(zip->file_header + 6, version_needed);
+ 	archive_le16enc(zip->file_header + 8, zip->entry_flags);
+ 	if (zip->entry_encryption == ENCRYPTION_WINZIP_AES128
++	    || zip->entry_encryption == ENCRYPTION_WINZIP_AES192
+ 	    || zip->entry_encryption == ENCRYPTION_WINZIP_AES256)
+ 		archive_le16enc(zip->file_header + 10, WINZIP_AES_ENCRYPTION);
+ 	else
+@@ -1224,6 +1248,7 @@
+ 	/* AES extra data field: WinZIP AES information, ID=0x9901 */
+ 	if ((zip->entry_flags & ZIP_ENTRY_FLAG_ENCRYPTED)
+ 	    && (zip->entry_encryption == ENCRYPTION_WINZIP_AES128
++	        || zip->entry_encryption == ENCRYPTION_WINZIP_AES192
+ 	        || zip->entry_encryption == ENCRYPTION_WINZIP_AES256)) {
+ 
+ 		memcpy(e, "\001\231\007\000\001\000AE", 8);
+@@ -1241,7 +1266,12 @@
+ 			zip->aes_vendor = AES_VENDOR_AE_1;
+ 		e += 8;
+ 		/* AES encryption strength. */
+-		*e++ = (zip->entry_encryption == ENCRYPTION_WINZIP_AES128)?1:3;
++		if (zip->entry_encryption == ENCRYPTION_WINZIP_AES128)
++			*e++ = 1;
++		else if (zip->entry_encryption == ENCRYPTION_WINZIP_AES192)
++			*e++ = 2;
++		else
++			*e++ = 3;
+ 		/* Actual compression method. */
+ 		archive_le16enc(e, zip->entry_compression);
+ 		e += 2;
+@@ -1530,6 +1560,7 @@
+ 			}
+ 			break;
+ 		case ENCRYPTION_WINZIP_AES128:
++		case ENCRYPTION_WINZIP_AES192:
+ 		case ENCRYPTION_WINZIP_AES256:
+ 			if (!zip->cctx_valid) {
+ 				ret = init_winzip_aes_encryption(a);
+@@ -2451,6 +2482,9 @@
+ 	if (zip->entry_encryption == ENCRYPTION_WINZIP_AES128) {
+ 		salt_len = 8;
+ 		key_len = 16;
++	} else if (zip->entry_encryption == ENCRYPTION_WINZIP_AES192) {
++		salt_len = 12;
++		key_len = 24;
+ 	} else {
+ 		/* AES 256 */
+ 		salt_len = 16;
+@@ -2512,6 +2546,9 @@
+ 	if (encryption == ENCRYPTION_WINZIP_AES128) {
+ 		salt_len = 8;
+ 		key_len = 16;
++	} else if (encryption == ENCRYPTION_WINZIP_AES192) {
++		salt_len = 12;
++		key_len = 24;
+ 	} else {
+ 		/* AES 256 */
+ 		salt_len = 16;

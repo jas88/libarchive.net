@@ -30,9 +30,7 @@ public enum EncryptionType
     AES128,
 
     /// <summary>
-    /// AES-192 encryption. Not supported for writing: libarchive's ZIP writer implements AES-128 and AES-256
-    /// only, so requesting it throws <see cref="System.NotSupportedException"/>. libarchive can still read
-    /// ZIP archives that other tools encrypted with AES-192.
+    /// AES-192 encryption (ZIP only).
     /// </summary>
     AES192,
 

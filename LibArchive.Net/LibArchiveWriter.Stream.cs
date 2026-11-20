@@ -40,8 +40,8 @@ public partial class LibArchiveWriter
     /// <see cref="int.MaxValue"/>, the largest block size libarchive takes.</exception>
     /// <exception cref="NotSupportedException">
     /// A password was supplied for a format other than ZIP (unless the encryption type is
-    /// <see cref="EncryptionType.None"/>, which ignores the password), or with an encryption type that libarchive
-    /// or this native library build cannot write.
+    /// <see cref="EncryptionType.None"/>, which ignores the password), or this native library build cannot encrypt
+    /// with the encryption type requested, as when it was built without a cryptography backend.
     /// </exception>
     public LibArchiveWriter(
         Stream outputStream,
@@ -200,8 +200,8 @@ public partial class LibArchiveWriter
     /// <returns>A LibArchiveWriter that writes to memory.</returns>
     /// <exception cref="NotSupportedException">
     /// A password was supplied for a format other than ZIP (unless the encryption type is
-    /// <see cref="EncryptionType.None"/>, which ignores the password), or with an encryption type that libarchive
-    /// or this native library build cannot write.
+    /// <see cref="EncryptionType.None"/>, which ignores the password), or this native library build cannot encrypt
+    /// with the encryption type requested, as when it was built without a cryptography backend.
     /// </exception>
     public static LibArchiveWriter CreateMemoryWriter(
         ArchiveFormat format,
@@ -237,8 +237,8 @@ public partial class LibArchiveWriter
     /// <see cref="int.MaxValue"/>, the largest block size libarchive takes.</exception>
     /// <exception cref="NotSupportedException">
     /// A password was supplied for a format other than ZIP (unless the encryption type is
-    /// <see cref="EncryptionType.None"/>, which ignores the password), or with an encryption type that libarchive
-    /// or this native library build cannot write.
+    /// <see cref="EncryptionType.None"/>, which ignores the password), or this native library build cannot encrypt
+    /// with the encryption type requested, as when it was built without a cryptography backend.
     /// </exception>
     public static LibArchiveWriter CreateMemoryWriter(
         uint blockSize,

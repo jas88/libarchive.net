@@ -7,8 +7,7 @@ public enum ArchiveFormat
 {
     /// <summary>
     /// ZIP format - widely supported, moderate compression.
-    /// Supports encryption (AES-128, AES-256, Traditional PKWARE): the only format libarchive can encrypt.
-    /// AES-192 cannot be written (see <see cref="EncryptionType.AES192"/>).
+    /// Supports encryption (AES-128, AES-192, AES-256, Traditional PKWARE): the only format libarchive can encrypt.
     /// Entry names are stored as UTF-8, with the UTF-8 flag (general purpose bit 11) set on each
     /// name that is not ASCII.
     /// </summary>

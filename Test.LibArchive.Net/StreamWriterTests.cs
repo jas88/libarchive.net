@@ -205,7 +205,8 @@ public class StreamWriterTests
     [Test]
     public void TestStreamAndMemoryWriterWithEncryption(
         [Values] bool useMemoryWriter,
-        [Values(EncryptionType.Default, EncryptionType.AES256, EncryptionType.AES128, EncryptionType.Traditional)]
+        [Values(EncryptionType.Default, EncryptionType.AES256, EncryptionType.AES192, EncryptionType.AES128,
+            EncryptionType.Traditional)]
         EncryptionType encryption)
     {
         var archiveBytes = WriteSecret(useMemoryWriter, ArchiveFormat.Zip, encryption);
@@ -234,15 +235,6 @@ public class StreamWriterTests
             new LibArchiveWriter(stream, ArchiveFormat.SevenZip, password: Password).Dispose());
 
         Assert.That(stream.Length, Is.Zero);
-    }
-
-    [Test]
-    public void TestStreamAndMemoryWriterAes192Throws([Values] bool useMemoryWriter)
-    {
-        var ex = Assert.Throws<NotSupportedException>(() =>
-            WriteSecret(useMemoryWriter, ArchiveFormat.Zip, EncryptionType.AES192));
-
-        Assert.That(ex!.Message, Does.Contain("AES-128").And.Contain("AES-256"));
     }
 
     [Test]

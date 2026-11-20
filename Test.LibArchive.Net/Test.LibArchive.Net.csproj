@@ -30,6 +30,8 @@
 
     <ItemGroup>
         <None Update="7ztest.7z" CopyToOutputDirectory="PreserveNewest" />
+        <!-- Written by 7-Zip with AES-192 encryption; see ZipAesTests.cs -->
+        <None Update="aes192test-p7zip.zip" CopyToOutputDirectory="PreserveNewest" />
         <!-- Written by the reference lzop tool; see LzopTests.cs -->
         <None Update="lzoptest.tar.lzo" CopyToOutputDirectory="PreserveNewest" />
         <!-- Written by the reference compression tools; see CompressedFileTests.cs -->

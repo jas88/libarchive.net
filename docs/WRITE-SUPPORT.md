@@ -43,7 +43,7 @@ their contents themselves, so they need no filter: leave `compression` at `Compr
 
 ### ✅ Encryption Support
 
-- **ZIP**: AES-128, AES-256, Traditional PKWARE (reading also handles AES-192)
+- **ZIP**: AES-128, AES-192, AES-256, Traditional PKWARE
 - **7-Zip**: Not supported (libarchive can neither write nor read encrypted 7-Zip archives)
 - **TAR and every other format**: Not supported (use external encryption)
 
@@ -111,8 +111,6 @@ Only ZIP archives can be encrypted:
 
 - A password with any other format, 7-Zip included, throws `NotSupportedException` unless the encryption
   type is `EncryptionType.None`.
-- `EncryptionType.AES192` throws `NotSupportedException`: libarchive's ZIP writer supports AES-128 and
-  AES-256 only.
 - `EncryptionType.None` ignores the password and writes an unencrypted archive.
 - `NotSupportedException` is also thrown when the native library was built without a cryptography backend.
 
@@ -295,7 +293,7 @@ password: "password123"
 
 | Format | Encryption Support |
 |--------|-------------------|
-| ZIP | Writing: AES-128, AES-256, Traditional. Reading: AES-128, AES-192, AES-256, Traditional |
+| ZIP | AES-128, AES-192, AES-256, Traditional, for writing and reading |
 | 7-Zip | None (not supported by libarchive) |
 | TAR and every other format | None (use external encryption) |
 
