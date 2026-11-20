@@ -1,7 +1,8 @@
 /*
- * Load test for a freshly linked libarchive.so, which test_load_musl and test_load_host in
- * build-linux-common.sh build and run, from this file, linux-loadtest-files.c and
- * linux-loadtest-lfs32.c (see linux-loadtest.h).
+ * Load test for a freshly linked libarchive.so, which build_load_test in
+ * build-linux-common.sh builds for the library's own C library, from this file,
+ * linux-loadtest-files.c and linux-loadtest-lfs32.c (see linux-loadtest.h), and
+ * test_load_glibc there runs with a glibc library.
  * Usage: loadtest <path to libarchive.so>
  * Exits non-zero unless the library loads with every symbol bound at once
  * (RTLD_NOW), a little of its API works, names are UTF-8 in the "C" locale, a XAR

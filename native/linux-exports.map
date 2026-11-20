@@ -1,0 +1,12 @@
+/*
+ * The version script of the Linux libraries (link_libarchive in build-linux-common.sh):
+ * libarchive.so exports libarchive's API, the archive_* functions, as any libarchive.so
+ * does, and nothing else. The code of zlib, xz, zstd, lz4, bzip2, libxml2, mbedTLS, the lzop
+ * shim and zig's compiler-rt that is linked into it stays local to it, so that no other
+ * code in the process can bind to it, or take its place by defining a symbol of the same
+ * name.
+ */
+{
+    global: archive_*;
+    local: *;
+};

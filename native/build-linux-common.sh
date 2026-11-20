@@ -1,10 +1,77 @@
 #!/bin/bash
-# Shared helpers for the Linux native library builds (build-linux*.sh)
-# Source this file in those scripts, after build-config.sh
+# Shared helpers for the Linux native library builds (build-linux.sh)
+# Source this file in that script, after build-config.sh
 #
 # These live here rather than in build-config.sh because that file is also sourced
 # by build-windows.sh under plain sh, and the functions below need bash (here-strings,
 # indirect expansion, arrays).
+
+# Make the tool directory of a Linux build afresh: zig-cc.sh (in this directory) as
+# <host>-gcc and <host>-g++, and GNU binutils' ar, ranlib, nm, readelf, objdump, strings
+# and strip as <host>-ar and so on, where <host> is the triplet that configure is given as
+# --host. For a cross build, configure looks for each tool under its prefixed name, and
+# only if it finds none takes the build machine's unprefixed one, warning "using cross
+# tools not prefixed with host triplet".
+# GNU binutils read the ELF files of every target, and zig has no nm, readelf, objdump or
+# strings of its own. They come from BINUTILS_DIR if that is set, otherwise from PATH on
+# Linux and from Homebrew's binutils (in /opt/homebrew/opt/binutils/bin or
+# /usr/local/opt/binutils/bin) on macOS, whose own tools are Apple's.
+# Usage: setup_linux_tools <tool directory> <host triplet>
+# Uses SCRIPT_DIR.
+setup_linux_tools() {
+    local dir="${1:-}" host="${2:-}"
+    if [ -z "$dir" ] || [ -z "$host" ]; then
+        echo "ERROR: setup_linux_tools needs the tool directory and the host triplet as its arguments"
+        return 1
+    fi
+    if [ -z "${SCRIPT_DIR:-}" ]; then
+        echo "ERROR: setup_linux_tools needs SCRIPT_DIR to be set"
+        return 1
+    fi
+
+    local bindir="${BINUTILS_DIR:-}" source candidate tool path
+    if [ -n "$bindir" ]; then
+        source="BINUTILS_DIR (${bindir})"
+    elif [ "$(uname -s)" = Linux ]; then
+        source="PATH"
+    else
+        source="Homebrew's binutils (/opt/homebrew/opt/binutils/bin or /usr/local/opt/binutils/bin)"
+        for candidate in /opt/homebrew/opt/binutils/bin /usr/local/opt/binutils/bin; do
+            if [ -x "${candidate}/readelf" ]; then
+                bindir="$candidate"
+                break
+            fi
+        done
+    fi
+
+    rm -rf "$dir" || return
+    mkdir -p "$dir" || return
+    for tool in ar ranlib nm readelf objdump strings strip; do
+        if [ -n "$bindir" ]; then
+            path="${bindir}/${tool}"
+        else
+            path=$(command -v "$tool") || path=""
+        fi
+        if [ -z "$path" ] || [ ! -x "$path" ]; then
+            echo "ERROR: GNU ${tool} was not found in ${source}."
+        # awk reads all of the version text, so that the tool never writes to a closed pipe
+        elif ! "$path" --version 2>/dev/null | awk 'NR == 1 && /GNU/ {found = 1} END {exit !found}'; then
+            echo "ERROR: ${path}, from ${source}, is not the ${tool} of GNU binutils."
+            path=""
+        fi
+        if [ -z "$path" ] || [ ! -x "$path" ]; then
+            echo "The Linux builds need GNU binutils' ar, ranlib, nm, readelf, objdump, strings and strip."
+            echo "Install binutils (Debian/Ubuntu: apt-get install binutils; macOS: brew install binutils),"
+            echo "or set BINUTILS_DIR to the directory that holds them."
+            return 1
+        fi
+        ln -s "$path" "${dir}/${host}-${tool}" || return
+    done
+    # zig-cc.sh runs zig c++ when it is called by a name that ends in "++"
+    ln -s "${SCRIPT_DIR}/zig-cc.sh" "${dir}/${host}-gcc" || return
+    ln -s "${SCRIPT_DIR}/zig-cc.sh" "${dir}/${host}-g++" || return
+    echo "Tools for ${host} in ${dir}: zig-cc.sh, and GNU binutils from ${bindir:-PATH}"
+}
 
 # Download, build and install the static mbedTLS crypto library.
 # Unpacks into the current directory, which must be the build directory, and
@@ -96,33 +163,29 @@ build_libxml2() {
     cd .. || return
 }
 
-# Link the final libarchive.so: all of libarchive.a, then the other static libraries,
-# the toolchain's own libgcc.a and musl's static libc.a, and nothing else (-nostdlib).
-# The result needs no other library at run time (it has no DT_NEEDED entry), so the
-# same file loads in glibc and musl processes.
+# Link the final libarchive.so: all of libarchive.a, then the other static libraries, as a
+# shared library of the target's own C library, which zig links it against with the rest
+# of what the target needs (its compiler-rt, and the C library's stubs). The C library is
+# then the one thing that the library needs at run time: glibc (libc.so.6, its dynamic
+# loader for a symbol or two, and before glibc 2.34 the libraries split from libc.so.6,
+# such as libpthread.so.0) or musl (libc.so).
 #
-# The archives after libarchive.a are linked as one group (--start-group ...
-# --end-group), which makes ld scan them repeatedly until no more symbols resolve.
-# A single left-to-right pass cannot be relied on: musl's libc.a calls libgcc's helper
-# routines (integer division on arm, 128-bit floating point on arm64), and libgcc.a
-# calls back into libc.a (on arm, its division-by-zero handler calls raise).
+# The archives after libarchive.a are linked as one group (--start-group ... --end-group),
+# so that their order does not matter: libxml2.a, for one, uses libz.a.
 #
-# -z defs makes the link fail on any strong (non-weak) unresolved symbol. Without it ld
-# leaves the symbol to be found when the library is loaded, and since the toolchain
-# links with -z now (BIND_NOW) and the library names no other library, the library then
-# fails to load in any process that does not happen to define that symbol itself. Weak
-# references, such as zstd's optional ZSTD_trace_* hooks, are still allowed: they
-# resolve to null when nothing defines them.
+# -z defs makes the link fail on any strong (non-weak) unresolved symbol, such as a
+# function that the target's C library lacks in the oldest version the target names.
+# Weak references, such as zstd's optional ZSTD_trace_* hooks, are still allowed: they
+# resolve to null when nothing defines them. -z relro and -z now give full RELRO: the
+# dynamic loader binds every symbol when it loads the library, and then makes the data it
+# relocated read-only.
 #
-# linux-pthread-init.c is linked in too, with -Wl,--wrap=pthread_mutex_init and
-# -Wl,--wrap=pthread_cond_init, so that every call of either in the library goes to it
-# (see that file). The link also writes a map with a cross reference table,
-# <library>.map, from which verify_libc_imports finds the C library symbols that the
-# library's code uses.
+# The version script linux-exports.map (in this directory) exports libarchive's API, the
+# archive_* functions, and nothing else (see that file).
 #
 # To link another static library, add it to the archive list below.
 # Usage: link_libarchive <library>
-# Uses CC, PREFIX, SCRIPT_DIR and TOOLCHAIN_SYSROOT.
+# Uses CC, PREFIX and SCRIPT_DIR.
 link_libarchive() {
     local lib="${1:-}"
     if [ -z "$lib" ]; then
@@ -130,23 +193,12 @@ link_libarchive() {
         return 1
     fi
     local var
-    for var in CC PREFIX SCRIPT_DIR TOOLCHAIN_SYSROOT; do
+    for var in CC PREFIX SCRIPT_DIR; do
         if [ -z "${!var:-}" ]; then
             echo "ERROR: link_libarchive needs ${var} to be set"
             return 1
         fi
     done
-
-    # CC can start with a compiler launcher ("sccache .../x86_64-linux-gcc")
-    local -a cc
-    read -r -a cc <<< "$CC"
-    local libgcc
-    libgcc=$("${cc[@]}" -print-libgcc-file-name) || return
-    # gcc prints just "libgcc.a" when it cannot find the file
-    if [ ! -f "$libgcc" ]; then
-        echo "ERROR: ${CC} -print-libgcc-file-name gave \"${libgcc}\", which is not a file"
-        return 1
-    fi
 
     local -a archives=(
         # The libraries libarchive.a uses. Its XAR reader and writer use libxml2.a, which
@@ -159,17 +211,10 @@ link_libarchive() {
         "$PREFIX/lib/libzstd.a"
         "$PREFIX/lib/liblz4.a"
         "$PREFIX/lib/libmbedcrypto.a"
-        # Compiler support routines and the C library, used by all of the above
-        "$libgcc"
-        "$TOOLCHAIN_SYSROOT/lib/libc.a"
     )
-    local pthread_init=linux-pthread-init.o
-    "${cc[@]}" -c -O2 -fPIC -Wall -Wextra -o "$pthread_init" "${SCRIPT_DIR}/linux-pthread-init.c" || return
     local -a link=(
-        "${cc[@]}" -shared -nostdlib -o "$lib" "-Wl,-z,defs"
-        "-Wl,--wrap=pthread_mutex_init" "-Wl,--wrap=pthread_cond_init"
-        "-Wl,-Map=${lib}.map" "-Wl,--cref"
-        "$pthread_init"
+        "$CC" -shared -o "$lib" "-Wl,-z,defs" "-Wl,-z,relro" "-Wl,-z,now"
+        "-Wl,--version-script=${SCRIPT_DIR}/linux-exports.map"
         "-Wl,--whole-archive" "$PREFIX/lib/libarchive.a" "-Wl,--no-whole-archive"
         "-Wl,--start-group" "${archives[@]}" "-Wl,--end-group"
     )
@@ -219,11 +264,11 @@ verify_crypto_backend() {
 
 # Fail the build unless libarchive's configure enabled its XAR reader and writer. They need
 # an XML library that can both read and write (libxml2), zlib, and MD5 and SHA-1 (from
-# mbedTLS here, as musl has neither). If any of them is missing, libarchive compiles both
-# as stubs that fail with "Xar not supported on this platform" (the #if at the top of
-# archive_read_support_format_xar.c and archive_write_set_format_xar.c), and configure does
-# not fail: given --with-xml2, it still goes on without libxml2 if pkg-config does not find
-# it. Run it after libarchive's configure, before make.
+# mbedTLS here, as neither glibc nor musl has them). If any of them is missing, libarchive
+# compiles both as stubs that fail with "Xar not supported on this platform" (the #if at the
+# top of archive_read_support_format_xar.c and archive_write_set_format_xar.c), and
+# configure does not fail: given --with-xml2, it still goes on without libxml2 if pkg-config
+# does not find it. Run it after libarchive's configure, before make.
 # Usage: verify_xar_configured <libarchive's config.h>
 verify_xar_configured() {
     local config="${1:-}"
@@ -315,276 +360,286 @@ verify_xar_support() {
     echo "XAR reader and writer present, with libxml2 linked in and none of it undefined"
 }
 
-# Fail the build unless the code linked into a library uses only the C library symbols that
-# linux-libc-imports.txt (in this directory) names, and calls the C library's
-# pthread_mutex_init and pthread_cond_init only from linux-pthread-init.c. In a glibc process
-# those calls go to glibc's functions, which must agree with musl's headers on what they read
-# and write (see linux-libc-imports.txt), so a new one fails the build until it has been
-# checked and listed.
-# The symbols come from the cross reference table of the map that link_libarchive writes,
-# <library>.map: each symbol that musl's libc.a defines and that an object other than the
-# members of libc.a and libgcc.a refers to.
-# Usage: verify_libc_imports <library>
-# Uses AR to find the toolchain's nm, and SCRIPT_DIR.
-verify_libc_imports() {
-    local lib="${1:-}"
-    if [ -z "$lib" ]; then
-        echo "ERROR: verify_libc_imports needs the library to check as its argument"
+# Fail the build unless a library linked against glibc loads with every glibc from the
+# version <baseline> on (2.28 for x64 and arm64, 2.34 for arm). The dynamic loader refuses a
+# library that needs a symbol version that the process's glibc lacks, and any import that
+# it cannot bind (the library is linked with -z now), so:
+# - every symbol version that the library needs must be GLIBC_x.y, with x.y no later than
+#   the baseline, compared as version numbers (GLIBC_PRIVATE, glibc's internal interface,
+#   fails);
+# - every symbol that it imports must have a version, apart from weak references, which
+#   resolve to null when nothing defines them: glibc gives each of its symbols a version,
+#   so an unversioned one would have to come from something else in the process;
+# - it must need no library (DT_NEEDED) but glibc's own: libc.so.6, the libraries split
+#   from it before glibc 2.34 (libpthread.so.0, libm.so.6, libdl.so.2 and librt.so.1), and
+#   its dynamic loader, ld-linux-*.so.*, which defines a few of glibc's symbols itself, such
+#   as the stack protector's __stack_chk_guard on arm64;
+# - on 32-bit ARM, it must import none of glibc's functions with a 32-bit time_t or off_t,
+#   which glibc-32bit-names.txt (in this directory) lists: a library compiled with
+#   -D_TIME_BITS=64 -D_FILE_OFFSET_BITS=64 calls their 64-bit counterparts only.
+# readelf reads every target's files alike, so it lists the symbols and versions here.
+# Usage: verify_glibc_imports <library> <baseline>
+# Uses AR to find readelf, and SCRIPT_DIR.
+verify_glibc_imports() {
+    local lib="${1:-}" baseline="${2:-}"
+    if [ -z "$lib" ] || [ -z "$baseline" ]; then
+        echo "ERROR: verify_glibc_imports needs the library to check and the oldest glibc version as its arguments"
         return 1
     fi
     local var
     for var in AR SCRIPT_DIR; do
         if [ -z "${!var:-}" ]; then
-            echo "ERROR: verify_libc_imports needs ${var} to be set"
+            echo "ERROR: verify_glibc_imports needs ${var} to be set"
             return 1
         fi
     done
-    local map="${lib}.map" list="${SCRIPT_DIR}/linux-libc-imports.txt"
-    if [ ! -f "$map" ]; then
-        echo "ERROR: ${map} does not exist: link ${lib} with link_libarchive, which writes it"
-        return 1
-    fi
-    if [ ! -f "$list" ]; then
-        echo "ERROR: ${list} does not exist"
-        return 1
-    fi
 
-    echo "=== Verifying the C library symbols that ${lib} uses ==="
+    echo "=== Verifying that ${lib} loads with glibc ${baseline} and later ==="
     # Only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
-    local nm="${AR%ar}nm" undefined imports unlisted direct
-    if ! undefined=$("$nm" -D --undefined-only "$lib"); then
-        echo "ERROR: could not read the dynamic symbols of ${lib} with ${nm}"
-        return 1
-    fi
-    # One line per symbol: the symbol, a tab, then the objects that refer to it. In the
-    # table, each entry is the symbol at the start of a line, then the files that define it
-    # and those that refer to it, one per line from column 51 (from 2 columns after the
-    # symbol on its own line, when the symbol is longer than 49 characters). The library's
-    # undefined (weak) symbols are left out: nothing defines them, so their entries list
-    # references only.
-    imports=$(awk -v undefined=" $(awk 'NF >= 2 {printf "%s ", $NF}' <<< "$undefined")" '
-        function in_archive(file, name) { return index(file, name ".a(") == 1 || index(file, "/" name ".a(") > 0 }
-        function flush() {
-            if (sym != "" && in_archive(def, "libc") && refs != "" && index(undefined, " " sym " ") == 0)
-                print sym "\t" refs
-            sym = ""; def = ""; refs = ""
-        }
-        /^Cross Reference Table/ { table = 1; next }
-        !table || /^Symbol / || /^$/ { next }
-        /^[^ ]/ {
-            flush()
-            sym = $1
-            def = (length(sym) < 50) ? substr($0, 51) : substr($0, length(sym) + 2)
-            next
-        }
-        {
-            file = substr($0, 51)
-            if (!in_archive(file, "libc") && !in_archive(file, "libgcc")) {
-                sub(/^.*\//, "", file)
-                refs = refs (refs == "" ? "" : " ") file
-            }
-        }
-        END { flush() }' "$map")
-    if [ -z "$imports" ]; then
-        echo "ERROR: the cross reference table of ${map} names no C library symbol that ${lib} uses"
-        return 1
-    fi
-
-    local failed=0
-    unlisted=$(awk 'NR == FNR { sub(/#.*/, ""); if (NF) listed[$1] = 1; next }
-        !($1 in listed) { print "  " $1 ", used by " substr($0, index($0, "\t") + 1) }' "$list" - <<< "$imports")
-    if [ -n "$unlisted" ]; then
-        echo "ERROR: ${lib} uses these C library symbols, which ${list##*/} does not list:"
-        echo "$unlisted"
-        echo "In a glibc process glibc's functions run in their place. Check, for x64, arm64 and arm,"
-        echo "that glibc's read and write what musl's headers lay out, then add them to the list."
-        failed=1
-    fi
-    direct=$(awk '$1 == "pthread_mutex_init" || $1 == "pthread_cond_init" {
-        n = split(substr($0, index($0, "\t") + 1), refs, " ")
-        for (i = 1; i <= n; i++) if (refs[i] != "linux-pthread-init.o") print "  " $1 ", used by " refs[i] }' <<< "$imports")
-    if [ -n "$direct" ]; then
-        echo "ERROR: ${lib} calls the C library's pthread_mutex_init or pthread_cond_init other than from"
-        echo "linux-pthread-init.c, so that link_libarchive's -Wl,--wrap did not take effect:"
-        echo "$direct"
-        failed=1
-    fi
-    if [ "$failed" -ne 0 ]; then
-        return 1
-    fi
-    echo "$(wc -l <<< "$imports" | tr -d ' ') C library symbols used, all of them listed; pthread_mutex_init and pthread_cond_init only through linux-pthread-init.c"
-}
-
-# Fail the build unless a linked library is self-contained: no DT_NEEDED entry (no other
-# library it needs at run time) and no strong undefined dynamic symbol (one that the
-# process loading it would have to supply). Weak undefined symbols are allowed, and
-# listed: they resolve to null when nothing defines them.
-# link_libarchive's -z defs already stops a link that leaves a symbol unresolved; this
-# checks the file that is shipped, however it was produced.
-# Usage: verify_self_contained <library>
-# Uses AR to find the toolchain's nm and readelf.
-verify_self_contained() {
-    local lib="${1:-}"
-    if [ -z "$lib" ]; then
-        echo "ERROR: verify_self_contained needs the library to check as its argument"
-        return 1
-    fi
-    if [ -z "${AR:-}" ]; then
-        echo "ERROR: verify_self_contained needs AR to be set"
-        return 1
-    fi
-
-    echo "=== Verifying that ${lib} is self-contained ==="
-    # Only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
-    local nm="${AR%ar}nm" readelf="${AR%ar}readelf"
-    local dynamic undefined
-    if ! dynamic=$("$readelf" -d "$lib"); then
-        echo "ERROR: could not read the dynamic section of ${lib} with ${readelf}"
-        return 1
-    fi
-    if ! undefined=$("$nm" -D --undefined-only "$lib"); then
-        echo "ERROR: could not read the dynamic symbols of ${lib} with ${nm}"
+    local readelf="${AR%ar}readelf"
+    local header dynamic versions symbols
+    if ! header=$("$readelf" -W -h "$lib") || ! dynamic=$("$readelf" -W -d "$lib") ||
+        ! versions=$("$readelf" -W -V "$lib") || ! symbols=$("$readelf" -W --dyn-syms "$lib"); then
+        echo "ERROR: could not read ${lib} with ${readelf}"
         return 1
     fi
 
     # Each list holds one indented entry per line, ready to print
-    local needed strong weak failed=0
-    needed=$(awk '/\(NEEDED\)/ {print "  " $NF}' <<< "$dynamic")
-    # nm prints each undefined symbol as "<type> <name>": w and v are weak references,
-    # U (or anything else) a strong one
-    strong=$(awk 'NF >= 2 && $(NF-1) != "w" && $(NF-1) != "v" {print "  " $NF}' <<< "$undefined")
-    weak=$(awk 'NF >= 2 && ($(NF-1) == "w" || $(NF-1) == "v") {print "  " $NF}' <<< "$undefined")
-    if [ -n "$needed" ]; then
-        echo "ERROR: ${lib} needs these other libraries at run time (DT_NEEDED):"
-        echo "$needed"
+    local needed bad_needed bad_versions imports strong weak newest failed=0
+    needed=$(awk '/\(NEEDED\)/ {name = $NF; gsub(/^\[|\]$/, "", name); print name}' <<< "$dynamic")
+    bad_needed=$(awk '!/^(libc\.so\.6|libpthread\.so\.0|libm\.so\.6|libdl\.so\.2|librt\.so\.1|ld-linux[-a-z0-9_]*\.so\.[0-9]+)$/ {print "  " $0}' <<< "$needed")
+    # The version needs section lists, for each library needed, the versions needed of it:
+    # a "File: <library>" line, then a "Name: <version>" line for each version
+    bad_versions=$(awk -v baseline="$baseline" '
+        # 1 if the dotted version a is no later than b, compared number by number
+        function not_later(a, b,    x, y, n, i) {
+            n = split(a, x, ".")
+            if (split(b, y, ".") > n)
+                n = length(y)
+            for (i = 1; i <= n; i++) {
+                if (x[i] + 0 < y[i] + 0) return 1
+                if (x[i] + 0 > y[i] + 0) return 0
+            }
+            return 1
+        }
+        /^Version needs section/ { needs = 1; next }
+        /^Version (symbols|definition) section/ { needs = 0 }
+        needs && match($0, /File: [^ ]+/) { file = substr($0, RSTART + 6, RLENGTH - 6) }
+        needs && match($0, /Name: [^ ]+/) {
+            version = substr($0, RSTART + 6, RLENGTH - 6)
+            if (version !~ /^GLIBC_[0-9]+(\.[0-9]+)*$/ || !not_later(substr(version, 7), baseline))
+                print "  " version ", of " file
+        }' <<< "$versions")
+    # Each undefined dynamic symbol as "<binding> <name>[@<version>]". The name is the last
+    # field, or the one before it when readelf ends the line with the version's index, "(2)".
+    imports=$(awk '$1 ~ /^[0-9]+:$/ {
+            name = $NF; ndx = $(NF - 1)
+            if (name ~ /^\([0-9]+\)$/) { name = $(NF - 1); ndx = $(NF - 2) }
+            if (ndx == "UND") print $5, name
+        }' <<< "$symbols")
+    strong=$(awk '$1 != "WEAK" && index($2, "@") == 0 {print "  " $2}' <<< "$imports")
+    weak=$(awk '$1 == "WEAK" && index($2, "@") == 0 {print "  " $2}' <<< "$imports")
+    if [ -n "$bad_needed" ]; then
+        echo "ERROR: ${lib} needs these libraries (DT_NEEDED), which are not glibc's:"
+        echo "$bad_needed"
+        failed=1
+    fi
+    if [ -n "$bad_versions" ]; then
+        echo "ERROR: ${lib} needs these symbol versions, which glibc ${baseline} does not have:"
+        echo "$bad_versions"
         failed=1
     fi
     if [ -n "$strong" ]; then
-        echo "ERROR: ${lib} leaves these symbols undefined, so it fails to load in any process that does not define them:"
+        echo "ERROR: ${lib} imports these symbols without a version, which no glibc defines:"
         echo "$strong"
+        failed=1
+    fi
+    if awk '$1 == "Machine:" && $2 == "ARM" {found = 1} END {exit !found}' <<< "$header"; then
+        local list="${SCRIPT_DIR}/glibc-32bit-names.txt" old
+        if [ ! -f "$list" ]; then
+            echo "ERROR: ${list} does not exist"
+            return 1
+        fi
+        old=$(awk 'NR == FNR { if ($0 !~ /^#/ && NF == 2) counterpart[$1] = $2; next }
+            { name = $2; sub(/@.*/, "", name); if (name in counterpart) print "  " name ", in place of " counterpart[name] }' \
+            "$list" - <<< "$imports")
+        if [ -n "$old" ]; then
+            echo "ERROR: ${lib} imports these functions of glibc's with a 32-bit time_t or off_t:"
+            echo "$old"
+            echo "It must be compiled with -D_TIME_BITS=64 -D_FILE_OFFSET_BITS=64, as build-linux.sh compiles it."
+            failed=1
+        fi
+    fi
+    if [ "$failed" -ne 0 ]; then
+        return 1
+    fi
+    newest=$(awk '/^Version needs section/ { needs = 1; next } /^Version (symbols|definition) section/ { needs = 0 }
+        needs && match($0, /Name: GLIBC_[0-9.]+/) { print substr($0, RSTART + 12, RLENGTH - 12) }' <<< "$versions" |
+        sort -t . -k 1,1n -k 2,2n -k 3,3n | tail -n 1)
+    echo "Needs $(tr '\n' ' ' <<< "$needed")only, and glibc ${newest:-(no version)} at the latest, for its $(awk 'index($2, "@") {n++} END {print n + 0}' <<< "$imports") versioned imports"
+    if awk '$1 == "Machine:" && $2 == "ARM" {found = 1} END {exit !found}' <<< "$header"; then
+        echo "None of glibc's functions with a 32-bit time_t or off_t (glibc-32bit-names.txt)"
+    fi
+    if [ -n "$weak" ]; then
+        echo "Weak unversioned imports (allowed, null when nothing defines them):"
+        echo "$weak"
+    fi
+}
+
+# Fail the build unless a library linked against musl needs musl's libc.so and nothing else
+# (DT_NEEDED), and no symbol versions, which musl does not have. Anything more would make
+# the library fail to load in a musl process, or bind to something other than musl.
+# Usage: verify_musl_imports <library>
+# Uses AR to find readelf.
+verify_musl_imports() {
+    local lib="${1:-}"
+    if [ -z "$lib" ]; then
+        echo "ERROR: verify_musl_imports needs the library to check as its argument"
+        return 1
+    fi
+    if [ -z "${AR:-}" ]; then
+        echo "ERROR: verify_musl_imports needs AR to be set"
+        return 1
+    fi
+
+    echo "=== Verifying that ${lib} needs musl alone ==="
+    # Only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
+    local readelf="${AR%ar}readelf"
+    local dynamic versions needed failed=0
+    if ! dynamic=$("$readelf" -W -d "$lib") || ! versions=$("$readelf" -W -V "$lib"); then
+        echo "ERROR: could not read ${lib} with ${readelf}"
+        return 1
+    fi
+    needed=$(awk '/\(NEEDED\)/ {print $NF}' <<< "$dynamic")
+    if [ "$needed" != "[libc.so]" ]; then
+        echo "ERROR: ${lib} must need musl's libc.so alone (DT_NEEDED), but it needs:"
+        echo "${needed:-(nothing)}"
+        failed=1
+    fi
+    if awk '/^Version needs section/ {found = 1} END {exit !found}' <<< "$versions"; then
+        echo "ERROR: ${lib} needs symbol versions, which musl does not have:"
+        echo "$versions"
         failed=1
     fi
     if [ "$failed" -ne 0 ]; then
         return 1
     fi
-    echo "No DT_NEEDED entries and no strong undefined dynamic symbols"
-    if [ -n "$weak" ]; then
-        echo "Weak undefined dynamic symbols (allowed, null when nothing defines them):"
-        echo "$weak"
-    fi
+    echo "Needs libc.so only, with no symbol versions"
 }
 
-# Load a freshly linked library in a process that contains nothing but musl: the load
-# test program (linux-loadtest*.c, in this directory) built with the target toolchain as a
-# dynamically linked musl executable, run by the musl dynamic loader from the toolchain's
-# sysroot. No glibc and no libgcc_s is present, so nothing else can supply a symbol the
-# library lacks, and it then fails to load. Runs natively (x64), or under the named QEMU
-# user-mode emulator for another architecture. If that emulator is not installed, the
-# test fails the build under GitHub Actions and is skipped with a warning elsewhere.
-# Usage: test_load_musl <library> [qemu-binary]
-# Uses CC, AR to find the toolchain's readelf, and SCRIPT_DIR.
-test_load_musl() {
-    local lib="${1:-}" qemu="${2:-}"
-    if [ -z "$lib" ]; then
-        echo "ERROR: test_load_musl needs the library to load as its argument"
+# Build the load test program (linux-loadtest*.c, in this directory) for a library, with CC,
+# as a dynamically linked program of the library's C library. The zig target and its flags
+# are ZIG_TARGET and ZIG_TARGET_FLAGS unless others are given.
+# - A glibc program is linked with -rdynamic, which exports its stand-ins for glibc's
+#   32-bit file functions (see linux-loadtest-lfs32.c), and -ldl, as dlopen is in libdl
+#   before glibc 2.34.
+# - A musl program is linked with -dynamic, without which zig links it statically, with no
+#   dynamic loader to load the library. It must then need musl's libc.so alone, so that
+#   nothing else in its process can supply a symbol that the library lacks.
+# Usage: build_load_test <program> <glibc|musl> [<zig target> <zig target flags>]
+# Uses CC, ZIG_TARGET, ZIG_TARGET_FLAGS, AR to find readelf, and SCRIPT_DIR.
+build_load_test() {
+    local program="${1:-}" libc="${2:-}"
+    local target="${3:-${ZIG_TARGET:-}}" flags="${4-${ZIG_TARGET_FLAGS:-}}"
+    if [ -z "$program" ] || [ -z "$libc" ]; then
+        echo "ERROR: build_load_test needs the program to build and the C library, glibc or musl, as its arguments"
         return 1
     fi
     local var
-    for var in CC AR SCRIPT_DIR; do
+    for var in CC AR SCRIPT_DIR target; do
         if [ -z "${!var:-}" ]; then
-            echo "ERROR: test_load_musl needs ${var} to be set"
+            echo "ERROR: build_load_test needs ${var} to be set"
             return 1
         fi
     done
+    local -a before=() after=()
+    case "$libc" in
+        glibc) before=(-rdynamic); after=(-ldl) ;;
+        musl)  before=(-dynamic) ;;
+        *)
+            echo "ERROR: build_load_test: unknown C library \"${libc}\" (glibc or musl)"
+            return 1
+            ;;
+    esac
 
-    echo "=== Load test: ${lib} in a process that contains only musl ==="
-    local -a run=()
-    if [ -n "$qemu" ]; then
+    echo "=== Building the load test program ${program} for ${target} ==="
+    ZIG_TARGET="$target" ZIG_TARGET_FLAGS="$flags" "$CC" -O2 -Wall -Wextra "${before[@]}" \
+        -o "$program" "${SCRIPT_DIR}"/linux-loadtest*.c "${after[@]}" || return
+    # Only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
+    local readelf="${AR%ar}readelf" headers dynamic interp needed
+    if ! headers=$("$readelf" -W -l "$program") || ! dynamic=$("$readelf" -W -d "$program"); then
+        echo "ERROR: could not read ${program} with ${readelf}"
+        return 1
+    fi
+    interp=$(awk '/Requesting program interpreter:/ {sub(/.*interpreter: /, ""); sub(/\]$/, ""); print}' <<< "$headers")
+    needed=$(awk '/\(NEEDED\)/ {name = $NF; gsub(/^\[|\]$/, "", name); printf "%s%s", sep, name; sep = " "}' <<< "$dynamic")
+    if [ -z "$interp" ]; then
+        echo "ERROR: ${program} is not dynamically linked: it names no dynamic loader (PT_INTERP)"
+        return 1
+    fi
+    if [ "$libc" = musl ] && [ "$needed" != libc.so ]; then
+        echo "ERROR: ${program} must need musl's libc.so alone, but it needs: ${needed:-(nothing)}"
+        return 1
+    fi
+    echo "${program}: dynamic loader ${interp}, needs ${needed}"
+}
+
+# Run the load test program (see build_load_test) with a library linked against glibc, in a
+# glibc process: natively for x64, and for arm64 and arm under QEMU user-mode emulation
+# (qemu-aarch64, qemu-arm), with the dynamic loader and libraries of Ubuntu's cross runtime
+# of glibc for the architecture (the packages libc6-arm64-cross and libc6-armhf-cross, which
+# install /usr/aarch64-linux-gnu/lib/ld-linux-aarch64.so.1 and
+# /usr/arm-linux-gnueabihf/lib/ld-linux-armhf.so.3). That needs an x86_64 Linux build
+# machine. On macOS the test is skipped with a warning. Elsewhere, and where the emulator
+# or the cross runtime is missing, it fails the build under GitHub Actions and is skipped
+# with a warning otherwise.
+# Usage: test_load_glibc <library> <program> [<qemu program> <glibc's dynamic loader>]
+test_load_glibc() {
+    local lib="${1:-}" program="${2:-}" qemu="${3:-}" loader="${4:-}"
+    if [ -z "$lib" ] || [ -z "$program" ] || { [ -n "$qemu" ] && [ -z "$loader" ]; }; then
+        echo "ERROR: test_load_glibc needs the library and the load test program as its arguments, and the QEMU program and glibc's dynamic loader to run them under emulation"
+        return 1
+    fi
+
+    echo "=== Load test: ${lib} in a glibc process${qemu:+, under ${qemu}} ==="
+    local machine absent=""
+    machine="$(uname -s) $(uname -m)"
+    if [ "$machine" != "Linux x86_64" ]; then
+        absent="an x86_64 Linux build machine (this one is ${machine})"
+    elif [ -n "$qemu" ]; then
         local emulator
         if ! emulator=$(command -v "$qemu" || command -v "${qemu}-static"); then
-            if [ "${GITHUB_ACTIONS:-}" = true ]; then
-                echo "ERROR: ${qemu} (QEMU user-mode emulation) is not installed, so ${lib} cannot be load tested."
-                return 1
-            fi
-            echo "WARNING: ${qemu} (QEMU user-mode emulation) is not installed: SKIPPING the load test of ${lib}."
-            echo "WARNING: nothing has shown that ${lib} loads. Install QEMU user-mode emulation (Debian/Ubuntu: qemu-user) to run the test."
-            return 0
+            absent="${qemu} (QEMU user-mode emulation; Debian/Ubuntu: qemu-user)"
         fi
-        run=("$emulator")
+        if [ ! -f "$loader" ]; then
+            absent="${absent:+${absent} and }${loader} (from Ubuntu's cross runtime of glibc: libc6-arm64-cross or libc6-armhf-cross)"
+        fi
+    fi
+    if [ -n "$absent" ]; then
+        if [ "${GITHUB_ACTIONS:-}" = true ] && [ "$(uname -s)" != Darwin ]; then
+            echo "ERROR: ${lib} cannot be load tested without ${absent}."
+            return 1
+        fi
+        echo "WARNING: SKIPPING the load test of ${lib}, which needs ${absent}."
+        echo "WARNING: nothing here has shown that ${lib} loads in a glibc process: run ${program} with it on Linux."
+        return 0
     fi
 
-    # CC can start with a compiler launcher ("sccache .../arm-linux-gcc")
-    local -a cc
-    read -r -a cc <<< "$CC"
-    local readelf="${AR%ar}readelf"
-    local sysroot dynamic headers needed interp loader
-    sysroot=$("${cc[@]}" -print-sysroot) || return
-    if [ -z "$sysroot" ] || [ ! -d "$sysroot" ]; then
-        echo "ERROR: ${CC} -print-sysroot gave \"${sysroot}\", which is not a directory"
-        return 1
+    local -a run=()
+    if [ -n "$qemu" ]; then
+        run=("$emulator" "$loader" --library-path "${loader%/*}")
     fi
-
-    # -static-libgcc: the program must not depend on libgcc_s, which could supply a
-    # helper routine that the library lacks
-    "${cc[@]}" -O2 -Wall -Wextra -static-libgcc -o loadtest-musl "${SCRIPT_DIR}"/linux-loadtest*.c || return
-    if ! dynamic=$("$readelf" -d loadtest-musl) || ! headers=$("$readelf" -l loadtest-musl); then
-        echo "ERROR: could not read the load test program with ${readelf}"
-        return 1
-    fi
-    needed=$(awk '/\(NEEDED\)/ {print $NF}' <<< "$dynamic")
-    if [ "$needed" != "[libc.so]" ]; then
-        echo "ERROR: the load test program must need musl's libc.so alone, but it needs:"
-        echo "${needed:-(nothing)}"
-        return 1
-    fi
-    # musl's dynamic loader, as named in the program (PT_INTERP), inside the sysroot
-    interp=$(awk '/Requesting program interpreter:/ {sub(/.*interpreter: /, ""); sub(/\]$/, ""); print}' <<< "$headers")
-    loader="${sysroot}${interp}"
-    if [ -z "$interp" ] || [ ! -f "$loader" ]; then
-        echo "ERROR: musl's dynamic loader was not found: the program names \"${interp}\", and ${loader} does not exist"
-        return 1
-    fi
-    if [ ${#run[@]} -gt 0 ]; then
-        run+=(-L "$sysroot")
-    fi
+    case "$program" in
+        */*) run+=("$program") ;;
+        *)   run+=("./$program") ;;
+    esac
     case "$lib" in
-        */*) run+=("$loader" ./loadtest-musl "$lib") ;;
-        *)   run+=("$loader" ./loadtest-musl "./$lib") ;;
+        */*) run+=("$lib") ;;
+        *)   run+=("./$lib") ;;
     esac
     echo "${run[*]}"
     if ! "${run[@]}"; then
-        echo "ERROR: ${lib} failed to load or work in a process that contains only musl (see above)."
-        return 1
-    fi
-}
-
-# Load a freshly linked library in the load test program (linux-loadtest*.c, in this
-# directory) built with the host's own gcc and C library (glibc on the CI runners), as a
-# .NET process on a typical Linux distribution would. Only possible for a library built
-# for the host's architecture (x64).
-# Usage: test_load_host <library>
-# Uses SCRIPT_DIR.
-test_load_host() {
-    local lib="${1:-}"
-    if [ -z "$lib" ]; then
-        echo "ERROR: test_load_host needs the library to load as its argument"
-        return 1
-    fi
-    if [ -z "${SCRIPT_DIR:-}" ]; then
-        echo "ERROR: test_load_host needs SCRIPT_DIR to be set"
-        return 1
-    fi
-
-    echo "=== Load test: ${lib} in a program built with the host's gcc ==="
-    # -ldl for glibc before 2.34, where dlopen is not in libc itself
-    gcc -O2 -Wall -Wextra -o loadtest-host "${SCRIPT_DIR}"/linux-loadtest*.c -ldl || return
-    local path="$lib"
-    case "$lib" in
-        */*) ;;
-        *) path="./$lib" ;;
-    esac
-    if ! ./loadtest-host "$path"; then
-        echo "ERROR: ${lib} failed to load or work in a program built with the host's gcc (see above)."
+        echo "ERROR: ${lib} failed to load or work in a glibc process (see above)."
         return 1
     fi
 }

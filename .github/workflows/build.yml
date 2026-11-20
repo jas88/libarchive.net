@@ -137,18 +137,31 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # One library per Linux runtime, each linked against its own C library (glibc for
+          # linux-*, musl for linux-musl-*), built by native/build-linux.sh <target>, with
+          # loadtest-<target>, the load test program built for it, beside it
           - target: linux-x64
             kind: linux
-            script: build-linux.sh
             output: libarchive-linux-x64.so
           - target: linux-arm64
             kind: linux
-            script: build-linux-arm64.sh
             output: libarchive-linux-arm64.so
+            # test_load_glibc (native/build-linux-common.sh) runs the load test under QEMU,
+            # with the dynamic loader and libraries of this package's glibc
+            glibc-cross-runtime: libc6-arm64-cross
           - target: linux-arm
             kind: linux
-            script: build-linux-arm.sh
             output: libarchive-linux-arm.so
+            glibc-cross-runtime: libc6-armhf-cross
+          - target: linux-musl-x64
+            kind: linux
+            output: libarchive-linux-musl-x64.so
+          - target: linux-musl-arm64
+            kind: linux
+            output: libarchive-linux-musl-arm64.so
+          - target: linux-musl-arm
+            kind: linux
+            output: libarchive-linux-musl-arm.so
           - target: win-x86
             kind: windows
             arch: x86
@@ -175,8 +188,9 @@ jobs:
           {
             echo "key=native-${{ matrix.target }}-${EXTRA}${NATIVE_CACHE_VERSION}-${{ hashFiles('native/**') }}"
             # Configure results are only valid for the toolchain that produced them, so
-            # their key carries the same toolchain parts as the binary's.
-            echo "config-key=config-cache-${{ matrix.target }}-${EXTRA}${NATIVE_CACHE_VERSION}-${{ hashFiles('native/build-*.sh') }}"
+            # their key carries the same toolchain parts as the binary's (for Linux, zig's
+            # version in build-config.sh and the compiler wrapper).
+            echo "config-key=config-cache-${{ matrix.target }}-${EXTRA}${NATIVE_CACHE_VERSION}-${{ hashFiles('native/build-*.sh', 'native/zig-cc.sh') }}"
           } >> "$GITHUB_OUTPUT"
       # Native binaries are reused while native/** is unchanged. Tag builds always
       # rebuild from source so release binaries never come from a cache.
@@ -185,7 +199,10 @@ jobs:
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/cache/restore@v6.1.0
         with:
-          path: native-out/${{ matrix.output }}
+          # A Linux library comes with its load test program (see the matrix)
+          path: |
+            native-out/${{ matrix.output }}
+            ${{ matrix.kind == 'linux' && format('native-out/loadtest-{0}', matrix.target) || '' }}
           key: ${{ steps.cache-key.outputs.key }}
       - name: Cache library downloads
         if: steps.native-cache.outputs.cache-hit != 'true'
@@ -195,7 +212,7 @@ jobs:
           # names another directory (the build log prints the one in use)
           path: ~/.cache/libarchive-net/downloads
           # One cache per job, because each job downloads different files (only the
-          # Linux jobs fetch a Bootlin toolchain and mbedTLS). With one key for all of
+          # Linux jobs fetch zig and mbedTLS). With one key for all of
           # them, only the first job to finish could save the cache, and runs that hit
           # the key never save it again, so the cache held that one job's downloads.
           key: library-downloads-${{ matrix.target }}-${{ hashFiles('native/build-config.sh') }}
@@ -210,6 +227,16 @@ jobs:
           # Exact match only: a configure cache from another toolchain or flag set makes
           # autoconf abort ("`CC' has changed since the previous run").
           key: ${{ steps.cache-key.outputs.config-key }}
+      # zig's own cache, of the C library stubs and compiler-rt that it builds for each
+      # target. The Linux builds have no sccache: it cannot sit in front of zig cc.
+      - name: Cache zig's builds of the C library and compiler-rt
+        if: steps.native-cache.outputs.cache-hit != 'true' && matrix.kind == 'linux'
+        uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/zig
+          key: zig-cache-${{ matrix.target }}-${{ hashFiles('native/build-config.sh', 'native/build-linux.sh', 'native/zig-cc.sh') }}
+          restore-keys: |
+            zig-cache-${{ matrix.target }}-
       - name: Install apt packages
         if: steps.native-cache.outputs.cache-hit != 'true'
         uses: awalsh128/cache-apt-pkgs-action@v1.6.3
@@ -219,13 +246,14 @@ jobs:
           packages: ${{ matrix.kind == 'windows' && 'mingw-w64 g++-mingw-w64-i686-win32 g++-mingw-w64-x86-64-win32 pkg-config' || 'pkg-config' }}
           version: 1.0
           execute_install_scripts: true
-      # The arm and arm64 builds load-test the library under QEMU user-mode emulation
-      # (test_load_musl in native/build-linux-common.sh), and fail if it is missing.
+      # The glibc arm and arm64 builds load-test the library under QEMU user-mode emulation,
+      # with the dynamic loader and libraries of Ubuntu's cross runtime of glibc
+      # (test_load_glibc in native/build-linux-common.sh), and fail if either is missing.
       - name: Install QEMU user-mode emulation
-        if: steps.native-cache.outputs.cache-hit != 'true' && (matrix.target == 'linux-arm' || matrix.target == 'linux-arm64')
+        if: steps.native-cache.outputs.cache-hit != 'true' && matrix.glibc-cross-runtime
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-user
+          sudo apt-get install -y --no-install-recommends qemu-user ${{ matrix.glibc-cross-runtime }}
       - name: Install LLVM-MinGW for ARM64
         if: steps.native-cache.outputs.cache-hit != 'true' && matrix.target == 'win-arm64'
         run: |
@@ -296,7 +324,7 @@ jobs:
           # Include system m4 files (for pkg.m4 etc)
           echo "ACLOCAL_PATH=/usr/share/aclocal:$HOME/.local/share/aclocal" >> "$GITHUB_ENV"
       - name: sccache
-        if: steps.native-cache.outputs.cache-hit != 'true'
+        if: steps.native-cache.outputs.cache-hit != 'true' && matrix.kind == 'windows'
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
           key: native-${{ matrix.target }}-v3
@@ -304,11 +332,9 @@ jobs:
       - name: Build Linux library
         if: steps.native-cache.outputs.cache-hit != 'true' && matrix.kind == 'linux'
         run: |
-          ./native/${{ matrix.script }}
+          ./native/build-linux.sh ${{ matrix.target }}
           mkdir -p native-out
-          cp "$HOME/libarchive-native/${{ matrix.output }}" native-out/
-          echo "=== sccache stats ==="
-          sccache --show-stats
+          cp "$HOME/libarchive-native/${{ matrix.output }}" "$HOME/libarchive-native/loadtest-${{ matrix.target }}" native-out/
       - name: Build Windows DLL
         if: steps.native-cache.outputs.cache-hit != 'true' && matrix.kind == 'windows'
         run: |
@@ -325,13 +351,17 @@ jobs:
         if: steps.native-cache.outputs.cache-hit != 'true' && !startsWith(github.ref, 'refs/tags/v')
         uses: actions/cache/save@v6.1.0
         with:
-          path: native-out/${{ matrix.output }}
+          path: |
+            native-out/${{ matrix.output }}
+            ${{ matrix.kind == 'linux' && format('native-out/loadtest-{0}', matrix.target) || '' }}
           key: ${{ steps.cache-key.outputs.key }}
       - name: Archive native library
         uses: actions/upload-artifact@v7.0.2
         with:
           name: native-${{ matrix.target }}
-          path: native-out/${{ matrix.output }}
+          path: |
+            native-out/${{ matrix.output }}
+            ${{ matrix.kind == 'linux' && format('native-out/loadtest-{0}', matrix.target) || '' }}
           if-no-files-found: error
           retention-days: 1
 
@@ -380,10 +410,9 @@ jobs:
           R=LibArchive.Net/runtimes
           mkdir -p "$R"/{osx-x64,osx-arm64,linux-x64,linux-musl-x64,linux-arm,linux-musl-arm,linux-arm64,linux-musl-arm64,win-x86,win-x64,win-arm64}/native
 
-          # Linux (musl-linked, so the same binary serves glibc and musl RIDs)
-          for arch in x64 arm64 arm; do
-            cp "native-out/libarchive-linux-$arch.so" "$R/linux-$arch/native/libarchive.so"
-            cp "native-out/libarchive-linux-$arch.so" "$R/linux-musl-$arch/native/libarchive.so"
+          # Linux: a library of its own for each runtime, linked against its C library
+          for rid in linux-x64 linux-arm64 linux-arm linux-musl-x64 linux-musl-arm64 linux-musl-arm; do
+            cp "native-out/libarchive-$rid.so" "$R/$rid/native/libarchive.so"
           done
 
           # macOS universal binary

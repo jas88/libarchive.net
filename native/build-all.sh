@@ -70,7 +70,7 @@ else
                 echo ""
                 echo "Options:"
                 echo "  --all       Build for all platforms and package"
-                echo "  --linux     Build for Linux (x64, ARMv7, ARM64)"
+                echo "  --linux     Build for Linux (x64, ARMv7, ARM64; glibc and musl)"
                 echo "  --macos     Build for macOS (universal binary)"
                 echo "  --windows   Build for Windows (x86, x64, arm64)"
                 echo "  --package   Create and test NuGet package after building"
@@ -100,25 +100,19 @@ cp -R "$SCRIPT_DIR"/* .
 
 # Build for Linux
 if [ $BUILD_LINUX -eq 1 ]; then
-    log_info "Building for Linux (x64, ARMv7, ARM64)..."
-    if [ "$PLATFORM" != "linux" ]; then
-        log_warn "Cross-compilation for Linux not yet supported on $PLATFORM"
+    log_info "Building for Linux (x64, ARMv7, ARM64; glibc and musl)..."
+    if [ "$PLATFORM" != "linux" ] && [ "$PLATFORM" != "macos" ]; then
+        log_warn "Building for Linux is not supported on $PLATFORM, only on Linux and macOS"
         log_warn "Skipping Linux build"
     else
-        # build-linux.sh builds x64, build-linux-<arch>.sh the others; each leaves
-        # libarchive-linux-<arch>.so in $NATIVE_OUT. The libraries use musl-libc, so
-        # each one goes to both its linux-<arch> and its linux-musl-<arch> folder.
-        # No x86: LibArchive.Net never loads a Linux x86 library.
-        for arch in x64 arm arm64; do
-            if [ "$arch" = x64 ]; then
-                ./build-linux.sh
-            else
-                "./build-linux-$arch.sh"
-            fi
-            for rid in "linux-$arch" "linux-musl-$arch"; do
-                mkdir -p "$REPO_ROOT/LibArchive.Net/runtimes/$rid/native"
-                cp "$NATIVE_OUT/libarchive-linux-$arch.so" "$REPO_ROOT/LibArchive.Net/runtimes/$rid/native/libarchive.so"
-            done
+        # build-linux.sh <rid> builds the library of one runtime, linked against its own
+        # C library (glibc's linux-<arch>, musl's linux-musl-<arch>), and leaves
+        # libarchive-<rid>.so in $NATIVE_OUT. It builds in a directory of its own, so it
+        # runs from this checkout. No x86: LibArchive.Net never loads a Linux x86 library.
+        for rid in linux-x64 linux-arm64 linux-arm linux-musl-x64 linux-musl-arm64 linux-musl-arm; do
+            "$SCRIPT_DIR/build-linux.sh" "$rid"
+            mkdir -p "$REPO_ROOT/LibArchive.Net/runtimes/$rid/native"
+            cp "$NATIVE_OUT/libarchive-$rid.so" "$REPO_ROOT/LibArchive.Net/runtimes/$rid/native/libarchive.so"
         done
         log_info "Linux libraries installed to LibArchive.Net/runtimes/linux-<arch>/native/ and linux-musl-<arch>/native/"
     fi

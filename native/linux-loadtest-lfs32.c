@@ -22,11 +22,12 @@
  * the standard name, and one with 64-bit ones (lseek64 and so on). Its open, openat, fopen
  * and mkstemp open files without O_LARGEFILE, so that they cannot pass 2 GiB, and open64
  * and the others with it. The library's off_t is 64-bit, so in a glibc process it must call
- * only the 64-bit ones. For each 32-bit one, this program has a function of the same name
- * (exported when the program is linked with -rdynamic, without which check_lfs32 fails),
- * so that the library's calls of it come here, before glibc: each counts the call, and
- * passes it on, with its arguments as they are, to glibc's. The program itself calls the
- * 64-bit ones only, as it is compiled with _FILE_OFFSET_BITS=64.
+ * only the 64-bit ones. For each 32-bit one, this program has a function of the same name,
+ * which it exports, as build_load_test (build-linux-common.sh) links it with -rdynamic
+ * (check_lfs32 fails without that), so that the library's calls of it come here, before
+ * glibc: each counts the call, and passes it on, with its arguments as they are, to
+ * glibc's. The program itself calls the 64-bit ones only, as it is compiled with
+ * _FILE_OFFSET_BITS=64.
  */
 enum {
     LFS32_OPEN, LFS32_OPENAT, LFS32_FOPEN, LFS32_MKSTEMP, LFS32_LSEEK, LFS32_FTRUNCATE,

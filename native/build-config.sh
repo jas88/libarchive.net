@@ -43,16 +43,16 @@ XZ_SHA256="4ce24038fd4221e0d13bc1a2de7a4db56e90b92b3bf75321f6c14be73f65de4b"
 BZIP2_SHA256="ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269"
 MBEDTLS_SHA256="bc54b818e87f49c0b3281dd85d24adaede0e63b4e822e3fbd49c005a38b9595b"
 
-# Bootlin toolchain release (Linux only). Renovate is configured to keep it current
-# (.github/renovate.json); the GCC, musl and binutils versions in each release are
-# listed at https://toolchains.bootlin.com/.
-BOOTLIN_RELEASE="stable-2026.08-1"
-
-# Bootlin toolchain URLs (exported for use in build scripts)
-TOOLCHAIN_BASE_URL="https://toolchains.bootlin.com/downloads/releases/toolchains"
-export TOOLCHAIN_X64_URL="${TOOLCHAIN_BASE_URL}/x86-64/tarballs/x86-64--musl--${BOOTLIN_RELEASE}.tar.xz"
-export TOOLCHAIN_ARM_URL="${TOOLCHAIN_BASE_URL}/armv7-eabihf/tarballs/armv7-eabihf--musl--${BOOTLIN_RELEASE}.tar.xz"
-export TOOLCHAIN_ARM64_URL="${TOOLCHAIN_BASE_URL}/aarch64/tarballs/aarch64--musl--${BOOTLIN_RELEASE}.tar.xz"
+# zig (Linux builds only): its "zig cc" and "zig c++" compile and link each Linux library
+# for its own C library, a given version of glibc or zig's own copy of musl (see
+# build-linux.sh). download_zig fetches the release for the build machine and verifies it
+# against that tarball's SHA256 below: a new ZIG_VERSION needs all four, which
+# https://ziglang.org/download/index.json lists ("shasum").
+ZIG_VERSION="0.17.1"
+ZIG_SHA256_X86_64_LINUX="3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a"
+ZIG_SHA256_AARCH64_LINUX="a1546d5646eb184437918d6635ca6b762a0e889eac09cef720ee7a1ed3fe7795"
+ZIG_SHA256_X86_64_MACOS="9af07b20319fbd0c92ee46ad23e81d6a782b1aaea2cfb8dcbff35f1d2c7ddbb7"
+ZIG_SHA256_AARCH64_MACOS="75f1bc7a1e9852f17ec9a0c1895f767c4ec56d46bc8a834920eece1d0359dd8d"
 
 # Library download URLs
 LIBARCHIVE_URL="https://github.com/libarchive/libarchive/releases/download/v${LIBARCHIVE_VERSION}/libarchive-${LIBARCHIVE_VERSION}.tar.xz"
@@ -121,10 +121,10 @@ export CONFIG_CACHE_DIR="${LIBARCHIVE_NET_CACHE_DIR}/config-cache"
 # configure looks for under the host triplet and, not finding them, takes unprefixed
 # from the build machine, warning "using cross tools not prefixed with host triplet".
 # pkg-config is the build machine's, confined to the .pc files under $PREFIX as a cross
-# pkg-config would be. libtool's manifest tool (an mt.exe that embeds manifests): none
-# of the MinGW or Bootlin toolchains has one, and an mt on the build machine is the tape
-# drive program, so it is ":", libtool's own value for none. Call it once PREFIX has its
-# final value.
+# pkg-config would be. libtool's manifest tool (an mt.exe that embeds manifests): neither
+# the MinGW toolchains nor zig has one, and an mt on the build machine is the tape drive
+# program, so it is ":", libtool's own value for none. Call it once PREFIX has its final
+# value.
 # Usage: export_cross_build_tools
 export_cross_build_tools() {
     export PKG_CONFIG=pkg-config
@@ -215,27 +215,6 @@ download_library() {
     esac
 }
 
-# Print the SHA256 that a checksum file in sha256sum format ("<hash>  <file name>")
-# gives for the file named $1. Fails, printing nothing, unless the first line of the
-# checksum file $2 holds a well-formed hash and names that file.
-# Usage: sha256_for <file-name> <checksum-file>
-sha256_for() {
-    local wanted="$1"
-    local sum_file="$2"
-    local hash=""
-    local file=""
-    [ -f "$sum_file" ] || return 1
-    # read fails at a missing final newline, but has still set the fields
-    read -r hash file < "$sum_file" || [ -n "$hash" ] || return 1
-    [ "${#hash}" -eq 64 ] || return 1
-    case "$hash" in
-        *[!0-9a-fA-F]*) return 1 ;;
-    esac
-    # A leading "*" marks a hash computed in binary mode
-    [ "${file#\*}" = "$wanted" ] || return 1
-    printf '%s\n' "$hash" | tr 'A-F' 'a-f'
-}
-
 # Succeed if the file $2 has the SHA256 $1; otherwise say on stderr what it has
 # Usage: sha256_verify <expected-sha256> <file>
 sha256_verify() {
@@ -268,81 +247,61 @@ download_verified() {
     return 1
 }
 
-# Download a Bootlin toolchain to the download cache (does not unpack), verified against
-# the checksum file Bootlin publishes beside each tarball (<release>.sha256 beside
-# <release>.tar.xz). Prints the path of the cached tarball, the only thing written to
-# stdout, for the build script to unpack.
+# Download zig for the build machine (x86_64 or aarch64, Linux or macOS) to the download
+# cache, without unpacking it, verified against that tarball's SHA256 in ZIG_SHA256_*
+# above. Prints the path of the cached tarball, the only thing written to stdout, for the
+# Linux build to unpack.
 #
-# The checksum file is cached beside the tarball, so a cached tarball, including one
-# restored by CI's download cache, is verified again on every use without a download.
-# A cached tarball that does not match is deleted and downloaded again, and a new
-# download only replaces it once verified (see download_verified).
-#
-# What the published checksum protects against: a download that was cut short or
-# corrupted, an error page or other wrong content served in the tarball's place, and a
-# cached file damaged since it was downloaded. What it does not protect against: a
-# compromise of toolchains.bootlin.com itself, since the checksum comes from the same
-# server as the tarball, and whoever can replace one can replace the other. Hashes
-# pinned in this file would close that gap, but Renovate bumps BOOTLIN_RELEASE
-# (.github/renovate.json) and cannot compute them: see "Bootlin toolchains" in BUILD.md.
-# Usage: download_toolchain <url> <name>
-download_toolchain() {
-    local url="$1"
-    local name="$2"
-    local archive_name="${url##*/}"
-    local cache_file="${DOWNLOAD_CACHE}/${archive_name}"
-    local sum_url="${url%.tar.*}.sha256"
-    local sum_file="${cache_file}.sha256"
-    local max_retries=3
-    local attempt=1
-    local expected
+# A cached tarball, including one restored by CI's download cache, is verified again on
+# every use; one that does not match is deleted and downloaded again. A download replaces
+# it only once verified (see download_verified), so a download that fails, is cut short or
+# brings wrong content, such as an error page, is never used.
+# Usage: download_zig
+# Like patch_libarchive, it has a subshell body and stays POSIX, as this file is sourced by
+# build-windows.sh under plain sh.
+download_zig() (
+    case "$(uname -s)-$(uname -m)" in
+        Linux-x86_64 | Linux-amd64)    host=x86_64-linux;  expected=$ZIG_SHA256_X86_64_LINUX ;;
+        Linux-aarch64 | Linux-arm64)   host=aarch64-linux; expected=$ZIG_SHA256_AARCH64_LINUX ;;
+        Darwin-x86_64)                 host=x86_64-macos;  expected=$ZIG_SHA256_X86_64_MACOS ;;
+        Darwin-arm64 | Darwin-aarch64) host=aarch64-macos; expected=$ZIG_SHA256_AARCH64_MACOS ;;
+        *)
+            echo "ERROR: zig ${ZIG_VERSION} is pinned for x86_64 and aarch64 Linux and macOS build machines only, not $(uname -s) $(uname -m)" >&2
+            exit 1
+            ;;
+    esac
+    url="https://ziglang.org/download/${ZIG_VERSION}/zig-${host}-${ZIG_VERSION}.tar.xz"
+    cache_file="${DOWNLOAD_CACHE}/${url##*/}"
+    mkdir -p "$DOWNLOAD_CACHE" || exit
 
-    mkdir -p "$DOWNLOAD_CACHE" || return 1
+    if [ -f "$cache_file" ]; then
+        if sha256_verify "$expected" "$cache_file"; then
+            echo "Using cached zig ${ZIG_VERSION} for ${host} (matches its pinned SHA256)" >&2
+            echo "$cache_file"
+            exit 0
+        fi
+        echo "The cached zig ${ZIG_VERSION} for ${host} does not match its pinned SHA256: downloading it again" >&2
+        rm -f "$cache_file" || exit
+    fi
 
+    max_retries=3
+    attempt=1
     while :; do
-        # Bootlin's checksum of the tarball: the cached copy if it is well formed and
-        # names this tarball, otherwise a fresh download (an unusable copy is replaced)
-        if ! expected=$(sha256_for "$archive_name" "$sum_file"); then
-            rm -f "$sum_file"
-            echo "Downloading Bootlin's checksum of the ${name} toolchain..." >&2
-            if ! download_verified "$sum_url" "$sum_file" sha256_for "$archive_name" \
-                || ! expected=$(sha256_for "$archive_name" "$sum_file"); then
-                echo "WARNING: no usable checksum of ${archive_name} at ${sum_url}" >&2
-                expected=""
-            fi
+        echo "Downloading zig ${ZIG_VERSION} for ${host} to cache (attempt ${attempt}/${max_retries})..." >&2
+        if download_verified "$url" "$cache_file" sha256_verify "$expected"; then
+            echo "zig download verified against its pinned SHA256" >&2
+            echo "$cache_file"
+            exit 0
         fi
-
-        if [ -n "$expected" ]; then
-            if [ -f "$cache_file" ]; then
-                if sha256_verify "$expected" "$cache_file"; then
-                    echo "Using cached ${name} toolchain (matches Bootlin's checksum)" >&2
-                    break
-                fi
-                echo "WARNING: the cached ${name} toolchain does not match Bootlin's checksum: downloading it again" >&2
-                rm -f "$cache_file"
-            fi
-            echo "Downloading ${name} toolchain to cache (attempt ${attempt}/${max_retries})..." >&2
-            if download_verified "$url" "$cache_file" sha256_verify "$expected"; then
-                echo "Toolchain download verified against Bootlin's checksum" >&2
-                break
-            fi
-            # A mismatch can also come from a stale cached checksum: fetch it again too
-            rm -f "$sum_file"
-        fi
-
         if [ "$attempt" -ge "$max_retries" ]; then
-            echo "ERROR: Failed to download and verify the ${name} toolchain after ${max_retries} attempts" >&2
+            echo "ERROR: Failed to download and verify zig ${ZIG_VERSION} for ${host} after ${max_retries} attempts" >&2
             echo "URL: ${url}" >&2
-            echo "Checksum URL: ${sum_url}" >&2
-            return 1
+            exit 1
         fi
         attempt=$((attempt + 1))
-        echo "Retrying the ${name} toolchain download..." >&2
         sleep $((attempt * 2))
     done
-
-    echo "$cache_file"
-}
+)
 
 # Normalise autotools timestamps for a freshly unpacked release tarball.
 #
@@ -544,7 +503,7 @@ echo "  libxml2: ${LIBXML2_VERSION}"
 echo "  zlib: ${ZLIB_VERSION}"
 echo "  xz: ${XZ_VERSION}"
 echo "  bzip2: ${BZIP2_VERSION}"
-echo "  Bootlin toolchains (Linux): ${BOOTLIN_RELEASE}"
+echo "  zig (Linux): ${ZIG_VERSION}"
 echo "  CPUs: ${NCPU}"
 echo "  PREFIX: ${PREFIX}"
 echo "  Download cache: ${DOWNLOAD_CACHE}"

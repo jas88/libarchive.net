@@ -1,6 +1,6 @@
 /*
  * Declarations shared by the source files of the Linux load test program, which
- * test_load_musl and test_load_host in build-linux-common.sh build into one program:
+ * build_load_test in build-linux-common.sh builds into one program:
  * linux-loadtest.c (main, and the checks that need no files),
  * linux-loadtest-files.c (archives in files) and linux-loadtest-lfs32.c (glibc's file
  * functions with a 32-bit off_t).

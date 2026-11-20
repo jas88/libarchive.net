@@ -498,13 +498,13 @@ check_dependency "mbedtls" "$CURRENT_MBEDTLS" "web" \
     "https://api.github.com/repos/Mbed-TLS/mbedtls/releases?per_page=100" \
     'releases/download/mbedtls-(3\.6\.[0-9]+)/mbedtls-3\.6\.[0-9]+\.tar\.bz2' || true
 
-# The Linux toolchains are not checked here: they are Bootlin prebuilt releases,
-# selected by BOOTLIN_RELEASE in build-config.sh, which Renovate is configured to
-# keep current (.github/renovate.json)
+# zig, which builds the Linux libraries, is not checked here: build-config.sh pins its
+# release (ZIG_VERSION) with the SHA256 of its tarball for each build machine
+# (ZIG_SHA256_*), which an update sets by hand
 echo ""
-echo "ℹ️  Note: the Linux toolchains (BOOTLIN_RELEASE in build-config.sh) are not checked here"
-echo "   Renovate is configured to keep BOOTLIN_RELEASE current (.github/renovate.json)"
-echo "   Bootlin releases: https://toolchains.bootlin.com/"
+echo "ℹ️  Note: zig, which builds the Linux libraries (ZIG_VERSION in build-config.sh), is not checked here"
+echo "   Update it by hand, with the SHA256 of each of its tarballs (ZIG_SHA256_*)"
+echo "   zig releases: https://ziglang.org/download/index.json"
 
 echo ""
 
