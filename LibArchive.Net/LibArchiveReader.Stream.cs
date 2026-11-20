@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 
@@ -14,10 +15,20 @@ public partial class LibArchiveReader
     private byte[]? _readBuffer;
     private GCHandle? _bufferHandle;
 
+    // A non-seekable stream cannot be read twice, so the chunks the first native reader reads
+    // while opening it, and for compressed data while reading the first header, are recorded,
+    // and replayed to a second native reader if Open() or ReadNextHeader() needs one.
+    private List<byte[]>? _recordedChunks;
+    private Queue<byte[]>? _replayChunks;
+
     // Callback delegates for stream reading
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int ArchiveOpenCallback(IntPtr archive, IntPtr clientData);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int ArchiveCloseCallback(IntPtr archive, IntPtr clientData);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate IntPtr ArchiveReadCallback(IntPtr archive, IntPtr clientData, out IntPtr buffer);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate long ArchiveSeekCallback(IntPtr archive, IntPtr clientData, long offset, int whence);
 
     // Delegate instances must be kept alive to prevent GC while native code holds references
@@ -36,7 +47,15 @@ public partial class LibArchiveReader
     /// The stream should be positioned at the start of the archive data.
     /// Its initial position is treated as archive offset zero, including after Reset().
     /// Seeking within formats such as 7z, and Reset(), require a seekable stream (CanSeek = true).
+    /// A single compressed file that is not an archive, such as a plain gzip stream, is read as
+    /// an archive holding one entry (see <see cref="Entries"/>); for a non-seekable stream, the
+    /// bytes read while detecting this are kept in memory until the reader has opened, and for
+    /// compressed data until the first entry's header has been read. Empty data opens as an archive
+    /// with no entries, and so does compressed data whose decompressed data is empty.
     /// </remarks>
+    /// <exception cref="ApplicationException">Thrown when the archive cannot be opened, including when the
+    /// data is not empty and is neither an archive nor compressed (message "Unrecognized archive
+    /// format").</exception>
     public LibArchiveReader(Stream inputStream, string? password = null, uint blockSize = 1 << 20)
         : base(true)
     {
@@ -56,34 +75,81 @@ public partial class LibArchiveReader
 
     private void InitializeFromStream()
     {
-        handle = archive_read_new();
-        if (handle == IntPtr.Zero)
-            throw new ApplicationException("Failed to create archive reader");
-
         try
         {
-            archive_read_support_filter_all(handle);
-            archive_read_support_format_all(handle);
-
-            if (_password != null)
-            {
-                using var uPassword = new SafeStringBuffer(_password);
-                if (archive_read_add_passphrase(handle, uPassword.Ptr) != 0)
-                    Throw();
-            }
-
-            OpenWithCallbacks();
+            Open();
         }
         catch
         {
-            CleanupCallbacks();
-            archive_read_free(handle);
+            // Freed first: archive_read_free can call the close callback (see ReleaseHandle())
+            if (handle != IntPtr.Zero)
+                archive_read_free(handle);
             handle = IntPtr.Zero;
+            CleanupCallbacks();
+            DropRecordedChunks();
             throw;
         }
     }
 
-    private void OpenWithCallbacks()
+    /// <summary>
+    /// Frees the native reader, if there is one, and then the chunks recorded from a
+    /// non-seekable stream.
+    /// </summary>
+    /// <param name="disposing">true when called from <see cref="SafeHandle.Dispose()"/>, false
+    /// when called from the finalizer.</param>
+    protected override void Dispose(bool disposing)
+    {
+        // Once the native reader is freed (ReleaseHandle), nothing can replay the chunks. (When
+        // RewindSource() frees one, it keeps them for the native reader that replays them.)
+        base.Dispose(disposing);
+        DropRecordedChunks();
+    }
+
+    private void DropRecordedChunks()
+    {
+        _recordedChunks = null;
+        _replayChunks = null;
+    }
+
+    // Opens the stream with the native reader that Open() created. While the first native reader
+    // opens a non-seekable stream, the chunks it reads are recorded so that RewindStream() can
+    // hand the same bytes to a second one. Once it has opened, only compressed data can need
+    // that, if its first header fails (see ReadNextHeader()), so only that is still recorded.
+    private int OpenStream()
+    {
+        _recordedChunks = _inputStream is { CanSeek: false } && _replayChunks == null
+            ? new List<byte[]>()
+            : null;
+
+        var result = OpenWithCallbacks();
+        if (result == (int)ARCHIVE_RESULT.ARCHIVE_OK && !IsCompressed())
+            StopRecording();
+        return result;
+    }
+
+    // Stops recording what a non-seekable stream gives the native reader, and drops the record.
+    private void StopRecording() => _recordedChunks = null;
+
+    // Returns the stream to the point where the first native reader started.
+    private bool RewindStream()
+    {
+        if (_inputStream == null)
+            return false;
+
+        if (_inputStream.CanSeek)
+        {
+            _inputStream.Seek(_streamOrigin, SeekOrigin.Begin);
+            return true;
+        }
+
+        if (_recordedChunks == null)
+            return false;
+        _replayChunks = new Queue<byte[]>(_recordedChunks);
+        _recordedChunks = null;
+        return true;
+    }
+
+    private int OpenWithCallbacks()
     {
         if (_inputStream == null)
             throw new InvalidOperationException("No input stream available");
@@ -107,15 +173,12 @@ public partial class LibArchiveReader
                 Throw();
         }
 
-        var result = archive_read_open(
+        return archive_read_open(
             handle,
             GCHandle.ToIntPtr(_callbackHandle.Value),
             _openCallback,
             _readCallback,
             _closeCallback);
-
-        if (result != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-            Throw();
     }
 
     private int OnOpen(IntPtr archive, IntPtr clientData)
@@ -139,7 +202,23 @@ public partial class LibArchiveReader
                 return new IntPtr(-1);
             }
 
-            int bytesRead = stream.Read(_readBuffer!, 0, _readBuffer!.Length);
+            int bytesRead;
+            if (_replayChunks is { Count: > 0 })
+            {
+                var chunk = _replayChunks.Dequeue();
+                Buffer.BlockCopy(chunk, 0, _readBuffer!, 0, chunk.Length);
+                bytesRead = chunk.Length;
+            }
+            else
+            {
+                bytesRead = stream.Read(_readBuffer!, 0, _readBuffer!.Length);
+                if (bytesRead > 0 && _recordedChunks != null)
+                {
+                    var chunk = new byte[bytesRead];
+                    Buffer.BlockCopy(_readBuffer!, 0, chunk, 0, bytesRead);
+                    _recordedChunks.Add(chunk);
+                }
+            }
 
             if (bytesRead == 0)
             {
@@ -233,11 +312,13 @@ public partial class LibArchiveReader
 
 #if NET7_0_OR_GREATER
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_read_set_seek_callback(
         IntPtr archive,
         [MarshalAs(UnmanagedType.FunctionPtr)] ArchiveSeekCallback seekCallback);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_read_open(
         IntPtr archive,
         IntPtr clientData,
@@ -245,12 +326,12 @@ public partial class LibArchiveReader
         [MarshalAs(UnmanagedType.FunctionPtr)] ArchiveReadCallback? readCallback,
         [MarshalAs(UnmanagedType.FunctionPtr)] ArchiveCloseCallback? closeCallback);
 #else
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_read_set_seek_callback(
         IntPtr archive,
         [MarshalAs(UnmanagedType.FunctionPtr)] ArchiveSeekCallback seekCallback);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_read_open(
         IntPtr archive,
         IntPtr clientData,

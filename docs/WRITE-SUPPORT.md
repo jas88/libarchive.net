@@ -10,12 +10,14 @@ LibArchive.Net now provides comprehensive write support for creating archives in
 
 - **ZIP** - Widely compatible, supports AES encryption
 - **7-Zip (.7z)** - Excellent compression (no encryption: libarchive cannot encrypt 7-Zip archives)
-- **TAR** - Unix standard, combine with compression filters
+- **TAR** - Unix standard, combine with compression filters (written as restricted pax)
 - **Ustar** - TAR variant with extended metadata
-- **PAX** - Modern TAR with Unicode support
-- **CPIO** - Unix archive format
-- **ISO 9660** - CD-ROM filesystem
+- **PAX** - Modern TAR, with pax extended headers for what ustar cannot hold
+- **CPIO** - Unix archive format (SVR4 "newc")
+- **ISO 9660** - CD-ROM filesystem, with Joliet and Rock Ridge extensions
 - **XAR** - macOS package format (not on Linux, see below)
+
+Every format stores names with any Unicode characters: see [Entry Names](#entry-names).
 
 XAR is not available on Linux. libarchive's XAR support needs an XML library, and the Linux native
 libraries are built without one (`native/build-linux*.sh` configure libarchive with
@@ -210,6 +212,18 @@ using (var writer = LibArchiveWriter.CreateMemoryWriter(ArchiveFormat.Zip))
 return File(archiveBytes, "application/zip", "download.zip");
 ```
 
+By default the memory writer, like the other writers, hands the archive to its buffer in 1 MiB blocks. An
+overload takes the block size as its first argument:
+
+```csharp
+// libarchive collects 64 KiB, rather than 1 MiB, before copying it to the buffer
+using var writer = LibArchiveWriter.CreateMemoryWriter(64 * 1024, ArchiveFormat.Tar, CompressionType.Gzip);
+```
+
+The block size comes first so that existing calls such as `CreateMemoryWriter(ArchiveFormat.Zip, 0)` keep
+their meaning (no compression). To give it after the format, name every argument:
+`CreateMemoryWriter(format: ArchiveFormat.Zip, blockSize: 4096)`.
+
 ## Performance Tips
 
 ### 1. Choose the Right Format
@@ -366,6 +380,10 @@ try
     using var writer = new LibArchiveWriter("archive.zip", ArchiveFormat.Zip);
     writer.AddDirectory(@"C:\Data");
 }
+catch (DirectoryNotFoundException ex)
+{
+    Console.WriteLine($"Directory not found: {ex.Message}");
+}
 catch (FileNotFoundException ex)
 {
     Console.WriteLine($"File not found: {ex.Message}");
@@ -390,10 +408,12 @@ public LibArchiveWriter(
     ArchiveFormat format,                     // Archive format
     CompressionType compression = None,       // Compression algorithm
     int compressionLevel = 6,                 // Compression level (0-9)
-    uint blockSize = 1048576,                 // Block size (1 MB default)
+    uint blockSize = 1048576,                 // Size of libarchive's writes (1 MiB default)
     string? password = null,                  // Optional password (ZIP only)
     EncryptionType encryption = Default)      // Encryption type
 ```
+
+`blockSize` sets the size of the blocks libarchive hands to the file, stream or memory buffer (`archive_write_set_bytes_per_block`); `0` writes data as it is produced. The stream constructor takes the same parameter, and so does an overload of the memory writer, as its first parameter: `CreateMemoryWriter(blockSize, format, ...)`. The memory writer without it uses the 1 MiB default. The last block is never padded (`archive_write_set_bytes_in_last_block(1)`), so the block size changes how an archive is written, not its size or contents: libarchive would otherwise pad tar and cpio archives written to a FIFO or device to a whole block.
 
 ### Key Methods
 
@@ -422,6 +442,36 @@ void AddDirectory(
     bool preserveDirectoryStructure = true,
     IProgress<FileProgress>? progress = null)
 ```
+
+## Entry Names
+
+The `archivePath` given to `AddEntry`, `AddFile` and `AddDirectoryEntry` (and the paths that
+`AddFiles` and `AddDirectory` make) can hold any Unicode characters, on every platform and
+whatever the locale of the process. Each format stores them as follows, the same way on every
+platform; libarchive does not normalize them, so each name is stored in the form it is given (a
+composed, NFC, name stays composed):
+
+| Format | Name stored as |
+|--------|----------------|
+| `Zip` | UTF-8, with the UTF-8 flag (general purpose bit 11) set on a name that is not ASCII, in the local and central directory headers |
+| `SevenZip` | UTF-16LE |
+| `Tar`, `Pax` | UTF-8 in a pax extended header's `path` record for a name that is not ASCII (or too long for ustar), and in the ustar header as far as it fits |
+| `Ustar` | UTF-8 in the name and prefix fields (100 and 155 bytes); ustar cannot declare a character set |
+| `Cpio` | UTF-8; cpio cannot declare a character set |
+| `Iso9660` | UTF-16BE in the Joliet directory, and UTF-8 in the Rock Ridge `NM` entries of the primary one. The primary directory's own names are ISO 9660 level 1 identifiers, which do not keep the name: an 8.3 name of upper-case letters, digits and `_` with a `;1` version, such as `GR____E.TXT;1` for `Größe.txt` |
+| `Xar` | UTF-8 in the table of contents, base64-encoded (`enctype="base64"`) when the name has characters beyond Latin-1, as libarchive's XAR writer does |
+
+The `Iso9660` and `Xar` writers hold a tree of directories, and add each parent directory that was
+not added as an entry themselves, under the name it has in the entry's path.
+
+`LibArchiveReader` reads each name back as it was written, except for its normalization: where
+the format declares the name's character set, libarchive decodes the name and normalizes it to NFC
+(composed), so a name written decomposed (NFD) reads back composed. The formats that declare it are
+`Zip` (whose names that are not ASCII have the UTF-8 flag), `Tar` and `Pax` (pax `path` records),
+`SevenZip` and `Xar`. A name whose format declares no character set reads back as the bytes stored,
+decoded as UTF-8, with U+FFFD for any invalid byte sequence: `Ustar`, `Cpio`, and `Iso9660`,
+whose Rock Ridge names libarchive reads in preference to its Joliet ones. See "Entry Names" in the
+[README](../README.md#entry-names).
 
 ## Platform Support
 

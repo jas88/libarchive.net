@@ -91,13 +91,14 @@ export CFLAGS="-O2 -fPIC ${ARCH_FLAGS}"
 export CXXFLAGS="-O2 -fPIC ${ARCH_FLAGS}"
 export LDFLAGS="-L$PREFIX/lib"
 
-# Download all libraries if not already present
-if [ ! -d "libarchive-${LIBARCHIVE_VERSION}" ]; then
-    echo "Downloading library sources..."
-    download_all_libraries
-else
-    echo "Using pre-downloaded library sources"
-fi
+# Download and unpack fresh copies of all libraries, as the other build scripts do, even
+# where an earlier run left them unpacked: that run has patched libarchive, and
+# patch_libarchive refuses sources that are already patched.
+echo "Setting up library sources..."
+download_all_libraries
+
+# Every narrow string UTF-8, whatever the locale (see "The libarchive patch" in BUILD.md)
+patch_libarchive "${SCRIPT_DIR}" "libarchive-${LIBARCHIVE_VERSION}"
 
 # Build compression libraries
 echo "Building lz4 ${LZ4_VERSION}..."

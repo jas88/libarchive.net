@@ -12,9 +12,12 @@ public partial class LibArchiveWriter
     private GCHandle? callbackHandle;
 
     // Callback delegates for stream writing
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int ArchiveOpenCallback(IntPtr archive, IntPtr clientData);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int ArchiveCloseCallback(IntPtr archive, IntPtr clientData);
-    private delegate IntPtr ArchiveWriteCallback(IntPtr archive, IntPtr clientData, IntPtr buffer, IntPtr length);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate IntPtr ArchiveWriteCallback(IntPtr archive, IntPtr clientData, IntPtr buffer, UIntPtr length);
 
     // Delegate instances must be kept alive to prevent GC while native code holds references
     private ArchiveOpenCallback? _openCallback;
@@ -30,7 +33,11 @@ public partial class LibArchiveWriter
     /// <param name="compressionLevel">Compression level 0-9, where 9 is maximum compression (default: 6).</param>
     /// <param name="password">Optional password for encryption. libarchive can only encrypt ZIP archives.</param>
     /// <param name="encryption">Encryption type when a password is provided (default: AES-256).</param>
-    /// <param name="blockSize">Block size in bytes for writing (default: 1 MiB).</param>
+    /// <param name="blockSize">Size in bytes of the blocks libarchive writes the archive in (default: 1 MiB);
+    /// 0 writes data as it is produced. The last block is not padded, so the block size changes how the
+    /// archive is written, not its size or contents.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="blockSize"/> is greater than
+    /// <see cref="int.MaxValue"/>, the largest block size libarchive takes.</exception>
     /// <exception cref="NotSupportedException">
     /// A password was supplied for a format other than ZIP (unless the encryption type is
     /// <see cref="EncryptionType.None"/>, which ignores the password), or with an encryption type that libarchive
@@ -50,6 +57,7 @@ public partial class LibArchiveWriter
             throw new ArgumentNullException(nameof(outputStream));
         if (!outputStream.CanWrite)
             throw new ArgumentException("Stream must be writable", nameof(outputStream));
+        CheckBlockSize(blockSize);
 
         // Reject encryption libarchive cannot provide before anything is written to the stream
         var encryptionOption = GetEncryptionOption(format, password, encryption);
@@ -96,13 +104,7 @@ public partial class LibArchiveWriter
         // Keep the stream reference alive
         callbackHandle = GCHandle.Alloc(outputStream);
 
-        // Configure block size settings before opening (required for callback-based writing)
-        // This matches what archive_write_open_filename does internally
-        if (archive_write_set_bytes_per_block(handle, (int)blockSize) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-            Throw();
-        // Set to 1 to minimize padding in the last block (important for compressed formats)
-        if (archive_write_set_bytes_in_last_block(handle, 1) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-            Throw();
+        SetBlockSize();
 
         // Open archive with callbacks
         var result = archive_write_open(
@@ -140,7 +142,7 @@ public partial class LibArchiveWriter
         return (int)ARCHIVE_RESULT.ARCHIVE_OK;
     }
 
-    private unsafe IntPtr OnWrite(IntPtr archive, IntPtr clientData, IntPtr buffer, IntPtr length)
+    private unsafe IntPtr OnWrite(IntPtr archive, IntPtr clientData, IntPtr buffer, UIntPtr length)
     {
         try
         {
@@ -148,14 +150,14 @@ public partial class LibArchiveWriter
             if (stream == null || !stream.CanWrite)
                 return new IntPtr(-1); // Signal error to libarchive
 
-            int len = length.ToInt32();
+            int len = checked((int)length.ToUInt64());
 
             // Copy data from native buffer to managed byte array and write to stream
             var managedBuffer = new byte[len];
             Marshal.Copy(buffer, managedBuffer, 0, len);
             stream.Write(managedBuffer, 0, len);
 
-            return length;
+            return new IntPtr(len);
         }
         catch
         {
@@ -186,6 +188,10 @@ public partial class LibArchiveWriter
     /// Creates a new archive writer that writes to a memory buffer.
     /// Use <see cref="ToArray"/> or <see cref="ToMemoryStream"/> to retrieve the archive data.
     /// </summary>
+    /// <remarks>
+    /// libarchive writes the archive to the buffer in blocks of 1 MiB. To choose the block size, use
+    /// <see cref="CreateMemoryWriter(uint, ArchiveFormat, CompressionType, int, string, EncryptionType, int)"/>.
+    /// </remarks>
     /// <param name="format">Archive format to use.</param>
     /// <param name="compression">Compression algorithm to apply (default: None).</param>
     /// <param name="compressionLevel">Compression level 0-9, where 9 is maximum compression (default: 6).</param>
@@ -206,13 +212,52 @@ public partial class LibArchiveWriter
         EncryptionType encryption = EncryptionType.Default,
         int initialCapacity = 64 * 1024)
     {
+        return CreateMemoryWriter(DEFAULT_BLOCK_SIZE, format, compression, compressionLevel, password, encryption, initialCapacity);
+    }
+
+    /// <summary>
+    /// Creates a new archive writer that writes to a memory buffer in blocks of the given size.
+    /// Use <see cref="ToArray"/> or <see cref="ToMemoryStream"/> to retrieve the archive data.
+    /// </summary>
+    /// <remarks>
+    /// The block size comes first so that <c>CreateMemoryWriter(format, 0)</c> still calls the overload without
+    /// it, with no compression. To give the block size after the format, name every argument:
+    /// <c>CreateMemoryWriter(format: ArchiveFormat.Zip, blockSize: 4096)</c>.
+    /// </remarks>
+    /// <param name="blockSize">Size in bytes of the blocks libarchive writes the archive to the buffer in
+    /// (1 MiB in the overload without this parameter); 0 writes data as it is produced. The last block is not
+    /// padded, so the block size changes how the archive is written, not its size or contents.</param>
+    /// <param name="format">Archive format to use.</param>
+    /// <param name="compression">Compression algorithm to apply (default: None).</param>
+    /// <param name="compressionLevel">Compression level 0-9, where 9 is maximum compression (default: 6).</param>
+    /// <param name="password">Optional password for encryption. libarchive can only encrypt ZIP archives.</param>
+    /// <param name="encryption">Encryption type when a password is provided (default: AES-256).</param>
+    /// <param name="initialCapacity">Initial capacity of the memory buffer in bytes (default: 64 KB).</param>
+    /// <returns>A LibArchiveWriter that writes to memory.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="blockSize"/> is greater than
+    /// <see cref="int.MaxValue"/>, the largest block size libarchive takes.</exception>
+    /// <exception cref="NotSupportedException">
+    /// A password was supplied for a format other than ZIP (unless the encryption type is
+    /// <see cref="EncryptionType.None"/>, which ignores the password), or with an encryption type that libarchive
+    /// or this native library build cannot write.
+    /// </exception>
+    public static LibArchiveWriter CreateMemoryWriter(
+        uint blockSize,
+        ArchiveFormat format,
+        CompressionType compression = CompressionType.None,
+        int compressionLevel = 6,
+        string? password = null,
+        EncryptionType encryption = EncryptionType.Default,
+        int initialCapacity = 64 * 1024)
+    {
+        CheckBlockSize(blockSize);
         var memoryStream = new MemoryStream(initialCapacity);
-        return new LibArchiveWriter(memoryStream, format, compression, compressionLevel, password, encryption);
+        return new LibArchiveWriter(memoryStream, format, compression, compressionLevel, password, encryption, blockSize);
     }
 
     /// <summary>
     /// Gets the archive data as a byte array.
-    /// Only valid for archives created with <see cref="CreateMemoryWriter"/>.
+    /// Only valid for archives created with <see cref="O:LibArchive.Net.LibArchiveWriter.CreateMemoryWriter"/>.
     /// The archive must be disposed before calling this method.
     /// </summary>
     /// <returns>The complete archive as a byte array.</returns>
@@ -230,7 +275,7 @@ public partial class LibArchiveWriter
 
     /// <summary>
     /// Gets the archive data as a MemoryStream.
-    /// Only valid for archives created with <see cref="CreateMemoryWriter"/>.
+    /// Only valid for archives created with <see cref="O:LibArchive.Net.LibArchiveWriter.CreateMemoryWriter"/>.
     /// The archive must be disposed before calling this method.
     /// </summary>
     /// <returns>The MemoryStream containing the archive data.</returns>
@@ -252,6 +297,7 @@ public partial class LibArchiveWriter
 
 #if NET7_0_OR_GREATER
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_open(
         IntPtr archive,
         IntPtr clientData,
@@ -259,7 +305,7 @@ public partial class LibArchiveWriter
         [MarshalAs(UnmanagedType.FunctionPtr)] ArchiveWriteCallback? writeCallback,
         [MarshalAs(UnmanagedType.FunctionPtr)] ArchiveCloseCallback? closeCallback);
 #else
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_open(
         IntPtr archive,
         IntPtr clientData,

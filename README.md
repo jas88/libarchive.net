@@ -47,6 +47,8 @@ reader.Reset();
 foreach (var entry in reader.Entries()) { ... }
 ```
 
+A single compressed file that is not an archive, such as a plain `.gz`, `.bz2`, `.xz`, `.lzma`, `.zst`, `.lz4` or `.lzo` file, is read as an archive holding one entry: the decompressed data. libarchive names that entry `data`, unless the file records its original name, as gzip does by default (`gzip -n` records none). Its `LengthBytes` is null, because the decompressed size is not known in advance. Non-empty data that is neither an archive nor compressed still fails to open, with an `ApplicationException` whose message is `Unrecognized archive format`; empty data opens as an archive with no entries, and so does a compressed file whose decompressed data is empty, such as a gzip of an empty file.
+
 ```csharp
 // Password-protected ZIP archives
 using var encryptedReader = new LibArchiveReader("encrypted.zip", password: "secret");
@@ -96,6 +98,28 @@ var progress = new Progress<FileProgress>(p =>
 streamWriter.AddFiles(files, progress: progress);
 ```
 
+## Entry Names
+
+Entry names can hold any Unicode characters, on every platform and whatever the locale of the process.
+
+When writing, each format stores a name as below. libarchive does not normalize names: each is stored in the form it is given, so a name given composed (NFC) is stored composed.
+
+| Format | Name stored as |
+|--------|----------------|
+| ZIP | UTF-8, with the UTF-8 flag (general purpose bit 11) set on a name that is not ASCII |
+| 7-Zip | UTF-16LE |
+| TAR, PAX | UTF-8 in a pax `path` record for a name that is not ASCII or does not fit the ustar header's name fields, and in the ustar header as far as it fits |
+| Ustar, CPIO | UTF-8 (neither format can declare a character set) |
+| ISO 9660 | UTF-16BE in Joliet names, and UTF-8 in Rock Ridge names |
+| XAR | UTF-8, base64-encoded if the name has characters beyond Latin-1 |
+
+When reading, `Entry.Name` is:
+
+- the name decoded from the character set the archive declares, normalized to NFC (composed) by libarchive, for pax `path` records, ZIP entries with the UTF-8 flag or an Info-ZIP Unicode path field, and 7-Zip, XAR and Joliet names (Joliet names are read only from ISO 9660 images without Rock Ridge names). A name written decomposed (NFD) in one of these therefore reads back composed;
+- otherwise (ustar, GNU tar and cpio headers, ZIP entries without the UTF-8 flag, Rock Ridge names, and so on) the stored bytes read as UTF-8, as tools on macOS and Linux write them, without normalizing them. A byte sequence that is not valid UTF-8, as in a name in a legacy code page (a ZIP from an older Windows, in its OEM code page, for example), becomes U+FFFD, and the entry is still returned.
+
+An entry is always returned, with an empty name if libarchive cannot give one.
+
 ## Installation
 
 ```bash
@@ -128,7 +152,7 @@ Native libraries for all supported platforms are included in the NuGet package.
 
 | Property/Method | Description |
 |-----------------|-------------|
-| `Name` | Entry filename/path |
+| `Name` | Entry filename/path (see [Entry Names](#entry-names)) |
 | `LengthBytes` | Uncompressed size in bytes, or `null` if it is not known |
 | `Type` | Entry type, a `LibArchiveReader.EntryType`: `RegularFile` or `Directory` (other kinds of entry, such as symbolic links, have no named value) |
 | `Stream` | Stream for reading entry content |

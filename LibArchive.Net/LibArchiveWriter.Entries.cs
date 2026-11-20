@@ -16,7 +16,8 @@ public partial class LibArchiveWriter
     /// Adds a single file to the archive.
     /// </summary>
     /// <param name="sourcePath">Path to the file on disk.</param>
-    /// <param name="archivePath">Path to use within the archive. If null, uses the filename only.</param>
+    /// <param name="archivePath">Path to use within the archive. If null, uses the filename only. Any Unicode
+    /// characters are allowed: see <see cref="ArchiveFormat"/> for how each format stores the name.</param>
     public void AddFile(string sourcePath, string? archivePath = null)
     {
         var fileInfo = new FileInfo(sourcePath);
@@ -30,7 +31,8 @@ public partial class LibArchiveWriter
     /// <summary>
     /// Adds a file with the given data to the archive.
     /// </summary>
-    /// <param name="archivePath">Path to use within the archive.</param>
+    /// <param name="archivePath">Path to use within the archive. Any Unicode characters are allowed: see
+    /// <see cref="ArchiveFormat"/> for how each format stores the name.</param>
     /// <param name="data">File content as byte array.</param>
     /// <param name="modificationTime">Optional modification time. If null, uses current time.</param>
     public void AddEntry(string archivePath, byte[] data, DateTime? modificationTime = null)
@@ -50,7 +52,7 @@ public partial class LibArchiveWriter
                     int remaining = data.Length;
                     while (remaining > 0)
                     {
-                        nint written = archive_write_data(handle, ptr + offset, remaining);
+                        nint written = archive_write_data(handle, ptr + offset, (nuint)remaining);
                         if (written < 0)
                             Throw();
                         if (written == 0)
@@ -66,7 +68,8 @@ public partial class LibArchiveWriter
     /// <summary>
     /// Adds a directory entry to the archive.
     /// </summary>
-    /// <param name="archivePath">Path to use within the archive.</param>
+    /// <param name="archivePath">Path to use within the archive. Any Unicode characters are allowed: see
+    /// <see cref="ArchiveFormat"/> for how each format stores the name.</param>
     public void AddDirectoryEntry(string archivePath)
     {
         if (string.IsNullOrEmpty(archivePath))
@@ -79,8 +82,7 @@ public partial class LibArchiveWriter
         var entry = archive_entry_new();
         try
         {
-            using var pathBuffer = new SafeStringBuffer(archivePath);
-            archive_entry_set_pathname(entry, pathBuffer.Ptr);
+            SetEntryPathname(entry, archivePath);
             archive_entry_set_filetype(entry, AE_IFDIR);
             archive_entry_set_perm(entry, DefaultDirectoryMode);
             archive_entry_set_size(entry, 0);
@@ -268,7 +270,7 @@ public partial class LibArchiveWriter
                 int remaining = buffer.Length;
                 while (remaining > 0)
                 {
-                    nint written = archive_write_data(handle, ptr + offset, remaining);
+                    nint written = archive_write_data(handle, ptr + offset, (nuint)remaining);
                     if (written < 0)
                         Throw();
                     if (written == 0)
@@ -316,7 +318,7 @@ public partial class LibArchiveWriter
                             // Validate entire write range is within buffer bounds before pointer arithmetic
                             if (writeOffset < 0 || writeRemaining < 0 || writeOffset + writeRemaining > bytesRead)
                                 throw new InvalidOperationException("Write range out of bounds");
-                            nint written = archive_write_data(handle, ptr + writeOffset, writeRemaining);
+                            nint written = archive_write_data(handle, ptr + writeOffset, (nuint)writeRemaining);
                             if (written < 0)
                                 Throw();
                             if (written == 0)
@@ -365,7 +367,7 @@ public partial class LibArchiveWriter
                 int chunkRemaining = chunkSize;
                 while (chunkRemaining > 0)
                 {
-                    nint written = archive_write_data(handle, ptr + offset + chunkOffset, chunkRemaining);
+                    nint written = archive_write_data(handle, ptr + offset + chunkOffset, (nuint)chunkRemaining);
                     if (written < 0)
                         Throw();
                     if (written == 0)
@@ -409,24 +411,24 @@ public partial class LibArchiveWriter
                 if (read > bufferSize)
                     throw new InvalidOperationException("Stream.Read returned more bytes than requested");
 
-                fixed (byte* ptr = buffer)
+                // Each call gets a pinned slice of the bytes still to be written, not an offset added
+                // to a pointer into the rented buffer: AsSpan and Slice check each range against the
+                // bytes read, which the check above keeps within bufferSize. (ArrayPool.Rent is
+                // virtual, so CodeQL's cs/unvalidated-local-pointer-arithmetic flags any pointer
+                // arithmetic on the buffer it returns, whatever checks precede it.)
+                var pending = buffer.AsSpan(0, read);
+                while (!pending.IsEmpty)
                 {
-                    int writeOffset = 0;
-                    int writeRemaining = read;
-                    while (writeRemaining > 0)
+                    nint written;
+                    fixed (byte* ptr = pending)
                     {
-                        // Validate entire write range is within buffer bounds before pointer arithmetic
-                        // Explicit writeOffset >= bufferSize check satisfies CodeQL taint sanitizer detection
-                        if (writeOffset < 0 || writeOffset >= bufferSize || writeRemaining < 0 || writeOffset + writeRemaining > bufferSize)
-                            throw new InvalidOperationException("Write range out of bounds");
-                        nint written = archive_write_data(handle, ptr + writeOffset, writeRemaining);
-                        if (written < 0)
-                            Throw();
-                        if (written == 0)
-                            throw new ApplicationException("archive_write_data returned 0 bytes written");
-                        writeOffset += (int)written;
-                        writeRemaining -= (int)written;
+                        written = archive_write_data(handle, ptr, (nuint)pending.Length);
                     }
+                    if (written < 0)
+                        Throw();
+                    if (written == 0)
+                        throw new ApplicationException("archive_write_data returned 0 bytes written");
+                    pending = pending.Slice((int)written);
                 }
             }
         }
@@ -440,10 +442,19 @@ public partial class LibArchiveWriter
 
     #region Helper Methods
 
+    // Sets an entry's name, as UTF-8, which libarchive takes every narrow string to be on every
+    // platform (native/libarchive-narrow-utf8.patch): each writer stores it in its format's
+    // character set (see ArchiveFormat), and the formats that declare none get the UTF-8 as it is.
+    // libarchive copies the name.
+    private static void SetEntryPathname(IntPtr entry, string pathname)
+    {
+        using var pathBuffer = new SafeStringBuffer(pathname);
+        archive_entry_set_pathname(entry, pathBuffer.Ptr);
+    }
+
     private void SetEntryMetadata(IntPtr entry, FileInfo fileInfo, string archivePath)
     {
-        using var pathBuffer = new SafeStringBuffer(archivePath);
-        archive_entry_set_pathname(entry, pathBuffer.Ptr);
+        SetEntryPathname(entry, archivePath);
         archive_entry_set_size(entry, fileInfo.Length);
         archive_entry_set_filetype(entry, AE_IFREG);
         archive_entry_set_perm(entry, GetUnixPermissions(fileInfo));
@@ -457,8 +468,7 @@ public partial class LibArchiveWriter
         var entry = archive_entry_new();
         try
         {
-            using var pathBuffer = new SafeStringBuffer(archivePath);
-            archive_entry_set_pathname(entry, pathBuffer.Ptr);
+            SetEntryPathname(entry, archivePath);
             archive_entry_set_size(entry, size);
             archive_entry_set_filetype(entry, AE_IFREG);
             archive_entry_set_perm(entry, permissions);

@@ -211,6 +211,9 @@ verify_self_contained() {
 }
 
 # Write the C source of the load test program run by test_load_musl and test_load_host.
+# Besides loading the library and reading an empty archive, it fails unless names are
+# UTF-8 in the "C" locale, which it never leaves, as a .NET process never does: the
+# libarchive patch is in the library (see "The libarchive patch" in BUILD.md).
 # Usage: write_load_test_source <file>
 write_load_test_source() {
     if [ -z "${1:-}" ]; then
@@ -222,17 +225,21 @@ write_load_test_source() {
  * Load test for a freshly linked libarchive.so, from build-linux-common.sh.
  * Usage: loadtest <path to libarchive.so>
  * Exits non-zero unless the library loads with every symbol bound at once
- * (RTLD_NOW) and a little of its API works.
+ * (RTLD_NOW), a little of its API works, and names are UTF-8 in the "C" locale.
  */
 #include <dlfcn.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/types.h>
+#include <wchar.h>
 
 struct archive;
 struct archive_entry;
 
 #define ARCHIVE_OK 0
 #define ARCHIVE_EOF 1
+#define AE_IFREG 0100000
 
 static void *library;
 
@@ -251,6 +258,130 @@ static int find(const char *name, void *function, size_t size)
     /* POSIX guarantees that a data pointer can hold the address of a function */
     memcpy(function, &address, size);
     return 1;
+}
+
+#define FIND(name, function) find(name, &(function), sizeof (function))
+
+/* "Größe.txt", composed (NFC), as UTF-8 and as Unicode code points */
+static const char name_utf8[] = "Gr\xc3\xb6\xc3\x9f" "e.txt";
+static const wchar_t name_wcs[] = { 'G', 'r', 0xF6, 0xDF, 'e', '.', 't', 'x', 't', 0 };
+
+/*
+ * Fail unless narrow strings are UTF-8: narrow to wide and back, and a zip entry
+ * that keeps the name's UTF-8 bytes, with the UTF-8 flag (general purpose bit 11),
+ * and reads back unchanged.
+ */
+static int check_utf8_names(void)
+{
+    struct archive_entry *(*entry_new)(void);
+    void (*entry_free)(struct archive_entry *);
+    void (*set_pathname)(struct archive_entry *, const char *);
+    const char *(*pathname)(struct archive_entry *);
+    const wchar_t *(*pathname_w)(struct archive_entry *);
+    void (*copy_pathname_w)(struct archive_entry *, const wchar_t *);
+    void (*set_filetype)(struct archive_entry *, unsigned int);
+    void (*set_perm)(struct archive_entry *, mode_t);
+    void (*set_size)(struct archive_entry *, int64_t);
+    struct archive *(*write_new)(void);
+    int (*set_format_zip)(struct archive *);
+    int (*write_open_memory)(struct archive *, void *, size_t, size_t *);
+    int (*write_header)(struct archive *, struct archive_entry *);
+    int (*write_close)(struct archive *);
+    int (*write_free)(struct archive *);
+    struct archive *(*read_new)(void);
+    int (*support_format_zip)(struct archive *);
+    int (*open_memory)(struct archive *, const void *, size_t);
+    int (*next_header)(struct archive *, struct archive_entry **);
+    const char *(*error_string)(struct archive *);
+    int (*read_free)(struct archive *);
+    static unsigned char buf[65536];
+    size_t used = 0, len = sizeof name_utf8 - 1;
+    struct archive *a;
+    struct archive_entry *entry;
+    const wchar_t *w;
+    const char *p;
+    int ok = 1;
+
+    if (!FIND("archive_entry_new", entry_new) || !FIND("archive_entry_free", entry_free)
+        || !FIND("archive_entry_set_pathname", set_pathname)
+        || !FIND("archive_entry_pathname", pathname)
+        || !FIND("archive_entry_pathname_w", pathname_w)
+        || !FIND("archive_entry_copy_pathname_w", copy_pathname_w)
+        || !FIND("archive_entry_set_filetype", set_filetype)
+        || !FIND("archive_entry_set_perm", set_perm) || !FIND("archive_entry_set_size", set_size)
+        || !FIND("archive_write_new", write_new)
+        || !FIND("archive_write_set_format_zip", set_format_zip)
+        || !FIND("archive_write_open_memory", write_open_memory)
+        || !FIND("archive_write_header", write_header) || !FIND("archive_write_close", write_close)
+        || !FIND("archive_write_free", write_free) || !FIND("archive_read_new", read_new)
+        || !FIND("archive_read_support_format_zip", support_format_zip)
+        || !FIND("archive_read_open_memory", open_memory)
+        || !FIND("archive_read_next_header", next_header)
+        || !FIND("archive_error_string", error_string) || !FIND("archive_read_free", read_free))
+        return 0;
+
+    entry = entry_new();
+    if (entry == NULL) {
+        fprintf(stderr, "FAIL: archive_entry_new returned NULL\n");
+        return 0;
+    }
+    set_pathname(entry, name_utf8);
+    w = pathname_w(entry);
+    if (w == NULL || wcscmp(w, name_wcs) != 0) {
+        fprintf(stderr, "FAIL: archive_entry_pathname_w does not decode the UTF-8 name\n");
+        ok = 0;
+    }
+    copy_pathname_w(entry, name_wcs);
+    p = pathname(entry);
+    if (p == NULL || strcmp(p, name_utf8) != 0) {
+        fprintf(stderr, "FAIL: archive_entry_pathname does not encode the wide name as UTF-8\n");
+        ok = 0;
+    }
+
+    set_pathname(entry, name_utf8);
+    set_filetype(entry, AE_IFREG);
+    set_perm(entry, 0644);
+    set_size(entry, 0);
+    a = write_new();
+    if (a == NULL) {
+        fprintf(stderr, "FAIL: archive_write_new returned NULL\n");
+        ok = 0;
+    } else if (set_format_zip(a) != ARCHIVE_OK
+        || write_open_memory(a, buf, sizeof buf, &used) != ARCHIVE_OK
+        || write_header(a, entry) != ARCHIVE_OK || write_close(a) != ARCHIVE_OK) {
+        p = error_string(a);
+        fprintf(stderr, "FAIL: writing a zip entry: %s\n", p != NULL ? p : "(no error string)");
+        ok = 0;
+    }
+    if (a != NULL)
+        write_free(a);
+    entry_free(entry);
+    if (!ok)
+        return 0;
+    /* Local file header: flags at 6 (bit 11 is UTF-8), name length at 26, name at 30 */
+    if (used < 30 + len || memcmp(buf, "PK\3\4", 4) != 0 || (buf[7] & 0x08) == 0
+        || (size_t)buf[26] != len || buf[27] != 0 || memcmp(buf + 30, name_utf8, len) != 0) {
+        fprintf(stderr, "FAIL: the zip local file header lacks the UTF-8 flag or the UTF-8 name\n");
+        return 0;
+    }
+    a = read_new();
+    if (a == NULL) {
+        fprintf(stderr, "FAIL: archive_read_new returned NULL\n");
+        ok = 0;
+    } else if (support_format_zip(a) != ARCHIVE_OK || open_memory(a, buf, used) != ARCHIVE_OK
+        || next_header(a, &entry) != ARCHIVE_OK) {
+        p = error_string(a);
+        fprintf(stderr, "FAIL: reading the zip entry: %s\n", p != NULL ? p : "(no error string)");
+        ok = 0;
+    } else if ((p = pathname(entry)) == NULL || strcmp(p, name_utf8) != 0) {
+        fprintf(stderr, "FAIL: the zip entry's name does not read back as the same UTF-8\n");
+        ok = 0;
+    }
+    if (a != NULL)
+        read_free(a);
+    if (ok)
+        printf("OK: names are UTF-8 in the \"C\" locale\n");
+    return ok;
 }
 
 int main(int argc, char **argv)
@@ -319,19 +450,22 @@ int main(int argc, char **argv)
     }
     if (!failed && (result = open_memory(reader, "", 0)) != ARCHIVE_OK) {
         text = error_string(reader);
-        fprintf(stderr, "FAIL: archive_read_open_memory returned %d: %s\n", result, text != NULL ? text : "");
+        fprintf(stderr, "FAIL: archive_read_open_memory returned %d: %s\n", result,
+            text != NULL ? text : "(no error string)");
         failed = 1;
     }
     if (!failed && (result = next_header(reader, &entry)) != ARCHIVE_EOF) {
         text = error_string(reader);
         fprintf(stderr, "FAIL: archive_read_next_header on an empty input returned %d, not ARCHIVE_EOF: %s\n",
-            result, text != NULL ? text : "");
+            result, text != NULL ? text : "(no error string)");
         failed = 1;
     }
     if ((result = read_free(reader)) != ARCHIVE_OK) {
         fprintf(stderr, "FAIL: archive_read_free returned %d\n", result);
         failed = 1;
     }
+    if (!check_utf8_names())
+        failed = 1;
     if (failed)
         return 1;
     printf("OK: %s loaded with RTLD_NOW and read an empty archive\n", argv[1]);

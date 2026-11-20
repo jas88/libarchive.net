@@ -61,6 +61,9 @@ public enum CompressionType
 
     /// <summary>
     /// DEFLATE compression - Used internally by ZIP and gzip.
+    /// Not supported: libarchive has no DEFLATE filter, so creating a <see cref="LibArchiveWriter"/> with it
+    /// throws <see cref="System.NotSupportedException"/>. Use <see cref="Gzip"/> instead (ZIP archives need
+    /// no filter: they compress their entries with DEFLATE themselves).
     /// </summary>
     Deflate,
 }

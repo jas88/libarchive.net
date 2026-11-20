@@ -176,10 +176,36 @@ public class ReaderApiTests
         Assert.Throws<NotSupportedException>(() => reader.Reset());
     }
 
+    // archive_read_data takes a size_t, so a count beyond the buffer must never reach it
+    [Test]
+    public void TestEntryStreamReadValidatesArguments()
+    {
+        byte[] archiveBytes;
+        using (var writer = LibArchiveWriter.CreateMemoryWriter(ArchiveFormat.Zip))
+        {
+            writer.AddEntry("test.txt", Encoding.UTF8.GetBytes("test"));
+            writer.Dispose();
+            archiveBytes = writer.ToArray();
+        }
+
+        using var reader = new LibArchiveReader(new MemoryStream(archiveBytes));
+        using var stream = reader.FirstEntry()!.Stream;
+        var buffer = new byte[8];
+
+        Assert.That(() => stream.Read(null!, 0, 1), Throws.ArgumentNullException);
+        Assert.That(() => stream.Read(buffer, -1, 1), Throws.TypeOf<ArgumentOutOfRangeException>());
+        Assert.That(() => stream.Read(buffer, 9, 0), Throws.TypeOf<ArgumentOutOfRangeException>());
+        Assert.That(() => stream.Read(buffer, 0, -1), Throws.TypeOf<ArgumentOutOfRangeException>());
+        Assert.That(() => stream.Read(buffer, 4, 5), Throws.TypeOf<ArgumentOutOfRangeException>());
+        Assert.That(stream.Read(buffer, 8, 0), Is.Zero);
+        Assert.That(stream.Read(buffer, 4, 4), Is.EqualTo(4));
+        Assert.That(Encoding.UTF8.GetString(buffer, 4, 4), Is.EqualTo("test"));
+    }
+
     /// <summary>
     /// A wrapper stream that disables seeking.
     /// </summary>
-    private class NonSeekableStream : Stream
+    internal sealed class NonSeekableStream : Stream
     {
         private readonly Stream _inner;
 

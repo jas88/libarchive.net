@@ -26,8 +26,13 @@ public class SafeStringBuffer : SafeHandleZeroOrMinusOneIsInvalid
             throw new ArgumentNullException(nameof(s));
 
 #if NETSTANDARD2_0
-        // Manual UTF-8 marshaling for .NET Standard 2.0
-        handle = Marshal.StringToCoTaskMemAnsi(s);
+        // Manual UTF-8 marshaling for .NET Standard 2.0, which has no StringToCoTaskMemUTF8.
+        // (StringToCoTaskMemAnsi is UTF-8 on Unix but the ANSI code page on Windows, which
+        // replaces every character outside that code page with '?'.)
+        var bytes = Encoding.UTF8.GetBytes(s);
+        handle = Marshal.AllocCoTaskMem(bytes.Length + 1);
+        Marshal.Copy(bytes, 0, handle, bytes.Length);
+        Marshal.WriteByte(handle, bytes.Length, 0);
 #else
         // Use built-in UTF-8 marshaling for modern .NET
         handle = Marshal.StringToCoTaskMemUTF8(s);

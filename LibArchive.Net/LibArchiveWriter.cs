@@ -62,9 +62,13 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     /// <param name="format">Archive format to use.</param>
     /// <param name="compression">Compression algorithm to apply (default: None).</param>
     /// <param name="compressionLevel">Compression level 0-9, where 9 is maximum compression (default: 6).</param>
-    /// <param name="blockSize">Block size in bytes for writing (default: 1 MiB).</param>
+    /// <param name="blockSize">Size in bytes of the blocks libarchive writes the archive in (default: 1 MiB);
+    /// 0 writes data as it is produced. The last block is not padded, so the block size changes how the
+    /// archive is written, not its size or contents.</param>
     /// <param name="password">Optional password for encryption. libarchive can only encrypt ZIP archives.</param>
     /// <param name="encryption">Encryption type when a password is provided (default: AES-256).</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="blockSize"/> is greater than
+    /// <see cref="int.MaxValue"/>, the largest block size libarchive takes.</exception>
     /// <exception cref="NotSupportedException">
     /// A password was supplied for a format other than ZIP (unless the encryption type is
     /// <see cref="EncryptionType.None"/>, which ignores the password), or with an encryption type that libarchive
@@ -82,6 +86,7 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     {
         if (string.IsNullOrEmpty(filename))
             throw new ArgumentException("Filename cannot be null or empty", nameof(filename));
+        CheckBlockSize(blockSize);
 
         // Reject encryption libarchive cannot provide before the output file is created or truncated
         var encryptionOption = GetEncryptionOption(format, password, encryption);
@@ -103,10 +108,22 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
             if (encryptionOption != null)
                 ConfigureEncryption(encryptionOption, password!);
 
-            // Open the file for writing
-            using var filenameBuffer = new SafeStringBuffer(filename);
-            if (archive_write_open_filename(handle, filenameBuffer.Ptr, (int)blockSize) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-                Throw();
+            SetBlockSize();
+
+            // Open the file for writing: by its UTF-16 name on Windows, as LibArchiveReader opens
+            // files, and elsewhere by its UTF-8 bytes, which go to open(2) unchanged (see
+            // LibArchiveReader.UseWideFileNames).
+            if (LibArchiveReader.UseWideFileNames)
+            {
+                if (archive_write_open_filename_w(handle, filename) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+                    Throw();
+            }
+            else
+            {
+                using var filenameBuffer = new SafeStringBuffer(filename);
+                if (archive_write_open_filename(handle, filenameBuffer.Ptr) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+                    Throw();
+            }
         }
         catch
         {
@@ -236,7 +253,7 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     /// <remarks>
     /// libarchive only accepts encryption settings before an archive is opened, and the archive is opened when
     /// the writer is created, so this method cannot enable, change or remove encryption. Pass the password to
-    /// the constructor or to <see cref="CreateMemoryWriter"/> instead.
+    /// the constructor or to <see cref="O:LibArchive.Net.LibArchiveWriter.CreateMemoryWriter"/> instead.
     /// </remarks>
     /// <param name="password">Password for encryption.</param>
     /// <param name="encryption">Encryption type (default: AES-256).</param>
@@ -280,6 +297,40 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     private void Throw()
     {
         throw new ApplicationException(GetErrorMessage());
+    }
+
+    /// <summary>
+    /// Rejects a block size that archive_write_set_bytes_per_block cannot take. It takes an int and
+    /// does nothing, returning ARCHIVE_OK, when it is negative (archive_write.c:156-159), so a size
+    /// above int.MaxValue would leave libarchive's default of 10240 bytes in place without a word.
+    /// Called by every public entry point that takes a block size, before any native handle exists
+    /// and before a file is created or truncated.
+    /// </summary>
+    private static void CheckBlockSize(uint blockSize)
+    {
+        if (blockSize > int.MaxValue)
+            throw new ArgumentOutOfRangeException(nameof(blockSize), blockSize,
+                $"The block size can be at most {int.MaxValue} bytes");
+    }
+
+    /// <summary>
+    /// Makes libarchive hand the archive to the file or stream in blocks of <see cref="blockSize"/>
+    /// bytes, before the archive is opened.
+    /// </summary>
+    /// <remarks>
+    /// libarchive pads the last block to the full block size by default, and pads tar and cpio
+    /// archives written to a FIFO or device that way. With a 1 MiB block size, that would pad every
+    /// small archive to 1 MiB, so the last block is never padded: the archive ends where its format
+    /// ends, as archive_write_open_filename and archive_write_open_memory leave regular files and
+    /// memory.
+    /// </remarks>
+    private void SetBlockSize()
+    {
+        // CheckBlockSize keeps it within int: libarchive ignores a negative size
+        if (archive_write_set_bytes_per_block(handle, (int)blockSize) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+            Throw();
+        if (archive_write_set_bytes_in_last_block(handle, 1) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+            Throw();
     }
 
     private string GetErrorMessage()
@@ -359,63 +410,82 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
 
 #if NET7_0_OR_GREATER
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial IntPtr archive_write_new();
 
     [LibraryImport("archive")]
-    private static partial int archive_write_open_filename(IntPtr archive, IntPtr filename, int blockSize);
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    private static partial int archive_write_open_filename(IntPtr archive, IntPtr filename);
+
+    // Windows only, where wchar_t is UTF-16
+    [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    private static partial int archive_write_open_filename_w(IntPtr archive, [MarshalAs(UnmanagedType.LPWStr)] string filename);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_close(IntPtr archive);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_free(IntPtr archive);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial IntPtr archive_error_string(IntPtr archive);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_header(IntPtr archive, IntPtr entry);
 
     [LibraryImport("archive")]
-    private static unsafe partial nint archive_write_data(IntPtr archive, byte* buffer, nint length);
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    private static unsafe partial nint archive_write_data(IntPtr archive, byte* buffer, nuint length);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_finish_entry(IntPtr archive);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_set_bytes_per_block(IntPtr archive, int bytesPerBlock);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_set_bytes_in_last_block(IntPtr archive, int bytesInLastBlock);
 #else
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr archive_write_new();
 
-    [DllImport("archive")]
-    private static extern int archive_write_open_filename(IntPtr archive, IntPtr filename, int blockSize);
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int archive_write_open_filename(IntPtr archive, IntPtr filename);
 
-    [DllImport("archive")]
+    // Windows only, where wchar_t is UTF-16
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int archive_write_open_filename_w(IntPtr archive, [MarshalAs(UnmanagedType.LPWStr)] string filename);
+
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_close(IntPtr archive);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_free(IntPtr archive);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr archive_error_string(IntPtr archive);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_header(IntPtr archive, IntPtr entry);
 
-    [DllImport("archive")]
-    private static extern unsafe nint archive_write_data(IntPtr archive, byte* buffer, nint length);
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
+    private static extern unsafe nint archive_write_data(IntPtr archive, byte* buffer, nuint length);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_finish_entry(IntPtr archive);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_set_bytes_per_block(IntPtr archive, int bytesPerBlock);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_set_bytes_in_last_block(IntPtr archive, int bytesInLastBlock);
 #endif
 
@@ -425,51 +495,59 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
 
 #if NET7_0_OR_GREATER
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_set_format_zip(IntPtr archive);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_set_format_7zip(IntPtr archive);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_set_format_pax_restricted(IntPtr archive);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_set_format_ustar(IntPtr archive);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_set_format_pax(IntPtr archive);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_set_format_cpio_newc(IntPtr archive);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_set_format_iso9660(IntPtr archive);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_set_format_xar(IntPtr archive);
 #else
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_set_format_zip(IntPtr archive);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_set_format_7zip(IntPtr archive);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_set_format_pax_restricted(IntPtr archive);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_set_format_ustar(IntPtr archive);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_set_format_pax(IntPtr archive);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_set_format_cpio_newc(IntPtr archive);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_set_format_iso9660(IntPtr archive);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_set_format_xar(IntPtr archive);
 #endif
 
@@ -479,57 +557,66 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
 
 #if NET7_0_OR_GREATER
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_add_filter_gzip(IntPtr archive);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_add_filter_bzip2(IntPtr archive);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_add_filter_xz(IntPtr archive);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_add_filter_lzma(IntPtr archive);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_add_filter_lz4(IntPtr archive);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_add_filter_zstd(IntPtr archive);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_add_filter_compress(IntPtr archive);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_add_filter_lzip(IntPtr archive);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_set_filter_option(IntPtr archive, IntPtr module, IntPtr option, IntPtr value);
 #else
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_add_filter_gzip(IntPtr archive);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_add_filter_bzip2(IntPtr archive);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_add_filter_xz(IntPtr archive);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_add_filter_lzma(IntPtr archive);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_add_filter_lz4(IntPtr archive);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_add_filter_zstd(IntPtr archive);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_add_filter_compress(IntPtr archive);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_add_filter_lzip(IntPtr archive);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_set_filter_option(IntPtr archive, IntPtr module, IntPtr option, IntPtr value);
 #endif
 
@@ -539,15 +626,17 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
 
 #if NET7_0_OR_GREATER
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_set_passphrase(IntPtr archive, IntPtr passphrase);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial int archive_write_set_options(IntPtr archive, IntPtr options);
 #else
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_set_passphrase(IntPtr archive, IntPtr passphrase);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern int archive_write_set_options(IntPtr archive, IntPtr options);
 #endif
 
@@ -557,53 +646,90 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
 
 #if NET7_0_OR_GREATER
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial IntPtr archive_entry_new();
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial void archive_entry_free(IntPtr entry);
 
+    // The name as UTF-8 (see SetEntryPathname)
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial void archive_entry_set_pathname(IntPtr entry, IntPtr pathname);
 
     [LibraryImport("archive")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     private static partial void archive_entry_set_size(IntPtr entry, long size);
 
     [LibraryImport("archive")]
-    private static partial void archive_entry_set_filetype(IntPtr entry, int filetype);
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    private static partial void archive_entry_set_filetype(IntPtr entry, uint filetype);
 
-    [LibraryImport("archive")]
-    private static partial void archive_entry_set_perm(IntPtr entry, int perm);
+    [LibraryImport("archive", EntryPoint = "archive_entry_set_perm")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    private static partial void archive_entry_set_perm_u16(IntPtr entry, ushort perm);
 
-    private static void archive_entry_set_perm(IntPtr entry, UnixFileMode perm)
-        => archive_entry_set_perm(entry, (int)perm);
+    [LibraryImport("archive", EntryPoint = "archive_entry_set_perm")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    private static partial void archive_entry_set_perm_u32(IntPtr entry, uint perm);
 
-    [LibraryImport("archive")]
-    private static partial void archive_entry_set_mtime(IntPtr entry, long sec, long nsec);
+    [LibraryImport("archive", EntryPoint = "archive_entry_set_mtime")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    private static partial void archive_entry_set_mtime_clong(IntPtr entry, long sec, CLong nsec);
+
+    private static void archive_entry_set_mtime(IntPtr entry, long sec, long nsec)
+        => archive_entry_set_mtime_clong(entry, sec, new CLong((nint)nsec));
 #else
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr archive_entry_new();
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern void archive_entry_free(IntPtr entry);
 
-    [DllImport("archive")]
+    // The name as UTF-8 (see SetEntryPathname)
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern void archive_entry_set_pathname(IntPtr entry, IntPtr pathname);
 
-    [DllImport("archive")]
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
     private static extern void archive_entry_set_size(IntPtr entry, long size);
 
-    [DllImport("archive")]
-    private static extern void archive_entry_set_filetype(IntPtr entry, int filetype);
+    [DllImport("archive", CallingConvention = CallingConvention.Cdecl)]
+    private static extern void archive_entry_set_filetype(IntPtr entry, uint filetype);
 
-    [DllImport("archive")]
-    private static extern void archive_entry_set_perm(IntPtr entry, int perm);
+    [DllImport("archive", EntryPoint = "archive_entry_set_perm", CallingConvention = CallingConvention.Cdecl)]
+    private static extern void archive_entry_set_perm_u16(IntPtr entry, ushort perm);
+
+    [DllImport("archive", EntryPoint = "archive_entry_set_perm", CallingConvention = CallingConvention.Cdecl)]
+    private static extern void archive_entry_set_perm_u32(IntPtr entry, uint perm);
+
+    // The nanoseconds are a C long: 32 bits on Windows, pointer-sized elsewhere
+    [DllImport("archive", EntryPoint = "archive_entry_set_mtime", CallingConvention = CallingConvention.Cdecl)]
+    private static extern void archive_entry_set_mtime_win(IntPtr entry, long sec, int nsec);
+
+    [DllImport("archive", EntryPoint = "archive_entry_set_mtime", CallingConvention = CallingConvention.Cdecl)]
+    private static extern void archive_entry_set_mtime_unix(IntPtr entry, long sec, nint nsec);
+
+    private static void archive_entry_set_mtime(IntPtr entry, long sec, long nsec)
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            archive_entry_set_mtime_win(entry, sec, (int)nsec);
+        else
+            archive_entry_set_mtime_unix(entry, sec, (nint)nsec);
+    }
+#endif
+
+    // libarchive's __LA_MODE_T is unsigned short on Windows and mode_t elsewhere, which is
+    // 16 bits on macOS and 32 bits on Linux
+    private static readonly bool ModeTIs32Bits = RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
 
     private static void archive_entry_set_perm(IntPtr entry, UnixFileMode perm)
-        => archive_entry_set_perm(entry, (int)perm);
-
-    [DllImport("archive")]
-    private static extern void archive_entry_set_mtime(IntPtr entry, long sec, long nsec);
-#endif
+    {
+        if (ModeTIs32Bits)
+            archive_entry_set_perm_u32(entry, (uint)perm);
+        else
+            archive_entry_set_perm_u16(entry, (ushort)perm);
+    }
 
     #endregion
 }

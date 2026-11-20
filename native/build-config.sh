@@ -4,6 +4,10 @@
 
 # Library versions
 LIBARCHIVE_VERSION="3.8.11"
+# This project's patch to libarchive, in this directory: every narrow string is UTF-8,
+# whatever the locale of the process. Every build (macOS, Linux and Windows) applies it
+# with patch_libarchive; see "The libarchive patch" in BUILD.md.
+LIBARCHIVE_PATCH="libarchive-narrow-utf8.patch"
 LZ4_VERSION="1.11.1"
 ZSTD_VERSION="1.5.7"
 # lzokay (MIT) provides lzop support in place of the GPL-licensed liblzo2: see
@@ -401,6 +405,44 @@ download_all_libraries() {
     normalize_autotools_timestamps "libarchive-${LIBARCHIVE_VERSION}"
     normalize_autotools_timestamps "xz-${XZ_VERSION}"
 }
+
+# Apply LIBARCHIVE_PATCH to libarchive sources that download_all_libraries has just
+# unpacked, failing unless every hunk applies exactly: -F 0 allows no fuzz, so a hunk only
+# applies where all of its context matches (an offset is fine), and -N refuses sources
+# that already look patched. Every build calls it, the Windows ones included.
+# Usage: patch_libarchive <directory of this file> <unpacked libarchive directory>
+# Like the functions in build-lzo-shim.sh, it has a subshell body, stays POSIX (this file
+# is sourced by build-windows.sh under plain sh) and ends every step in "|| exit".
+patch_libarchive() (
+    if [ $# -ne 2 ]; then
+        echo "ERROR: usage: patch_libarchive <native script directory> <libarchive directory>"
+        exit 1
+    fi
+    if ! command -v patch >/dev/null 2>&1; then
+        echo "ERROR: patch_libarchive needs the patch program"
+        exit 1
+    fi
+    # Sources that an earlier build left behind are already patched; patch -N would refuse
+    # them too, but as if the patch no longer applied to this libarchive release
+    if grep -q LIBARCHIVE_NET_NARROW_UTF8 "$2/libarchive/archive_string.c" 2>/dev/null; then
+        echo "ERROR: $2 is already patched: unpack it afresh (download_all_libraries) first"
+        exit 1
+    fi
+    echo "Applying ${LIBARCHIVE_PATCH} to $2..."
+    if ! patch -p1 -N -F 0 -d "$2" < "$1/${LIBARCHIVE_PATCH}"; then
+        echo "ERROR: ${LIBARCHIVE_PATCH} does not apply to libarchive ${LIBARCHIVE_VERSION}."
+        echo "Rework it for this release: see \"The libarchive patch\" in BUILD.md."
+        exit 1
+    fi
+    # Every file the patch changes carries its marker
+    for file in libarchive/archive_string.c libarchive/archive_write_set_format_zip.c; do
+        if ! grep -q LIBARCHIVE_NET_NARROW_UTF8 "$2/$file"; then
+            echo "ERROR: $2/$file lacks the changes of ${LIBARCHIVE_PATCH}"
+            exit 1
+        fi
+    done
+    echo "${LIBARCHIVE_PATCH} applied"
+)
 
 # Detect number of CPU cores
 if command -v nproc >/dev/null 2>&1; then

@@ -241,6 +241,25 @@ update_failed() {
     record_failure "$1" "update not applied: $2"
 }
 
+# Succeed if this project's libarchive patch, named by LIBARCHIVE_PATCH in the copy of
+# build-config.sh in $1, applies to the libarchive release tarball $2, which unpacks into
+# libarchive-$3/, exactly as patch_libarchive applies it in every native build (no
+# fuzz). Those builds fail on a release that it does not apply to.
+libarchive_patch_applies() {
+    local name dir="$WORK_DIR/libarchive-patch-check"
+    name=$(config_value "$1" LIBARCHIVE_PATCH)
+    if [ -z "$name" ] || [ ! -f "$REPO_ROOT/native/$name" ]; then
+        echo "  build-config.sh names no libarchive patch that exists in native/"
+        return 1
+    fi
+    if ! command -v patch >/dev/null 2>&1; then
+        echo "  the patch program is not installed"
+        return 1
+    fi
+    rm -rf "$dir" && mkdir -p "$dir" && tar -xJf "$2" -C "$dir" || return 1
+    patch --dry-run -p1 -N -F 0 -d "$dir/libarchive-$3" < "$REPO_ROOT/native/$name"
+}
+
 # Function to update a library's version and SHA256 checksum in build-config.sh.
 # Both go into a copy of the file first, and the copy replaces build-config.sh only
 # once it holds the new version and the checksum of the new version's tarball, and the
@@ -294,6 +313,17 @@ update_version() {
     if [[ ! "$new_sha256" =~ ^[0-9a-f]{64}$ ]]; then
         update_failed "$dep_name" "SHA256 computation failed (got: '${new_sha256}')"
         return 1
+    fi
+
+    # A libarchive release that this project's patch does not apply to would fail every
+    # native build: report it as a failed check instead, until the patch is reworked for
+    # it (see "The libarchive patch" in native/BUILD.md)
+    if [ "$dep_name" = "libarchive" ]; then
+        echo "  Checking that the libarchive patch applies to ${new_ver}..."
+        if ! libarchive_patch_applies "$candidate" "$tarball" "$new_ver"; then
+            update_failed "$dep_name" "the libarchive patch in native/ does not apply to libarchive ${new_ver}: rework it (see \"The libarchive patch\" in native/BUILD.md)"
+            return 1
+        fi
     fi
 
     # The new checksum, in the copy
