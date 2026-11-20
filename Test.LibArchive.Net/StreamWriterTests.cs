@@ -91,6 +91,21 @@ public class StreamWriterTests
         Assert.That(readData, Is.EqualTo(testData));
     }
 
+    // libarchive sets no message when the stream it writes to fails: the write callback reports
+    // the failure, and libarchive returns ARCHIVE_FATAL alone (archive_write.c:430-439), so the
+    // exception names the result. With a block size of 0, libarchive writes each header to the
+    // stream as it makes it, so AddEntry fails, here on a MemoryStream over an empty array, which
+    // cannot grow.
+    [Test]
+    public void TestStreamFailureWithoutAMessageNamesTheResult()
+    {
+        using var full = new MemoryStream(Array.Empty<byte>());
+        using var writer = new LibArchiveWriter(full, ArchiveFormat.Ustar, blockSize: 0);
+
+        var ex = Assert.Throws<ApplicationException>(() => writer.AddEntry("a.txt", Encoding.ASCII.GetBytes("a")));
+        Assert.That(ex!.Message, Is.EqualTo("libarchive returned ARCHIVE_FATAL without a message"));
+    }
+
     #endregion
 
     #region Memory Writer Tests

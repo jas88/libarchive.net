@@ -124,12 +124,14 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     // Partial method for cleanup - implemented in LibArchiveReader.Stream.cs
     partial void CleanupCallbacks();
 
-    private void Throw()
+    private void Throw(int result)
     {
-        throw new ApplicationException(ErrorString());
+        throw new ApplicationException(ErrorString(result));
     }
 
-    private string ErrorString() => SafeStringBuffer.PtrToStringUTF8(archive_error_string(handle)) ?? "Unknown error";
+    // libarchive's message for the call that returned result, or which result that was if
+    // libarchive set none (see SafeStringBuffer.ErrorMessage)
+    private string ErrorString(int result) => SafeStringBuffer.ErrorMessage(archive_error_string(handle), result);
 
     /// <summary>
     /// Creates the native reader and opens the source with every filter and archive format.
@@ -146,15 +148,16 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     /// compressed data that decompresses to nothing, which therefore opens here with no entries
     /// as well: the raw format could not give it an entry, as it needs at least one byte
     /// (archive_read_support_format_empty.c:67-68, archive_read_support_format_raw.c:99-100).
-    /// Compressed text can also be claimed by the mtree format and fail only at its first header;
-    /// <see cref="ReadNextHeader"/> then reads it as raw data.
+    /// Compressed text can also be claimed by the mtree format, which then reports a problem only
+    /// at its first header; <see cref="ReadNextHeader"/> then reads it as raw data.
     /// </remarks>
     private void Open()
     {
         CreateNativeReader(ReaderFormats.All);
-        if (OpenSource() != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+        var r = OpenSource();
+        if (r != (int)ARCHIVE_RESULT.ARCHIVE_OK)
         {
-            var error = ErrorString();
+            var error = ErrorString(r);
             if (!IsCompressed() || !ReopenCompressed(ReaderFormats.AllAndRaw))
                 throw new ApplicationException(error);
         }
@@ -186,22 +189,26 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         {
             // Registers the raw format and makes it the reader's format: libarchive then only
             // checks that there is data, and no other format can claim it
-            if (archive_read_set_format(handle, ARCHIVE_FORMAT_RAW) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-                Throw();
+            ThrowUnlessOk(archive_read_set_format(handle, ARCHIVE_FORMAT_RAW));
         }
         else
         {
             _ = archive_read_support_format_all(handle);
-            if (formats == ReaderFormats.AllAndRaw && archive_read_support_format_raw(handle) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-                Throw();
+            if (formats == ReaderFormats.AllAndRaw)
+                ThrowUnlessOk(archive_read_support_format_raw(handle));
         }
 
         if (_password != null)
         {
             using var uPassword = new SafeStringBuffer(_password);
-            if (archive_read_add_passphrase(handle, uPassword.Ptr) != 0)
-                Throw();
+            ThrowUnlessOk(archive_read_add_passphrase(handle, uPassword.Ptr));
         }
+    }
+
+    private void ThrowUnlessOk(int result)
+    {
+        if (result != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+            Throw(result);
     }
 
     // Archive files are opened by their UTF-16 name on Windows, with the _w variants of
@@ -252,26 +259,30 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     private bool IsCompressed() => archive_filter_count(handle) > 1;
 
     /// <summary>
-    /// Reads the next header. When the first header of compressed data fails because libarchive's
-    /// mtree format claimed text that is not an mtree specification, the source is opened again
-    /// with the raw format alone, and the header read is that of its single entry.
+    /// Reads the next header. When the first header of compressed data fails, or has a warning,
+    /// because libarchive's mtree format claimed text that is not an mtree specification, the
+    /// source is opened again with the raw format alone, and the header read is that of its single
+    /// entry.
     /// </summary>
     /// <remarks>
     /// Even without a <c>#mtree</c> signature, the mtree format bids on text whose first lines each
     /// hold one word, taking them for file names. A compressed list of words or numbers, such as
     /// <c>seq 1 1000 | gzip</c>, therefore opens as mtree rather than as raw data (see
-    /// <see cref="Open"/>), and fails only at its first header, with "Missing type keyword in mtree
+    /// <see cref="Open"/>), and its first header has a warning, "Missing type keyword in mtree
     /// specification". Registering the raw format with the others would not help: it bids only
     /// when no other format does. The fallback is limited to:
     /// <list type="bullet">
-    /// <item>The first header after <see cref="Open"/>. Once an entry has been returned, a header
-    /// that fails is an error in a specification that has been read, and is reported.</item>
-    /// <item>Compressed data, as in <see cref="Open"/>. Uncompressed text still fails as before.</item>
+    /// <item>The first header after <see cref="Open"/>. Once an entry has been returned, the text is
+    /// a specification that is being read, and a later header is returned with its warning, or
+    /// fails, as in any other archive (see <see cref="ReadEntry"/>).</item>
+    /// <item>Compressed data, as in <see cref="Open"/>. Uncompressed text is read as mtree, as bsdtar
+    /// reads it: a list of words gives an entry for each word, each with the warning.</item>
     /// <item>The mtree format. A format is reported only by its own read_header, and mtree's reports
     /// it only after parsing the whole text, so the failure is never another format's. What can
-    /// still fail is the first entry's keywords (a missing type, or a malformed or unknown keyword),
-    /// which mtree reports with ARCHIVE_WARN, and this class as an error. Such text is then treated
-    /// as <see cref="Open"/> treats compressed text that mtree's bid rejects outright.</item>
+    /// still go wrong is the first entry's keywords (a missing type, or a malformed or unknown
+    /// keyword), which mtree reports with ARCHIVE_WARN. On this first header of compressed data,
+    /// the entry is not returned with that warning: the text is treated as <see cref="Open"/>
+    /// treats compressed text that mtree's bid rejects outright.</item>
     /// </list>
     /// Text that the mtree format cannot parse at all, for example because a later line holds a byte
     /// that is not printable ASCII, fails before the format is reported, and still fails.
@@ -287,13 +298,44 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
             && (archive_format(handle) & ARCHIVE_FORMAT_BASE_MASK) == ARCHIVE_FORMAT_MTREE
             && IsCompressed())
         {
-            var error = ErrorString();
+            var error = ErrorString(r);
             if (!ReopenCompressed(ReaderFormats.RawOnly)
                 || (r = archive_read_next_header(handle, out entryHandle)) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
                 throw new ApplicationException(error);
         }
         StopRecording();
         return r;
+    }
+
+    /// <summary>
+    /// Reads the next header, and returns its entry, or null at the end of the archive.
+    /// </summary>
+    /// <remarks>
+    /// <para>libarchive gives an entry with ARCHIVE_OK, and with ARCHIVE_WARN when it has read the
+    /// header but found a problem that is not fatal, such as a pax attribute that it ignored or a
+    /// name that it could not convert. The entry's data can then still be read
+    /// (archive_read.c:701-706). bsdtar prints the warning and goes on with the entry
+    /// (tar/read.c:247-262), and so does this reader: the entry is returned with libarchive's
+    /// message as its <see cref="Entry.Warning"/>. The message is read first, as reading the
+    /// entry's name could replace it.</para>
+    /// <para>Every other result throws: no entry was read that can be used. That includes
+    /// ARCHIVE_RETRY, which the tar reader returns for a header block whose checksum is wrong,
+    /// once it has skipped the block (archive_read_support_format_tar.c:808-822). bsdtar asks again
+    /// (tar/read.c:255-259), and so reads on, a block at a time and through the damaged entry's
+    /// data, until a block makes a valid header. Here, asking again would lose the damaged entry
+    /// without a word, and nothing in libarchive promises that a retry moves on, so a format that
+    /// returned ARCHIVE_RETRY without consuming anything would make the reader loop for ever.</para>
+    /// </remarks>
+    private Entry? ReadEntry()
+    {
+        var r = ReadNextHeader(out var entryHandle);
+        if (r == (int)ARCHIVE_RESULT.ARCHIVE_EOF)
+            return null;
+        if (r != (int)ARCHIVE_RESULT.ARCHIVE_OK && r != (int)ARCHIVE_RESULT.ARCHIVE_WARN)
+            Throw(r);
+
+        var warning = r == (int)ARCHIVE_RESULT.ARCHIVE_WARN ? ErrorString(r) : null;
+        return Entry.Create(entryHandle, handle, warning);
     }
 
     /// <summary>
@@ -327,25 +369,31 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     /// </summary>
     /// <returns>An enumerable collection of archive entries.</returns>
     /// <remarks>
-    /// A single compressed file that is not an archive, such as a plain <c>.gz</c>, <c>.bz2</c>,
+    /// <para>An entry that libarchive reads with a warning, about a problem that is not fatal such
+    /// as a pax attribute that it ignored or a name that it could not convert, is returned with
+    /// the warning in <see cref="Entry.Warning"/>, and the entries after it follow, as bsdtar lists
+    /// and extracts them.</para>
+    /// <para>A single compressed file that is not an archive, such as a plain <c>.gz</c>, <c>.bz2</c>,
     /// <c>.xz</c>, <c>.lzma</c>, <c>.zst</c>, <c>.lz4</c> or <c>.lzo</c> file, yields one entry holding
     /// the decompressed data. libarchive names that entry <c>data</c>, except that a gzip file which
     /// records its original name (<c>gzip file.txt</c> does unless given <c>-n</c>) gives that name.
     /// The entry is a regular file whose <see cref="Entry.LengthBytes"/> is null, because the
     /// decompressed size is not known in advance. This includes compressed text that libarchive
     /// takes for an mtree specification but cannot read as one, such as a list of words or numbers,
-    /// one per line; a compressed mtree specification that it can read is read as one. A
-    /// compressed file whose decompressed data is empty, such as a gzip of an empty file, yields no
-    /// entry, as empty data does: libarchive reads both as an empty archive.
+    /// one per line; a compressed mtree specification that it can read is read as one. Uncompressed,
+    /// such a list is read as an mtree specification, as bsdtar reads it: each word is an entry,
+    /// with the warning "Missing type keyword in mtree specification". A compressed file whose
+    /// decompressed data is empty, such as a gzip of an empty file, yields no entry, as empty data
+    /// does: libarchive reads both as an empty archive.</para>
     /// </remarks>
+    /// <exception cref="ApplicationException">Thrown during the enumeration, which then ends, when
+    /// libarchive cannot read the next header (it returns ARCHIVE_RETRY, ARCHIVE_FAILED or
+    /// ARCHIVE_FATAL). The message is libarchive's, or names the result if libarchive gave
+    /// none.</exception>
     public IEnumerable<Entry> Entries()
     {
-        int r;
-        while ((r=ReadNextHeader(out var entryHandle))==0)
-            yield return Entry.Create(entryHandle, handle);
-
-        if (r != (int)ARCHIVE_RESULT.ARCHIVE_EOF)
-            Throw();
+        while (ReadEntry() is { } entry)
+            yield return entry;
     }
 
     /// <summary>
@@ -396,16 +444,13 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     /// compressed file such as a plain <c>.gz</c>, which is read as one entry (see <see cref="Entries"/>).
     /// The entry's stream must be consumed before calling other methods on the reader.
     /// Unlike using Entries().First(), this method does not advance past the entry.
+    /// An entry that libarchive reads with a warning is returned with the warning in
+    /// <see cref="Entry.Warning"/>, as <see cref="Entries"/> returns it.
     /// </remarks>
-    public Entry? FirstEntry()
-    {
-        int r = ReadNextHeader(out var entryHandle);
-        if (r == (int)ARCHIVE_RESULT.ARCHIVE_EOF)
-            return null;
-        if (r != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-            Throw();
-        return Entry.Create(entryHandle, handle);
-    }
+    /// <exception cref="ApplicationException">Thrown when libarchive cannot read the header (it
+    /// returns ARCHIVE_RETRY, ARCHIVE_FAILED or ARCHIVE_FATAL). The message is libarchive's, or
+    /// names the result if libarchive gave none.</exception>
+    public Entry? FirstEntry() => ReadEntry();
 
 
     /// <summary>
@@ -448,6 +493,20 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         /// </summary>
         public long? LengthBytes { get; }
         /// <summary>
+        /// Gets libarchive's warning about this entry, or null if libarchive reported none.
+        /// </summary>
+        /// <remarks>
+        /// <para>libarchive warns about a header that it has read with a problem that is not fatal,
+        /// such as a pax attribute that it ignored, or a name that it could not convert from the
+        /// archive's character set (see <see cref="Name"/>). Such an entry is returned with what
+        /// libarchive could read of it, as bsdtar lists and extracts it, and its data is read as any
+        /// other entry's.</para>
+        /// <para>The warning is libarchive's message. libarchive gives none for some warnings, such
+        /// as the one for a pax <c>path</c> record longer than 1 MiB, which it ignores: the warning
+        /// is then "libarchive returned ARCHIVE_WARN without a message".</para>
+        /// </remarks>
+        public string? Warning { get; }
+        /// <summary>
         /// Gets a stream to read the content of the entry.
         /// </summary>
         public FileStream Stream => new(archiveHandle, LengthBytes);
@@ -488,7 +547,14 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         private static string GetPathname(IntPtr entry)
             => SafeStringBuffer.PtrToStringUTF8(archive_entry_pathname(entry)) ?? string.Empty;
 
-        internal static Entry Create(IntPtr entryHandle, IntPtr archiveHandle) => new(entryHandle, archiveHandle);
+        private Entry(IntPtr entryHandle, IntPtr archiveHandle, string? warning)
+            : this(entryHandle, archiveHandle)
+        {
+            Warning = warning;
+        }
+
+        internal static Entry Create(IntPtr entryHandle, IntPtr archiveHandle, string? warning)
+            => new(entryHandle, archiveHandle, warning);
 
         /// <summary>
         /// Reads the entire content of the entry into a byte array.

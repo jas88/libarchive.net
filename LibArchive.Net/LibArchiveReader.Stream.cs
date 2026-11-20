@@ -169,8 +169,7 @@ public partial class LibArchiveReader
         if (_inputStream.CanSeek)
         {
             _seekCallback = OnSeek;
-            if (archive_read_set_seek_callback(handle, _seekCallback) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-                Throw();
+            ThrowUnlessOk(archive_read_set_seek_callback(handle, _seekCallback));
         }
 
         return archive_read_open(

@@ -115,14 +115,12 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
             // LibArchiveReader.UseWideFileNames).
             if (LibArchiveReader.UseWideFileNames)
             {
-                if (archive_write_open_filename_w(handle, filename) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-                    Throw();
+                ThrowUnlessOk(archive_write_open_filename_w(handle, filename));
             }
             else
             {
                 using var filenameBuffer = new SafeStringBuffer(filename);
-                if (archive_write_open_filename(handle, filenameBuffer.Ptr) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-                    Throw();
+                ThrowUnlessOk(archive_write_open_filename(handle, filenameBuffer.Ptr));
             }
         }
         catch
@@ -153,8 +151,7 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
             _ => throw new NotSupportedException($"Archive format {format} is not supported")
         };
 
-        if (result != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-            Throw();
+        ThrowUnlessOk(result);
     }
 
     private void AddFilter(CompressionType compression, int level)
@@ -175,8 +172,7 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
             _ => throw new NotSupportedException($"Compression type {compression} is not supported")
         };
 
-        if (result != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-            Throw();
+        ThrowUnlessOk(result);
 
         // Set compression level (0-9)
         if (level < 0 || level > 9)
@@ -228,9 +224,10 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     private void ConfigureEncryption(string encryptionOption, string password)
     {
         using var optionBuffer = new SafeStringBuffer(encryptionOption);
-        if (archive_write_set_options(handle, optionBuffer.Ptr) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+        var result = archive_write_set_options(handle, optionBuffer.Ptr);
+        if (result != (int)ARCHIVE_RESULT.ARCHIVE_OK)
         {
-            var errorMsg = GetErrorMessage();
+            var errorMsg = GetErrorMessage(result);
 
             // This is what libarchive's ZIP writer reports when it has no cryptography backend to encrypt with
             if (errorMsg.IndexOf("encryption not supported", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -243,8 +240,7 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
         }
 
         using var passBuffer = new SafeStringBuffer(password);
-        if (archive_write_set_passphrase(handle, passBuffer.Ptr) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-            Throw();
+        ThrowUnlessOk(archive_write_set_passphrase(handle, passBuffer.Ptr));
     }
 
     /// <summary>
@@ -294,9 +290,15 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
 
     #region Error Handling
 
-    private void Throw()
+    private void Throw(int result)
     {
-        throw new ApplicationException(GetErrorMessage());
+        throw new ApplicationException(GetErrorMessage(result));
+    }
+
+    private void ThrowUnlessOk(int result)
+    {
+        if (result != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+            Throw(result);
     }
 
     /// <summary>
@@ -327,16 +329,13 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
     private void SetBlockSize()
     {
         // CheckBlockSize keeps it within int: libarchive ignores a negative size
-        if (archive_write_set_bytes_per_block(handle, (int)blockSize) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-            Throw();
-        if (archive_write_set_bytes_in_last_block(handle, 1) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-            Throw();
+        ThrowUnlessOk(archive_write_set_bytes_per_block(handle, (int)blockSize));
+        ThrowUnlessOk(archive_write_set_bytes_in_last_block(handle, 1));
     }
 
-    private string GetErrorMessage()
-    {
-        return SafeStringBuffer.PtrToStringUTF8(archive_error_string(handle)) ?? "Unknown error";
-    }
+    // libarchive's message for the call that returned result, or which result that was if
+    // libarchive set none (see SafeStringBuffer.ErrorMessage)
+    private string GetErrorMessage(int result) => SafeStringBuffer.ErrorMessage(archive_error_string(handle), result);
 
     #endregion
 
