@@ -54,10 +54,6 @@ message says that libarchive has no DEFLATE filter, and to use `Gzip`.
   Zstandard method has the method ID that 7-Zip-zstd uses (`04 F7 11 01`).
 - Not every ZIP tool can extract BZIP2, LZMA, XZ or Zstandard entries, nor every 7-Zip build Zstandard
   ones: the defaults, DEFLATE for ZIP and LZMA for 7-Zip, are the most widely read.
-- libarchive's ZIP reader cannot read a Zstandard entry whose size is a multiple of 128 KiB from a file or
-  a seekable stream, as `LibArchiveReader` reads them: it reports "Truncated zstd file body", although the
-  entry is valid and other tools, such as 7-Zip, read it. It reads such an entry from a stream that cannot
-  seek.
 
 ```csharp
 // A ZIP archive whose entries are compressed with Zstandard at level 9

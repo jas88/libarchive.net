@@ -38,12 +38,7 @@ public class ZipCompressionTests
         ("second.txt", CompressibleText(8 * 1024, seed: 2)),
     };
 
-    // Not a multiple of 128 KiB. Reading a seekable source, libarchive's ZIP reader reports "Truncated zstd
-    // file body" for a Zstandard entry of such a size, although the entry is valid and other tools read it:
-    // when the data ends just as its 128 KiB output buffer (ZSTD_DStreamOutSize()) is full, it does not end
-    // the entry, as it does so only when the buffer is not full (archive_read_support_format_zip.c:2986-2993),
-    // and asks for more data than the entry has (2954-2961).
-    private static readonly byte[] Text = CompressibleText(120 * 1024);
+    private static readonly byte[] Text = CompressibleText(128 * 1024);
 
     private static readonly byte[] Secret = Encoding.UTF8.GetBytes(EncryptionAssert.SecretText);
 
