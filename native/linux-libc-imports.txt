@@ -90,6 +90,7 @@ futimens
 futimesat
 fwrite
 getauxval                        # arm64 only (liblzma's CRC32 code)
+getentropy                       # libxml2's hash seed; glibc has it since 2.25, and with an older one musl's runs
 getenv
 geteuid
 getgid

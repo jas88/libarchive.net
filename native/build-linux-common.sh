@@ -69,11 +69,23 @@ build_libxml2() {
     # the C14N, catalog, debug, HTML, module, pattern, regexp, RELAX NG, schema, XInclude,
     # XPath and XPointer support. The xmlReader and xmlWriter interfaces need the push parser
     # and the output code, which stay in.
+    # ac_cv_have_decl_getentropy=yes: libxml2 seeds the random numbers that protect its hash
+    # tables from crafted collisions with getentropy if configure finds it declared, and with
+    # the time and some addresses if not. Its check includes only <sys/random.h>, and musl
+    # declares getentropy in <unistd.h> (as POSIX 2024 does), which is the other header that
+    # dict.c includes for it.
     ./configure "$@" --prefix="$PREFIX" --enable-silent-rules --disable-shared --enable-static --with-pic \
         --without-python --with-zlib="$PREFIX" \
         --without-c14n --without-catalog --without-debug --without-html --without-modules \
         --without-pattern --without-regexps --without-relaxng --without-schemas \
-        --without-xinclude --without-xpath --without-xptr || return
+        --without-xinclude --without-xpath --without-xptr \
+        ac_cv_have_decl_getentropy=yes || return
+    # A check that libxml2 renames would ignore that answer without saying so
+    if ! awk '$1 == "#define" && $2 == "HAVE_DECL_GETENTROPY" && $3 == "1" {found = 1} END {exit !found}' config.h; then
+        echo "ERROR: libxml2's config.h does not define HAVE_DECL_GETENTROPY to 1, so libxml2 would"
+        echo "seed its hash tables from the time instead of getentropy (see build_libxml2)"
+        return 1
+    fi
     # Only the library, its headers and its pkg-config file: "make install" would also build
     # and install xmllint, xml2-config and a CMake package file, which nothing here uses.
     # -fvisibility=hidden, as for mbedTLS: libarchive.so does not export libxml2's functions,
