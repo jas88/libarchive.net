@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.IO.Compression;
 using System.Text;
 using LibArchive.Net;
 using NUnit.Framework;
@@ -7,10 +9,11 @@ namespace Test.LibArchive.Net;
 
 // Reads text that libarchive's mtree reader takes for an mtree specification. Even without a
 // "#mtree" signature, that reader claims text whose first lines each hold a single word, as a
-// list of file names, and fails only when it reads the first entry, which has no type.
+// list of file names, and reports a problem only when it reads the first entry, which has no type.
 // Compressed, such text is read like any other compressed file that is not an archive, as one
-// raw entry (see CompressedFileTests.cs); uncompressed, it fails as it always has, at the first
-// header. A real mtree specification is still read as one, compressed or not.
+// raw entry (see CompressedFileTests.cs); uncompressed, it is read as mtree, as bsdtar reads it,
+// each word an entry with a warning. A real mtree specification is still read as one, compressed
+// or not.
 //
 // The fixtures are written by GNU gzip 1.15 and the bsdtar of libarchive 3.8.11:
 //
@@ -92,22 +95,30 @@ public class MtreeTextTests
         AssertRawEntry(reader);
     }
 
-    // Uncompressed, the same text still fails as it always has: it opens, as an mtree
-    // specification, and the first header throws.
+    // Uncompressed, the same text opens as an mtree specification and is read as one, as bsdtar
+    // reads it: each number is an entry, an empty regular file, with the warning that it has no
+    // type. (The first header used to throw, when the reader took every warning for an error.)
     [Test]
-    public void TestUncompressedTextStillFailsAtFirstHeader([Values] Source source)
+    public void TestUncompressedTextIsReadAsMtreeWithWarnings([Values] Source source)
     {
         using (var reader = Open(source, Text))
         {
-            var fromFirstEntry = Assert.Throws<ApplicationException>(() => reader.FirstEntry());
-            Assert.That(fromFirstEntry!.Message, Is.EqualTo(MissingType));
+            var first = reader.FirstEntry();
+            Assert.That(first, Is.Not.Null);
+            Assert.That((first!.Name, first.Type, first.LengthBytes, first.Warning),
+                Is.EqualTo(("1", EntryType.RegularFile, (long?)0, MissingType)));
+            Assert.That(first.ReadAllBytes(), Is.Empty);
+            Assert.That(reader.FirstEntry()?.Name, Is.EqualTo("2"));
         }
 
         using (var reader = Open(source, Text))
         {
-            using var entries = reader.Entries().GetEnumerator();
-            var fromEntries = Assert.Throws<ApplicationException>(() => entries.MoveNext());
-            Assert.That(fromEntries!.Message, Is.EqualTo(MissingType));
+            var entries = reader.Entries()
+                .Select(e => (e.Name, e.Type, e.LengthBytes, e.Warning, e.ReadAllBytes().Length))
+                .ToList();
+            var expected = Enumerable.Range(1, 1000)
+                .Select(n => (n.ToString(CultureInfo.InvariantCulture), EntryType.RegularFile, (long?)0, (string?)MissingType, 0));
+            Assert.That(entries, Is.EqualTo(expected));
         }
     }
 
@@ -123,18 +134,66 @@ public class MtreeTextTests
         Assert.That(entries, Is.EqualTo(SpecEntries));
     }
 
-    // Only the first header is read again as raw data: once an entry has been returned, a header
-    // that fails is an error in the specification, and is reported.
+    // Only the first header is read again as raw data: once an entry has been returned, the text is
+    // a specification, and an entry in it that has no type is returned with mtree's warning, as
+    // bsdtar lists it. (That header used to throw, when the reader took every warning for an error.)
     [Test]
-    public void TestLaterHeaderErrorIsReported([Values] Source source)
+    public void TestLaterHeaderWarningIsReturnedWithItsEntry([Values] Source source)
     {
         using var reader = Open(source, UntypedSpec);
-        using var entries = reader.Entries().GetEnumerator();
 
-        Assert.That(entries.MoveNext(), Is.True);
-        Assert.That(entries.Current.Name, Is.EqualTo("./dir"));
-        var ex = Assert.Throws<ApplicationException>(() => entries.MoveNext());
-        Assert.That(ex!.Message, Is.EqualTo(MissingType));
+        var entries = reader.Entries().Select(e => (e.Name, e.Type, e.Warning)).ToList();
+
+        Assert.That(entries, Is.EqualTo(new[]
+        {
+            ("./dir", EntryType.Directory, (string?)null),
+            ("./dir/untyped", EntryType.RegularFile, MissingType),
+        }));
+    }
+
+    // The raw entry that compressed text is read as has no warning: the mtree warning on the
+    // first header is what makes the reader read the text again as raw data.
+    [Test]
+    public void TestCompressedTextRawEntryHasNoWarning([Values] Source source)
+    {
+        using (var reader = Open(source, CompressedText))
+            Assert.That(reader.FirstEntry()!.Warning, Is.Null);
+
+        using (var reader = Open(source, CompressedText))
+            Assert.That(reader.Entries().Select(e => e.Warning), Is.EqualTo(new string?[] { null }));
+    }
+
+    // A compressed mtree specification whose first entry has a warning is read again as raw data
+    // too, as the reader cannot tell it from a list of words: here the entry has no type. The
+    // specification is compressed in the test, by GZipStream, which records no name, so the raw
+    // entry is named "data". The same text uncompressed is read as mtree, with the warning. (The
+    // tests above read the compressed fixture as raw data from a path and from volumes too.)
+    [Test]
+    public void TestCompressedSpecWhoseFirstEntryWarnsIsReadAsRawData(
+        [Values(Source.Stream, Source.NonSeekableStream)] Source source)
+    {
+        var spec = Encoding.ASCII.GetBytes("#mtree\n./untyped\n./dir type=dir\n");
+        var compressed = new MemoryStream();
+        using (var gzip = new GZipStream(compressed, CompressionLevel.Optimal, leaveOpen: true))
+            gzip.Write(spec, 0, spec.Length);
+
+        using (var reader = Open(source, compressed.ToArray()))
+        {
+            var entries = reader.Entries().Select(e => (e.Name, e.Warning, Content: e.ReadAllBytes())).ToList();
+            Assert.That(entries, Has.Count.EqualTo(1));
+            Assert.That((entries[0].Name, entries[0].Warning), Is.EqualTo((RawEntryName, (string?)null)));
+            Assert.That(entries[0].Content, Is.EqualTo(spec));
+        }
+
+        using (var reader = Open(source, spec))
+        {
+            var entries = reader.Entries().Select(e => (e.Name, e.Type, e.Warning)).ToList();
+            Assert.That(entries, Is.EqualTo(new[]
+            {
+                ("./untyped", EntryType.RegularFile, (string?)MissingType),
+                ("./dir", EntryType.Directory, null),
+            }));
+        }
     }
 
     // The reader does not own a stream it is given; a MemoryStream needs no disposal.
@@ -145,6 +204,14 @@ public class MtreeTextTests
         Source.Stream => new LibArchiveReader(new MemoryStream(File.ReadAllBytes(fixture)), blockSize: blockSize),
         Source.NonSeekableStream => new LibArchiveReader(
             new ReaderApiTests.NonSeekableStream(new MemoryStream(File.ReadAllBytes(fixture))), blockSize: blockSize),
+        _ => throw new ArgumentOutOfRangeException(nameof(source)),
+    };
+
+    // Data made in the test, read from a stream, seekable or not
+    private static LibArchiveReader Open(Source source, byte[] data) => source switch
+    {
+        Source.Stream => new LibArchiveReader(new MemoryStream(data)),
+        Source.NonSeekableStream => new LibArchiveReader(new ReaderApiTests.NonSeekableStream(new MemoryStream(data))),
         _ => throw new ArgumentOutOfRangeException(nameof(source)),
     };
 

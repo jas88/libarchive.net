@@ -33,7 +33,8 @@ namespace Test.LibArchive.Net;
 // rawtest-empty.txt.gz decompresses to nothing (rawtest-empty.txt itself is not kept).
 // rawtest.txt itself is the uncompressed file that is not an archive. Bare "seq 1 1000" would
 // not do for it: libarchive's mtree reader claims text whose lines each hold a single word,
-// which then opens and fails only at the first header (see MtreeTextTests.cs).
+// which then opens and is read as mtree, each word an entry with a warning (see
+// MtreeTextTests.cs).
 [TestFixture]
 public class CompressedFileTests
 {

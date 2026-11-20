@@ -275,7 +275,7 @@ public class NameEncodingTests
     }
 
     // A pax record is "<length> <key>=<value>\n", its length counting the digits of the length
-    private static byte[] PaxRecord(string key, byte[] value)
+    internal static byte[] PaxRecord(string key, byte[] value)
     {
         static int Digits(int n) => n.ToString(CultureInfo.InvariantCulture).Length;
 
