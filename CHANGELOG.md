@@ -38,6 +38,7 @@ v0.3.2 - November 16, 2026
   - `CompressionType.None` keeps each format's default method, so the default calls write the same bytes as before.
   - A type that the format has no method for throws `NotSupportedException` before anything is written, listing the types that it supports, instead of wrapping the archive. `CompressionType.Deflate` now works with ZIP and 7-Zip; with the other formats it still throws, pointing to `Gzip`.
   - A level outside 0 to 9 throws `ArgumentOutOfRangeException`, where it was ignored.
+- Fix reading a ZIP archive's Zstandard entry (method 93) whose data ends exactly as libarchive's 128 KiB buffer fills, such as an entry of 128 KiB or a multiple of it, from a file or a seekable stream. It failed with "Truncated zstd file body", wherever the archive came from. An entry of several Zstandard frames now also reads in full when its sizes are known. libarchive 3.8.11 and its master branch have the bug, so the native libraries are built with a patch that fixes it.
 - On .NET Standard 2.0, read libarchive's error messages as UTF-8 whatever their length. One over 1,000,000 bytes made the writer throw `InvalidOperationException` in place of the error, and the reader decode it with the ANSI code page.
 
 **API Improvements:**
@@ -66,7 +67,8 @@ v0.3.2 - November 16, 2026
 - Patch libarchive at build time, with one patch for each change, in the order that `LIBARCHIVE_PATCHES` in `native/build-config.sh` lists them:
   - `libarchive-narrow-utf8.patch` makes its narrow strings UTF-8 on every platform, whatever the process locale, without changing the locale;
   - `libarchive-lz4-init-stream-hc.patch` stops its lz4 writer calling lz4's deprecated `LZ4_resetStreamHC`;
-  - `libarchive-zip-aes192.patch` adds WinZip AES-192 to its ZIP writer.
+  - `libarchive-zip-aes192.patch` adds WinZip AES-192 to its ZIP writer;
+  - `libarchive-zip-zstd-end-of-entry.patch` fixes its ZIP reader for Zstandard entries that end exactly as its buffer fills.
 
   Every native build fails if a patch does not apply exactly, and the update checker does not propose a libarchive release that a patch does not apply to, naming the patch
 - Ship a native library of its own for each Linux runtime, linked dynamically against that runtime's C library, in place of one library per architecture with musl linked into it, which the glibc and musl runtimes shared. The libraries need:
