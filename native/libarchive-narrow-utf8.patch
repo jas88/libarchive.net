@@ -1,10 +1,11 @@
 UTF-8 for every narrow string, whatever the locale of the process.
 
-Applied by patch_libarchive (native/build-config.sh) to the libarchive release pinned
-in native/build-config.sh, by every build: macOS, Linux and Windows. A build fails if
-any hunk does not apply exactly (no fuzz), and scripts/check-native-updates.sh will
-not propose a libarchive release that it does not apply to. See "The libarchive
-patch" in native/BUILD.md.
+One of this project's patches to libarchive, which every build (macOS, Linux and
+Windows) applies with patch_libarchive (native/build-config.sh), to the libarchive
+release pinned there, in the order that LIBARCHIVE_PATCHES there lists them. A build
+fails if any hunk does not apply exactly (no fuzz), and scripts/check-native-updates.sh
+will not propose a libarchive release that it does not apply to. See "The libarchive
+patches" in native/BUILD.md.
 
 LibArchive.Net passes UTF-8 to libarchive's narrow (char *) functions and decodes
 every narrow string it gets back as UTF-8. libarchive instead takes narrow strings to
@@ -50,7 +51,8 @@ side of each conversion:
    archive_wstring_append_from_mbs_in_codepage() no longer passes MB_PRECOMPOSED
    with it.
 
-Every change is marked LIBARCHIVE_NET_NARROW_UTF8, which patch_libarchive checks for.
+Each change is marked LIBARCHIVE_NET_NARROW_UTF8, the marker that LIBARCHIVE_PATCHES
+gives this patch: patch_libarchive checks that every file the patch changes has it.
 
 --- a/libarchive/archive_string.c
 +++ b/libarchive/archive_string.c

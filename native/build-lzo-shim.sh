@@ -39,8 +39,8 @@ LZO_SHIM_CXX_RUNTIME_SYMBOLS='(__cxa_|__gxx_personality|_Unwind_|__dynamic_cast|
 # Usage: build_lzo_shim <shim source directory> <unpacked lzokay directory> <flags>
 # <flags> are the platform's own C++ compiler flags as one string (optimisation,
 # -fPIC, -m32, -arch ...); LZO_SHIM_CXXFLAGS are added to them.
-# Uses PREFIX, CXX (default: c++) and AR (default: ar). Compiles in ./lzokay-build,
-# so the current directory must be the build directory.
+# Uses PREFIX, CXX (default: c++) and AR (default: ar), and the ranlib and nm beside
+# AR. Compiles in ./lzokay-build, so the current directory must be the build directory.
 build_lzo_shim() (
     # Compiler commands and flags are split into words on purpose; stop the shell
     # from also expanding wildcards in them.
@@ -63,6 +63,7 @@ build_lzo_shim() (
     # rewrite the first "ar" in the whole path instead, such as the one in a
     # ".../libarchive-linux-x64/..." toolchain directory, and is not POSIX either.
     nm="${ar%ar}nm"
+    ranlib="${ar%ar}ranlib"
     if ! command -v patch >/dev/null 2>&1; then
         echo "ERROR: build_lzo_shim needs the patch program"
         exit 1
@@ -81,14 +82,23 @@ build_lzo_shim() (
 
     # The shim's own <lzo/*.h> come first, ahead of any -I in the platform flags, so
     # that it is always compiled against the headers it is installed with.
-    # shellcheck disable=SC2086  # $cxx, $platform_flags and the flag list are word lists
+    # $platform_flags and $LZO_SHIM_CXXFLAGS each hold a list of flags in one string, as
+    # $cxx can hold a compiler launcher and the compiler, and are split into words on
+    # purpose: this file must stay POSIX sh, which has no arrays. set -f above keeps the
+    # split from expanding wildcards.
+    # shellcheck disable=SC2086  # flag lists, split on purpose (see above)
     $cxx -I"$shim_dir/include" -I. $platform_flags $LZO_SHIM_CXXFLAGS -c lzokay.cpp -o lzokay.o || exit
-    # shellcheck disable=SC2086
+    # shellcheck disable=SC2086  # flag lists, split on purpose (see above)
     $cxx -I"$shim_dir/include" -I. $platform_flags $LZO_SHIM_CXXFLAGS -c "$shim_dir/lzo-shim.cpp" -o lzo-shim.o || exit
 
     mkdir -p "$PREFIX/lib" "$PREFIX/include/lzo" || exit
     rm -f "$PREFIX/lib/liblzo2.a" || exit
-    "$ar" rcs "$PREFIX/lib/liblzo2.a" lzokay.o lzo-shim.o || exit
+    # Archived, then indexed by ranlib on its own, which is what "ar rcs" does in one
+    # step: with universal macOS objects, Apple's ar warns that an archive it indexes
+    # itself "will be fat and ar(1) will not be able to operate on it", and ranlib
+    # makes the same archive without a warning.
+    "$ar" rc "$PREFIX/lib/liblzo2.a" lzokay.o lzo-shim.o || exit
+    "$ranlib" "$PREFIX/lib/liblzo2.a" || exit
     cp "$shim_dir/include/lzo/lzoconf.h" "$shim_dir/include/lzo/lzo1x.h" "$PREFIX/include/lzo/" || exit
 
     # Fail here, with the symbol names in the log, rather than let libarchive's
@@ -131,7 +141,11 @@ verify_lzo_support() (
     # libarchive only refers to this function when its configure found <lzo/lzo1x.h>
     # and liblzo2, and the linker only takes it out of liblzo2.a when libarchive
     # refers to it. Mach-O and 32-bit Windows add the leading underscore.
-    if ! printf '%s\n' "$symbols" | grep -E -q ' [Tt] _?lzo1x_decompress_safe$'; then
+    # awk reads the whole list: "grep -q" would stop at the match and close the pipe,
+    # and where SIGPIPE is ignored (as under GitHub Actions) printf then fails with a
+    # "write error: Broken pipe" for the rest of the list.
+    if ! printf '%s\n' "$symbols" |
+        awk '/ [Tt] _?lzo1x_decompress_safe$/ { found = 1 } END { exit !found }'; then
         echo "ERROR: lzo1x_decompress_safe is not defined in ${lib}."
         echo "libarchive was built without liblzo2, so it would read lzop data only by running an external lzop program."
         exit 1
@@ -172,12 +186,15 @@ verify_lzo_shim_resolved() (
     # Every symbol the shim's object files import ("U"; weak references may stay
     # unresolved) must be defined in the library, whatever its name. The global
     # offset table is the one exception: the linker supplies it without always
-    # leaving a symbol behind.
-    defined=$(printf '%s\n' "$defined" | awk '{ print $NF }')
-    missing=$(printf '%s\n' "$needed" | awk '$1 == "U" && $2 != "_GLOBAL_OFFSET_TABLE_" { print $2 }' | sort -u |
-        while IFS= read -r symbol; do
-            printf '%s\n' "$defined" | grep -F -x -q -e "$symbol" || printf '%s\n' "$symbol"
-        done)
+    # leaving a symbol behind. One awk reads both lists, the defined names (the last
+    # field of each line) up to a line "--", and nm's list of the shim's imports
+    # after it: a "grep -q" per symbol closed the pipe of the defined list at a match,
+    # and printf then failed with "write error: Broken pipe" where SIGPIPE is ignored.
+    missing=$( { printf '%s\n' "$defined"; echo --; printf '%s\n' "$needed"; } |
+        awk '!imports && $0 == "--" { imports = 1; next }
+            !imports { if (NF) defined[$NF] = 1; next }
+            $1 == "U" && $2 != "_GLOBAL_OFFSET_TABLE_" && !($2 in defined) { print $2 }' |
+        sort -u)
     if [ -n "$missing" ]; then
         printf '%s\n' "$missing"
         echo "ERROR: ${lib} does not define the symbols listed above, which the lzop shim needs, and would fail to load."

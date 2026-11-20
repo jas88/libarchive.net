@@ -92,7 +92,6 @@ link_libarchive() {
         # The libraries libarchive.a uses
         "$PREFIX/lib/libbz2.a"
         "$PREFIX/lib/libz.a"
-        "$PREFIX/lib/libxml2.a"
         "$PREFIX/lib/liblzma.a"
         "$PREFIX/lib/liblzo2.a"
         "$PREFIX/lib/libzstd.a"
@@ -212,8 +211,9 @@ verify_self_contained() {
 
 # Write the C source of the load test program run by test_load_musl and test_load_host.
 # Besides loading the library and reading an empty archive, it fails unless names are
-# UTF-8 in the "C" locale, which it never leaves, as a .NET process never does: the
-# libarchive patch is in the library (see "The libarchive patch" in BUILD.md).
+# UTF-8 in the "C" locale, which it never leaves, as a .NET process never does:
+# libarchive-narrow-utf8.patch is in the library (see "The libarchive patches" in
+# BUILD.md).
 # Usage: write_load_test_source <file>
 write_load_test_source() {
     if [ -z "${1:-}" ]; then

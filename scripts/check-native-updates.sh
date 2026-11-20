@@ -241,23 +241,32 @@ update_failed() {
     record_failure "$1" "update not applied: $2"
 }
 
-# Succeed if this project's libarchive patch, named by LIBARCHIVE_PATCH in the copy of
-# build-config.sh in $1, applies to the libarchive release tarball $2, which unpacks into
-# libarchive-$3/, exactly as patch_libarchive applies it in every native build (no
-# fuzz). Those builds fail on a release that it does not apply to.
-libarchive_patch_applies() {
-    local name dir="$WORK_DIR/libarchive-patch-check"
-    name=$(config_value "$1" LIBARCHIVE_PATCH)
-    if [ -z "$name" ] || [ ! -f "$REPO_ROOT/native/$name" ]; then
-        echo "  build-config.sh names no libarchive patch that exists in native/"
+# Apply this project's libarchive patches to the libarchive release tarball $2, which
+# unpacks into libarchive-$3/, exactly as every native build applies them: with the
+# patch_libarchive of the copy of build-config.sh in $1 (sourced in a subshell, as
+# above), which applies each patch in LIBARCHIVE_PATCHES in turn, without fuzz, to an
+# unpacked copy, and checks its marker. Those builds fail on a release that it fails on.
+# What it prints is printed here, indented. If it fails, so does this, with PATCH_ERROR
+# set to its error line, which names the patch at fault.
+PATCH_ERROR=""
+libarchive_patches_apply() {
+    local dir="$WORK_DIR/libarchive-patch-check" log="$WORK_DIR/libarchive-patch-check.log" status
+    PATCH_ERROR=""
+    if ! { rm -rf "$dir" && mkdir -p "$dir" && tar -xJf "$2" -C "$dir"; }; then
+        PATCH_ERROR="could not unpack the libarchive $3 tarball"
         return 1
     fi
-    if ! command -v patch >/dev/null 2>&1; then
-        echo "  the patch program is not installed"
-        return 1
-    fi
-    rm -rf "$dir" && mkdir -p "$dir" && tar -xJf "$2" -C "$dir" || return 1
-    patch --dry-run -p1 -N -F 0 -d "$dir/libarchive-$3" < "$REPO_ROOT/native/$name"
+    (
+        # shellcheck source=/dev/null  # a copy of native/build-config.sh
+        . "$1" >/dev/null 2>&1
+        patch_libarchive "$REPO_ROOT/native" "$dir/libarchive-$3"
+    ) > "$log" 2>&1
+    status=$?
+    sed 's/^/    /' "$log"
+    [ "$status" -eq 0 ] && return 0
+    PATCH_ERROR=$(sed -n 's/^ERROR: //p' "$log" | head -n 1)
+    [ -n "$PATCH_ERROR" ] || PATCH_ERROR="patch_libarchive failed on libarchive $3 (exit status ${status})"
+    return 1
 }
 
 # Function to update a library's version and SHA256 checksum in build-config.sh.
@@ -315,13 +324,13 @@ update_version() {
         return 1
     fi
 
-    # A libarchive release that this project's patch does not apply to would fail every
-    # native build: report it as a failed check instead, until the patch is reworked for
-    # it (see "The libarchive patch" in native/BUILD.md)
+    # A libarchive release that one of this project's patches does not apply to would
+    # fail every native build: report it as a failed check that names the patch, until
+    # the patch is reworked for it (see "The libarchive patches" in native/BUILD.md)
     if [ "$dep_name" = "libarchive" ]; then
-        echo "  Checking that the libarchive patch applies to ${new_ver}..."
-        if ! libarchive_patch_applies "$candidate" "$tarball" "$new_ver"; then
-            update_failed "$dep_name" "the libarchive patch in native/ does not apply to libarchive ${new_ver}: rework it (see \"The libarchive patch\" in native/BUILD.md)"
+        echo "  Applying the libarchive patches to ${new_ver}, as the builds do..."
+        if ! libarchive_patches_apply "$candidate" "$tarball" "$new_ver"; then
+            update_failed "$dep_name" "$PATCH_ERROR"
             return 1
         fi
     fi

@@ -4,10 +4,16 @@
 
 # Library versions
 LIBARCHIVE_VERSION="3.8.11"
-# This project's patch to libarchive, in this directory: every narrow string is UTF-8,
-# whatever the locale of the process. Every build (macOS, Linux and Windows) applies it
-# with patch_libarchive; see "The libarchive patch" in BUILD.md.
-LIBARCHIVE_PATCH="libarchive-narrow-utf8.patch"
+# This project's patches to libarchive, in this directory, one for each change. Every
+# build (macOS, Linux and Windows) applies them with patch_libarchive, in this order.
+# Each entry is "<patch>:<marker>": once the patch is applied, every file that it
+# changes carries its marker, which no other patch uses. A patch may change a file that
+# an earlier one changes: its hunks are then against that file as the earlier one leaves
+# it. See "The libarchive patches" in BUILD.md.
+LIBARCHIVE_PATCHES="
+    libarchive-narrow-utf8.patch:LIBARCHIVE_NET_NARROW_UTF8
+    libarchive-lz4-init-stream-hc.patch:LIBARCHIVE_NET_LZ4_INIT_STREAM_HC
+"
 LZ4_VERSION="1.11.1"
 ZSTD_VERSION="1.5.7"
 # lzokay (MIT) provides lzop support in place of the GPL-licensed liblzo2: see
@@ -108,6 +114,21 @@ export DOWNLOAD_CACHE="${LIBARCHIVE_NET_CACHE_DIR}/downloads"
 
 # Configure cache directory (persistent across builds, shared per host triplet)
 export CONFIG_CACHE_DIR="${LIBARCHIVE_NET_CACHE_DIR}/config-cache"
+
+# For a build with a cross toolchain (the Linux and Windows builds): name two tools that
+# configure looks for under the host triplet and, not finding them, takes unprefixed
+# from the build machine, warning "using cross tools not prefixed with host triplet".
+# pkg-config is the build machine's, confined to the .pc files under $PREFIX as a cross
+# pkg-config would be. libtool's manifest tool (an mt.exe that embeds manifests): none
+# of the MinGW or Bootlin toolchains has one, and an mt on the build machine is the tape
+# drive program, so it is ":", libtool's own value for none. Call it once PREFIX has its
+# final value.
+# Usage: export_cross_build_tools
+export_cross_build_tools() {
+    export PKG_CONFIG=pkg-config
+    export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig"
+    export MANIFEST_TOOL=:
+}
 
 # Get the config.cache file path for a given host triplet
 # Usage: get_config_cache [host-triplet]
@@ -406,14 +427,38 @@ download_all_libraries() {
     normalize_autotools_timestamps "xz-${XZ_VERSION}"
 }
 
-# Apply LIBARCHIVE_PATCH to libarchive sources that download_all_libraries has just
-# unpacked, failing unless every hunk applies exactly: -F 0 allows no fuzz, so a hunk only
-# applies where all of its context matches (an offset is fine), and -N refuses sources
-# that already look patched. Every build calls it, the Windows ones included.
+# Print the files that the patch $1 changes, one per line, as patch -p1 finds them: the
+# path in each of its "+++ b/<path>" lines, without any timestamp after a tab. Fails if
+# the patch has no such line.
+# Usage: libarchive_patch_files <patch>
+libarchive_patch_files() {
+    awk 'substr($0, 1, 6) == "+++ b/" {
+            path = substr($0, 7)
+            sub(/\t.*/, "", path)
+            print path
+            n++
+        }
+        END { exit (n == 0) }' "$1"
+}
+
+# Apply the patches in LIBARCHIVE_PATCHES, one at a time and in order, to libarchive
+# sources that download_all_libraries has just unpacked: each applies to the sources as
+# the ones before it leave them. Each must apply exactly: -F 0 allows no fuzz, so a hunk
+# only applies where all of its context matches (an offset is fine), and -N refuses
+# sources that already look patched. Every file that a patch changes, as its "+++ b/"
+# lines name them, must then carry the patch's marker. Sources that any of the patches
+# has already been applied to are refused before anything is changed. An error is one
+# line that starts "ERROR: " and names the patch at fault, if there is one. Every build
+# calls this, the Windows ones included, and so does scripts/check-native-updates.sh, on
+# each libarchive release that it would propose (it reports that error line).
 # Usage: patch_libarchive <directory of this file> <unpacked libarchive directory>
 # Like the functions in build-lzo-shim.sh, it has a subshell body, stays POSIX (this file
 # is sourced by build-windows.sh under plain sh) and ends every step in "|| exit".
 patch_libarchive() (
+    # LIBARCHIVE_PATCHES and the lists of files are split into words on purpose; stop the
+    # shell from also expanding wildcards in them
+    set -f
+
     if [ $# -ne 2 ]; then
         echo "ERROR: usage: patch_libarchive <native script directory> <libarchive directory>"
         exit 1
@@ -422,26 +467,60 @@ patch_libarchive() (
         echo "ERROR: patch_libarchive needs the patch program"
         exit 1
     fi
-    # Sources that an earlier build left behind are already patched; patch -N would refuse
-    # them too, but as if the patch no longer applied to this libarchive release
-    if grep -q LIBARCHIVE_NET_NARROW_UTF8 "$2/libarchive/archive_string.c" 2>/dev/null; then
-        echo "ERROR: $2 is already patched: unpack it afresh (download_all_libraries) first"
+    if [ ! -d "$2" ]; then
+        echo "ERROR: $2 does not exist: unpack libarchive (download_all_libraries) first"
         exit 1
     fi
-    echo "Applying ${LIBARCHIVE_PATCH} to $2..."
-    if ! patch -p1 -N -F 0 -d "$2" < "$1/${LIBARCHIVE_PATCH}"; then
-        echo "ERROR: ${LIBARCHIVE_PATCH} does not apply to libarchive ${LIBARCHIVE_VERSION}."
-        echo "Rework it for this release: see \"The libarchive patch\" in BUILD.md."
-        exit 1
-    fi
-    # Every file the patch changes carries its marker
-    for file in libarchive/archive_string.c libarchive/archive_write_set_format_zip.c; do
-        if ! grep -q LIBARCHIVE_NET_NARROW_UTF8 "$2/$file"; then
-            echo "ERROR: $2/$file lacks the changes of ${LIBARCHIVE_PATCH}"
+
+    # Check every patch before applying any. Sources that an earlier build left behind are
+    # already patched; patch -N would refuse them too, but as if a patch no longer applied
+    # to this libarchive release, and only once the patches before it had been applied
+    count=0
+    for entry in $LIBARCHIVE_PATCHES; do
+        name=${entry%%:*}
+        marker=${entry#*:}
+        if [ -z "$name" ] || [ -z "$marker" ] || [ "$name" = "$entry" ]; then
+            echo "ERROR: \"${entry}\" in LIBARCHIVE_PATCHES is not of the form <patch>:<marker>"
             exit 1
         fi
+        if [ ! -f "$1/$name" ]; then
+            echo "ERROR: ${name}, in LIBARCHIVE_PATCHES, is not in $1"
+            exit 1
+        fi
+        if ! files=$(libarchive_patch_files "$1/$name"); then
+            echo "ERROR: ${name} names no file to change (it has no \"+++ b/\" line)"
+            exit 1
+        fi
+        for file in $files; do
+            if grep -qF -e "$marker" "$2/$file" 2>/dev/null; then
+                echo "ERROR: $2 is already patched ($file has ${marker}, the marker of ${name}): unpack it afresh (download_all_libraries) first"
+                exit 1
+            fi
+        done
+        count=$((count + 1))
     done
-    echo "${LIBARCHIVE_PATCH} applied"
+    if [ "$count" -eq 0 ]; then
+        echo "ERROR: LIBARCHIVE_PATCHES lists no patch"
+        exit 1
+    fi
+
+    for entry in $LIBARCHIVE_PATCHES; do
+        name=${entry%%:*}
+        marker=${entry#*:}
+        echo "Applying ${name} to $2..."
+        if ! patch -p1 -N -F 0 -d "$2" < "$1/$name"; then
+            echo "ERROR: ${name} does not apply to libarchive ${LIBARCHIVE_VERSION}: rework it for this release (see \"The libarchive patches\" in native/BUILD.md)"
+            exit 1
+        fi
+        files=$(libarchive_patch_files "$1/$name") || exit
+        for file in $files; do
+            if ! grep -qF -e "$marker" "$2/$file"; then
+                echo "ERROR: $2/$file lacks the changes of ${name} (marker ${marker})"
+                exit 1
+            fi
+        done
+        echo "${name} applied"
+    done
 )
 
 # Detect number of CPU cores
