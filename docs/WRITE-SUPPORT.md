@@ -292,9 +292,20 @@ Level 0 stores the entries of a ZIP, 7-Zip or XAR archive uncompressed, whatever
 | ZIP | Method 0 (store): libarchive's ZIP writer switches to it at level 0, and the writer sets the level after the method | The method's own levels. For LZMA and XZ, level 9 is preset 9 with the extreme flag. For Zstandard, ZIP makes level 1 Zstandard's fastest level (`ZSTD_minCLevel()`, -131072, which hardly compresses) and levels 2 to 9 Zstandard's levels 2, 5, 8, 11, 13, 16, 19 and 22 |
 | 7-Zip | The Copy method, whose packed data is each entry's data as it is | The method's own levels; Zstandard gets levels 1 to 9 as they are, of its 22 |
 | XAR | The none method, which the table of contents records as `application/octet-stream` | The method's own levels |
-| Tar, Ustar, Pax, Cpio, ISO 9660 | The filter's level 0 | The filter's levels |
+| Tar, Ustar, Pax, Cpio, ISO 9660 | Depends on the filter, as below | Depends on the filter, as below |
 
-A filter reads the level as libarchive's filter does (see libarchive's `archive_write_set_options(3)`).
+Each filter takes the level as libarchive's filter does. A filter that has no levels, or does not take
+level 0, refuses it, and the writer ignores the refusal, so the filter keeps its default:
+
+| Filter | Level 0 | Levels 1 to 9 |
+|--------|---------|---------------|
+| `Gzip` | No compression: DEFLATE's stored blocks | DEFLATE's levels |
+| `Bzip2` | Level 1 | BZIP2's levels: blocks of 100 to 900 kB |
+| `Xz`, `Lzma` | Preset 0, the fastest | Presets 1 to 9 |
+| `Lzip` | libarchive's lzip level 0, with a 64 KiB dictionary | libarchive's lzip levels, with dictionaries of 1 to 32 MiB |
+| `Zstd` | Zstandard's default level, 3 | Zstandard's levels 1 to 9, of its 22 |
+| `Lz4` | Refused, as LZ4 takes levels 1 to 9: LZ4's default, level 1 | LZ4's levels; levels 3 to 9 use LZ4 HC |
+| `Compress` | Ignored: compress has no levels | Ignored |
 
 The default level, 6, is also the level that libarchive's ZIP, 7-Zip and XAR writers use by default, so a
 writer created without compression arguments writes the archive that libarchive writes by default.

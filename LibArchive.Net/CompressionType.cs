@@ -25,8 +25,9 @@ namespace LibArchive.Net;
 /// <c>application/octet-stream</c>. A type the format has no method for still throws. Levels 1 to 9 go to the
 /// method. For Zstandard, ZIP makes level 1 Zstandard's fastest level (<c>ZSTD_minCLevel()</c>, -131072) and
 /// levels 2 to 9 Zstandard's levels 2, 5, 8, 11, 13, 16, 19 and 22, while 7-Zip gives Zstandard levels 1 to 9
-/// as they are. A filter reads the level as libarchive's filter does (see libarchive's
-/// <c>archive_write_set_options(3)</c>).
+/// as they are. A filter takes the level as libarchive's filter does (see libarchive's
+/// <c>archive_write_set_options(3)</c>), and keeps its default where it refuses one: <see cref="Compress"/> has
+/// no levels, and <see cref="Lz4"/> takes levels 1 to 9, so at level 0 it keeps its default, level 1.
 /// </para>
 /// </remarks>
 public enum CompressionType

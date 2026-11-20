@@ -141,4 +141,55 @@ public class CompressionTypeTests
         Assert.That(archive.Take(SignatureOf(compression).Length), Is.EqualTo(SignatureOf(compression)), "the filter's output");
         AssertFiles(archive, ("a.txt", data));
     }
+
+    // What each filter does at level 0, as the write guide's table says. Where level 0 is another level, or a
+    // level that the filter refuses or ignores, the output is that level's; otherwise the header that the
+    // filter writes records the level. These filters' output does not depend on when it is written, except
+    // gzip's, whose header holds the time.
+    [Test]
+    public void TestFilterLevelZero([ValueSource(nameof(Filters))] CompressionType compression)
+    {
+        var data = CompressibleText(16 * 1024);
+        byte[] Tar(int level) => Write(ArchiveFormat.Tar, compression, level, ("a.txt", data));
+        var zero = Tar(0);
+
+        switch (compression)
+        {
+            case CompressionType.Gzip:
+                Assert.That(Contains(zero, data), Is.True, "stored blocks hold the data as it is");
+                break;
+            case CompressionType.Bzip2:
+                Assert.That(Encoding.ASCII.GetString(zero, 0, 4), Is.EqualTo("BZh1"), "bzip2 header");
+                Assert.That(zero, Is.EqualTo(Tar(1)), "level 1");
+                break;
+            case CompressionType.Xz:
+                // The xz stream header, then the first block's header: its size, flags (one filter, no sizes),
+                // the LZMA2 filter ID and properties size, and LZMA2's dictionary size
+                Assert.That(zero.Skip(13).Take(3), Is.EqualTo(new byte[] { 0x00, 0x21, 0x01 }), "xz block header");
+                Assert.That(zero[16], Is.EqualTo(Lzma2DictionarySize(LzmaPresetDictionaryLog[0])), "preset 0's dictionary");
+                break;
+            case CompressionType.Lzma:
+                // LZMA alone: the properties byte, then the dictionary size
+                Assert.That(ReadUInt32(zero, 1), Is.EqualTo(1u << LzmaPresetDictionaryLog[0]), "preset 0's dictionary");
+                break;
+            case CompressionType.Lzip:
+                // "LZIP", version 1, and the coded dictionary size, here a power of two, 2^16
+                // (archive_write_add_filter_xz.c:132-143, 239-268)
+                Assert.That(zero.Take(6), Is.EqualTo(new byte[] { 0x4c, 0x5a, 0x49, 0x50, 0x01, 16 }), "lzip header");
+                break;
+            case CompressionType.Zstd:
+                Assert.That(zero, Is.EqualTo(Tar(3)), "Zstandard's default level, 3");
+                break;
+            case CompressionType.Lz4:
+                Assert.That(zero, Is.EqualTo(Tar(1)), "LZ4's default level, 1, as it refuses level 0");
+                break;
+            case CompressionType.Compress:
+                Assert.That(zero, Is.EqualTo(Tar(9)), "the level is ignored");
+                break;
+            default:
+                Assert.Fail($"No assertion for {compression}");
+                break;
+        }
+        AssertFiles(zero, ("a.txt", data));
+    }
 }
