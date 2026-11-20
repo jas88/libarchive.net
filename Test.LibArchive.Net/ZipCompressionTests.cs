@@ -107,7 +107,13 @@ public class ZipCompressionTests
             return;
         }
 
-        var aes = (encryption == EncryptionType.AES128 ? (byte)1 : (byte)3, method);
+        byte strength = encryption switch
+        {
+            EncryptionType.AES128 => 1,
+            EncryptionType.AES192 => 2,
+            _ => 3,
+        };
+        var aes = (strength, method);
         Assert.That(entry.Method, Is.EqualTo(ZipAesMethod), "method in the central directory");
         Assert.That(entry.LocalMethod, Is.EqualTo(ZipAesMethod), "method in the local file header");
         Assert.That(entry.Aes, Is.EqualTo(aes), "AES extra field in the central directory");
@@ -120,7 +126,8 @@ public class ZipCompressionTests
 
     [Test]
     public void TestEncryptionKeepsTheMethod([ValueSource(nameof(Types))] CompressionType compression,
-        [Values(EncryptionType.AES256, EncryptionType.AES128, EncryptionType.Traditional)] EncryptionType encryption)
+        [Values(EncryptionType.AES256, EncryptionType.AES192, EncryptionType.AES128, EncryptionType.Traditional)]
+        EncryptionType encryption)
     {
         var zip = WriteSecret(WriterKind.File, compression, encryption);
 

@@ -220,7 +220,7 @@ internal static class ArchiveLayout
     }
 
     // The WinZip AES extra field (ID 0x9901, 7 bytes): vendor version, vendor ID "AE", key strength
-    // (1 for AES-128, 3 for AES-256) and the actual compression method
+    // (1, 2 or 3 for AES-128, AES-192 or AES-256) and the actual compression method
     private static (byte Strength, ushort Method)? AesExtraField(byte[] zip, int start, int length)
     {
         for (var i = start; i + 4 <= start + length; i += 4 + ReadUInt16(zip, i + 2))
