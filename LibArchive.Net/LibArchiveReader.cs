@@ -59,7 +59,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         // .NET Standard 2.0 doesn't have automatic RID resolution, so we need manual loading
         // Supported platforms:
         // - Windows: x64, x86, ARM64
-        // - Linux: x64, ARM, ARM64
+        // - Linux: x64, ARM, ARM64, each on glibc or musl
         // - macOS: x64, ARM64
         var arch = RuntimeInformation.ProcessArchitecture;
         var isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
@@ -1048,12 +1048,14 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         {
             var arch = RuntimeInformation.ProcessArchitecture switch
             {
-                Architecture.X64 => "linux-x64",
-                Architecture.Arm => "linux-arm",
-                Architecture.Arm64 => "linux-arm64",
+                Architecture.X64 => "x64",
+                Architecture.Arm => "arm",
+                Architecture.Arm64 => "arm64",
                 _ => throw new PlatformNotSupportedException($"Unsupported Linux architecture: {RuntimeInformation.ProcessArchitecture}")
             };
-            return (arch, "libarchive.so");
+            // glibc and musl each have a library of their own (see MuslDetection)
+            var libc = MuslDetection.IsMuslProcess() ? "linux-musl" : "linux";
+            return ($"{libc}-{arch}", "libarchive.so");
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {

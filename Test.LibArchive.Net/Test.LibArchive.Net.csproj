@@ -29,6 +29,14 @@
     </ItemGroup>
 
     <ItemGroup>
+        <!-- MuslDetection is internal to LibArchive.Net, which grants no InternalsVisibleTo: the
+             tests use its public API alone, and CI runs them against the package. So they compile
+             its source in, as a copy of their own, and test it on every target framework (see
+             MuslDetectionTests.cs). -->
+        <Compile Include="..\LibArchive.Net\MuslDetection.cs" Link="MuslDetection.cs" />
+    </ItemGroup>
+
+    <ItemGroup>
         <None Update="7ztest.7z" CopyToOutputDirectory="PreserveNewest" />
         <!-- Written by 7-Zip with AES-192 encryption; see ZipAesTests.cs -->
         <None Update="aes192test-p7zip.zip" CopyToOutputDirectory="PreserveNewest" />
