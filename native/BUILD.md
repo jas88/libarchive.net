@@ -257,9 +257,25 @@ in `build-linux-common.sh`):
   (non-weak) unresolved symbol: the toolchain links with `-z now` (BIND_NOW), so such
   a symbol left for the loader to find would make the library fail to load in any
   process that does not happen to define it.
+- In a glibc process the library's calls of C library functions go to glibc's, which
+  come first when the loader binds them, so glibc's code reads and writes the types
+  that musl's headers laid out. glibc's `pthread_mutex_init` clears 48 bytes on ARM64,
+  where musl's mutex is 40. So `link_libarchive` also links `linux-pthread-init.c`, with
+  `-Wl,--wrap=pthread_mutex_init` and `-Wl,--wrap=pthread_cond_init`: every mutex and
+  condition variable with default attributes (all that libxml2 makes) is cleared at
+  musl's size instead, which both C libraries take as initialised with default
+  attributes (see that file).
 - `verify_xar_support` fails the build unless the library defines libxml2's
   `xmlReaderForIO` and `xmlNewTextWriterMemory`, leaves no libxml2 symbol undefined,
   weak or strong, and does not contain the stubs' message.
+- `verify_libc_imports` fails the build if the library's code uses a C library symbol
+  that `linux-libc-imports.txt` does not list, or calls the C library's
+  `pthread_mutex_init` or `pthread_cond_init` other than from `linux-pthread-init.c`.
+  It reads the cross reference table of the map that `link_libarchive` writes beside
+  the library. Each new symbol must first be checked for what glibc's function reads
+  and writes against musl's headers, on x64, ARM64 and ARMv7: the list says how, and
+  marks the entries known to differ on ARMv7, where glibc's default functions use a
+  32-bit `off_t`.
 - `verify_self_contained` then fails the build if the library has a DT_NEEDED
   entry or a strong undefined dynamic symbol. Weak undefined symbols, such as
   zstd's optional `ZSTD_trace_*` hooks, are allowed: they resolve to null.
@@ -458,7 +474,8 @@ The built libraries are cached between runs, keyed on the contents of `native/**
 3. Update `download_all_libraries()` function
 4. Add build steps to each platform script
 5. Update linker commands to include the new library (for Linux, the archive list in `link_libarchive` in `build-linux-common.sh`)
-6. Test on all platforms
+6. On Linux, check any C library symbol that the new library uses and `linux-libc-imports.txt` does not list, and add it there: `verify_libc_imports` fails the build until then
+7. Test on all platforms
 
 Also add it to the update checker: see "Adding a library" in [scripts/README.md](../scripts/README.md).
 

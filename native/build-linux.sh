@@ -148,6 +148,10 @@ verify_crypto_backend libarchive.so
 # Fail the build unless the XAR reader and writer were linked in, with libxml2 (see build-linux-common.sh)
 verify_xar_support libarchive.so
 
+# Fail the build unless the library uses only the C library symbols in linux-libc-imports.txt,
+# which glibc processes bind to glibc's functions (see build-linux-common.sh)
+verify_libc_imports libarchive.so
+
 # Fail the build unless the library needs nothing at run time and loads, both in a
 # process that contains only musl and in one built with the host's gcc and C library
 # (see build-linux-common.sh)

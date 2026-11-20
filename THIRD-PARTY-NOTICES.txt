@@ -3,7 +3,8 @@ THIRD-PARTY NOTICES
 
 LibArchive.Net is licensed under the BSD 2-Clause licence in LICENSE.md. That
 licence covers the managed wrapper and the build scripts in this repository,
-and the interface code for lzokay in native/lzo-shim (see section 9).
+the interface code for lzokay in native/lzo-shim (see section 9), and
+native/linux-pthread-init.c, which the Linux libraries contain.
 
 The LibArchive.Net NuGet package also ships prebuilt native libraries
 (runtimes/<rid>/native/libarchive.so, libarchive.dylib and archive.dll). Code

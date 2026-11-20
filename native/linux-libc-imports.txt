@@ -1,0 +1,218 @@
+# The C library symbols that the code in the Linux libraries may use
+#
+# verify_libc_imports (build-linux-common.sh) fails the build if code linked into
+# libarchive.so, other than musl's libc.a and the compiler's libgcc.a, uses a symbol of
+# libc.a that this list does not name. The list holds what the x64, arm64 and arm libraries
+# use; an entry that only one of them uses says so.
+#
+# Why each needs checking: libarchive.so contains musl, and its code is compiled against
+# musl's headers. In a glibc process, though, its calls of these functions go to glibc's,
+# which come first when the dynamic loader binds them, so glibc's code then reads and writes
+# what musl's headers laid out. Where the two lay a type out differently, glibc's function
+# reads or writes the wrong bytes. glibc's pthread_mutex_init, for one, clears 48 bytes on
+# arm64, where musl's mutex is 40: linux-pthread-init.c initialises mutexes and condition
+# variables in its place. A name that musl's headers rename on arm, to the function with a
+# 64-bit time_t, binds to glibc's only where glibc has one of that name, and otherwise runs
+# musl's own.
+#
+# Before adding a symbol, compare what musl's headers and glibc's (for its default symbol
+# version) say that it reads and writes, on x64, arm64 and arm, and note any difference here.
+# The entries marked MISMATCH differ on arm (32-bit), where glibc's default functions use a
+# 32-bit off_t and 32-bit file system types and musl's are 64-bit. libarchive used them
+# before this list was made; they are not resolved yet.
+#
+# One symbol per line; "#" starts a comment.
+
+__clock_gettime64                # arm only, musl's clock_gettime with a 64-bit time_t; glibc 2.34+ has it too
+__ctime64_r                      # arm only, musl's ctime_r with a 64-bit time_t; glibc 2.34+ has it too
+__ctype_get_mb_cur_max
+__errno_location
+__fstat_time64                   # arm only, musl's fstat with a 64-bit time_t; not in glibc, so musl's runs
+__fstatat_time64                 # arm only, musl's fstatat with a 64-bit time_t; not in glibc, so musl's runs
+__futimens_time64                # arm only, musl's futimens with a 64-bit time_t; not in glibc, so musl's runs
+__futimesat_time64               # arm only, musl's futimesat with a 64-bit time_t; not in glibc, so musl's runs
+__gettimeofday_time64            # arm only, musl's gettimeofday with a 64-bit time_t; not in glibc, so musl's runs
+__gmtime64_r                     # arm only, musl's gmtime_r with a 64-bit time_t; glibc 2.34+ has it too
+__localtime64_r                  # arm only, musl's localtime_r with a 64-bit time_t; glibc 2.34+ has it too
+__lstat_time64                   # arm only, musl's lstat with a 64-bit time_t; not in glibc, so musl's runs
+__lutimes_time64                 # arm only, musl's lutimes with a 64-bit time_t; not in glibc, so musl's runs
+__mktime64                       # arm only, musl's mktime with a 64-bit time_t; glibc 2.34+ has it too
+__pthread_cond_timedwait_time64  # arm only, musl's pthread_cond_timedwait with a 64-bit time_t; not in glibc, so musl's runs, on a condition variable that glibc's functions initialise (liblzma's multithreaded encoder)
+__sched_cpucount
+__stat_time64                    # arm only, musl's stat with a 64-bit time_t; not in glibc, so musl's runs
+__time64                         # arm only, musl's time with a 64-bit time_t; glibc 2.34+ has it too
+__timegm_time64                  # arm only, musl's timegm with a 64-bit time_t; not in glibc, so musl's runs
+__utimensat_time64               # arm only, musl's utimensat with a 64-bit time_t; not in glibc, so musl's runs
+_exit
+abort
+bsearch
+calloc
+chdir
+chmod
+clock_gettime
+close
+closedir
+ctime_r
+dup
+dup2
+execvp
+exit
+fchdir
+fchmod
+fchown
+fclose
+fcntl
+fdopen
+fdopendir
+ferror
+fflush
+fgetc
+fgets
+fgetxattr
+fileno
+flistxattr
+fopen
+fpathconf
+fprintf
+fputc
+fputs
+fread
+free
+fseeko                           # MISMATCH on arm: glibc's uses a 32-bit off_t (fseeko64 is the 64-bit one)
+fsetxattr
+fstat
+fstatat
+fstatfs                          # MISMATCH on arm: glibc's struct has 32-bit block and file counts
+fstatvfs                         # MISMATCH on arm: glibc's struct has 32-bit block and file counts
+ftello                           # MISMATCH on arm: glibc's uses a 32-bit off_t (ftello64 is the 64-bit one)
+ftruncate                        # MISMATCH on arm: glibc's uses a 32-bit off_t (ftruncate64 is the 64-bit one)
+futimens
+futimesat
+fwrite
+getauxval                        # arm64 only (liblzma's CRC32 code)
+getenv
+geteuid
+getgid
+getgrgid_r
+getgrnam_r
+getpid
+getpwnam_r
+getpwuid_r
+gettimeofday
+getuid
+getxattr
+gmtime_r
+iconv
+iconv_close
+iconv_open
+ioctl
+isalnum
+issetugid
+lchmod
+lchown
+lgetxattr
+linkat
+listxattr
+lldiv
+llistxattr
+localtime_r
+lseek                            # MISMATCH on arm: glibc's uses a 32-bit off_t (lseek64 is the 64-bit one)
+lsetxattr
+lstat
+lutimes
+malloc
+mbrtowc
+memchr
+memcmp
+memcpy
+memmove
+memset
+mkdir
+mkfifo
+mknod
+mkstemp
+mktime
+open
+openat
+pipe
+poll
+pthread_cond_destroy
+pthread_cond_init                # only from linux-pthread-init.c
+pthread_cond_signal
+pthread_cond_timedwait
+pthread_cond_wait
+pthread_condattr_destroy
+pthread_condattr_init
+pthread_condattr_setclock
+pthread_create
+pthread_getspecific
+pthread_join
+pthread_key_create
+pthread_key_delete
+pthread_mutex_destroy
+pthread_mutex_init               # only from linux-pthread-init.c
+pthread_mutex_lock
+pthread_mutex_unlock
+pthread_once
+pthread_self
+pthread_setspecific
+pthread_sigmask
+qsort
+read
+readdir                          # MISMATCH on arm: glibc's struct dirent has a 32-bit d_ino and d_off
+readlink
+readlinkat
+realloc
+rename
+rmdir
+sched_getaffinity
+sigfillset
+snprintf
+sscanf
+stat
+stderr
+stdin
+stdout
+stpcpy
+strcat
+strchr
+strcmp
+strcpy
+strcspn
+strdup
+strerror
+strftime
+strlen
+strncmp
+strncpy
+strnlen
+strrchr
+strspn
+strstr
+strtoimax
+strtol
+strtoul
+strtoumax
+symlink
+sysconf
+time
+timegm
+tolower
+toupper
+tzset
+umask
+uname
+ungetc
+unlink
+unlinkat
+utimensat
+vfork
+vfprintf
+vsnprintf
+waitpid
+wcrtomb
+wcschr
+wcslen
+wmemcmp
+wmemmove
+write

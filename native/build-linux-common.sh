@@ -102,9 +102,15 @@ build_libxml2() {
 # references, such as zstd's optional ZSTD_trace_* hooks, are still allowed: they
 # resolve to null when nothing defines them.
 #
+# linux-pthread-init.c is linked in too, with -Wl,--wrap=pthread_mutex_init and
+# -Wl,--wrap=pthread_cond_init, so that every call of either in the library goes to it
+# (see that file). The link also writes a map with a cross reference table,
+# <library>.map, from which verify_libc_imports finds the C library symbols that the
+# library's code uses.
+#
 # To link another static library, add it to the archive list below.
 # Usage: link_libarchive <library>
-# Uses CC, PREFIX and TOOLCHAIN_SYSROOT.
+# Uses CC, PREFIX, SCRIPT_DIR and TOOLCHAIN_SYSROOT.
 link_libarchive() {
     local lib="${1:-}"
     if [ -z "$lib" ]; then
@@ -112,7 +118,7 @@ link_libarchive() {
         return 1
     fi
     local var
-    for var in CC PREFIX TOOLCHAIN_SYSROOT; do
+    for var in CC PREFIX SCRIPT_DIR TOOLCHAIN_SYSROOT; do
         if [ -z "${!var:-}" ]; then
             echo "ERROR: link_libarchive needs ${var} to be set"
             return 1
@@ -145,8 +151,13 @@ link_libarchive() {
         "$libgcc"
         "$TOOLCHAIN_SYSROOT/lib/libc.a"
     )
+    local pthread_init=linux-pthread-init.o
+    "${cc[@]}" -c -O2 -fPIC -Wall -Wextra -o "$pthread_init" "${SCRIPT_DIR}/linux-pthread-init.c" || return
     local -a link=(
         "${cc[@]}" -shared -nostdlib -o "$lib" "-Wl,-z,defs"
+        "-Wl,--wrap=pthread_mutex_init" "-Wl,--wrap=pthread_cond_init"
+        "-Wl,-Map=${lib}.map" "-Wl,--cref"
+        "$pthread_init"
         "-Wl,--whole-archive" "$PREFIX/lib/libarchive.a" "-Wl,--no-whole-archive"
         "-Wl,--start-group" "${archives[@]}" "-Wl,--end-group"
     )
@@ -290,6 +301,106 @@ verify_xar_support() {
         return 1
     fi
     echo "XAR reader and writer present, with libxml2 linked in and none of it undefined"
+}
+
+# Fail the build unless the code linked into a library uses only the C library symbols that
+# linux-libc-imports.txt (in this directory) names, and calls the C library's
+# pthread_mutex_init and pthread_cond_init only from linux-pthread-init.c. In a glibc process
+# those calls go to glibc's functions, which must agree with musl's headers on what they read
+# and write (see linux-libc-imports.txt), so a new one fails the build until it has been
+# checked and listed.
+# The symbols come from the cross reference table of the map that link_libarchive writes,
+# <library>.map: each symbol that musl's libc.a defines and that an object other than the
+# members of libc.a and libgcc.a refers to.
+# Usage: verify_libc_imports <library>
+# Uses AR to find the toolchain's nm, and SCRIPT_DIR.
+verify_libc_imports() {
+    local lib="${1:-}"
+    if [ -z "$lib" ]; then
+        echo "ERROR: verify_libc_imports needs the library to check as its argument"
+        return 1
+    fi
+    local var
+    for var in AR SCRIPT_DIR; do
+        if [ -z "${!var:-}" ]; then
+            echo "ERROR: verify_libc_imports needs ${var} to be set"
+            return 1
+        fi
+    done
+    local map="${lib}.map" list="${SCRIPT_DIR}/linux-libc-imports.txt"
+    if [ ! -f "$map" ]; then
+        echo "ERROR: ${map} does not exist: link ${lib} with link_libarchive, which writes it"
+        return 1
+    fi
+    if [ ! -f "$list" ]; then
+        echo "ERROR: ${list} does not exist"
+        return 1
+    fi
+
+    echo "=== Verifying the C library symbols that ${lib} uses ==="
+    # Only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
+    local nm="${AR%ar}nm" undefined imports unlisted direct
+    if ! undefined=$("$nm" -D --undefined-only "$lib"); then
+        echo "ERROR: could not read the dynamic symbols of ${lib} with ${nm}"
+        return 1
+    fi
+    # One line per symbol: the symbol, a tab, then the objects that refer to it. In the
+    # table, each entry is the symbol at the start of a line, then the files that define it
+    # and those that refer to it, one per line from column 51 (from 2 columns after the
+    # symbol on its own line, when the symbol is longer than 49 characters). The library's
+    # undefined (weak) symbols are left out: nothing defines them, so their entries list
+    # references only.
+    imports=$(awk -v undefined=" $(awk 'NF >= 2 {printf "%s ", $NF}' <<< "$undefined")" '
+        function in_archive(file, name) { return index(file, name ".a(") == 1 || index(file, "/" name ".a(") > 0 }
+        function flush() {
+            if (sym != "" && in_archive(def, "libc") && refs != "" && index(undefined, " " sym " ") == 0)
+                print sym "\t" refs
+            sym = ""; def = ""; refs = ""
+        }
+        /^Cross Reference Table/ { table = 1; next }
+        !table || /^Symbol / || /^$/ { next }
+        /^[^ ]/ {
+            flush()
+            sym = $1
+            def = (length(sym) < 50) ? substr($0, 51) : substr($0, length(sym) + 2)
+            next
+        }
+        {
+            file = substr($0, 51)
+            if (!in_archive(file, "libc") && !in_archive(file, "libgcc")) {
+                sub(/^.*\//, "", file)
+                refs = refs (refs == "" ? "" : " ") file
+            }
+        }
+        END { flush() }' "$map")
+    if [ -z "$imports" ]; then
+        echo "ERROR: the cross reference table of ${map} names no C library symbol that ${lib} uses"
+        return 1
+    fi
+
+    local failed=0
+    unlisted=$(awk 'NR == FNR { sub(/#.*/, ""); if (NF) listed[$1] = 1; next }
+        !($1 in listed) { print "  " $1 ", used by " substr($0, index($0, "\t") + 1) }' "$list" - <<< "$imports")
+    if [ -n "$unlisted" ]; then
+        echo "ERROR: ${lib} uses these C library symbols, which ${list##*/} does not list:"
+        echo "$unlisted"
+        echo "In a glibc process glibc's functions run in their place. Check, for x64, arm64 and arm,"
+        echo "that glibc's read and write what musl's headers lay out, then add them to the list."
+        failed=1
+    fi
+    direct=$(awk '$1 == "pthread_mutex_init" || $1 == "pthread_cond_init" {
+        n = split(substr($0, index($0, "\t") + 1), refs, " ")
+        for (i = 1; i <= n; i++) if (refs[i] != "linux-pthread-init.o") print "  " $1 ", used by " refs[i] }' <<< "$imports")
+    if [ -n "$direct" ]; then
+        echo "ERROR: ${lib} calls the C library's pthread_mutex_init or pthread_cond_init other than from"
+        echo "linux-pthread-init.c, so that link_libarchive's -Wl,--wrap did not take effect:"
+        echo "$direct"
+        failed=1
+    fi
+    if [ "$failed" -ne 0 ]; then
+        return 1
+    fi
+    echo "$(wc -l <<< "$imports" | tr -d ' ') C library symbols used, all of them listed; pthread_mutex_init and pthread_cond_init only through linux-pthread-init.c"
 }
 
 # Fail the build unless a linked library is self-contained: no DT_NEEDED entry (no other
