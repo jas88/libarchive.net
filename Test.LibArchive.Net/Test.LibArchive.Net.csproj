@@ -47,5 +47,7 @@
         <None Update="test-password.zip" CopyToOutputDirectory="PreserveNewest" />
         <!-- Written by the bsdtar of macOS; see XarTests.cs -->
         <None Update="xartest.xar" CopyToOutputDirectory="PreserveNewest" />
+        <!-- Written by Python's zipfile; see ZipZstdTests.cs -->
+        <None Update="zstdtest-python.zip" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 </Project>

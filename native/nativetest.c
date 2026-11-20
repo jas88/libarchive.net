@@ -186,6 +186,87 @@ static int check_xar(void)
   return ok;
 }
 
+/*
+ * Fail unless a zip entry of 128 KiB, compressed with Zstandard, reads back in full from memory,
+ * which libarchive reads as a seekable source (native/libarchive-zip-zstd-end-of-entry.patch).
+ * Its data ends just as the zip reader's buffer, of ZSTD_DStreamOutSize() bytes, fills.
+ */
+static int check_zip_zstd_end(void)
+{
+  static char data[131072], buf[65536], got[4096];
+  size_t used = 0, total = 0, i;
+  struct archive *a;
+  struct archive_entry *e;
+  la_ssize_t n = 0;
+  int ok = 1;
+
+  for (i = 0; i < sizeof data; i++)
+    data[i] = "Zstandard zip entry\n"[i % 20];
+  e = archive_entry_new();
+  if (e == NULL) {
+    printf("FAIL: archive_entry_new returned NULL\n");
+    return 0;
+  }
+  archive_entry_set_pathname(e, "zstd.txt");
+  archive_entry_set_filetype(e, AE_IFREG);
+  archive_entry_set_perm(e, 0644);
+  archive_entry_set_size(e, sizeof data);
+  a = archive_write_new();
+  if (a == NULL) {
+    printf("FAIL: archive_write_new returned NULL\n");
+    ok = 0;
+  } else if (archive_write_set_format_zip(a) != ARCHIVE_OK
+      || archive_write_set_options(a, "zip:compression=zstd") != ARCHIVE_OK
+      || archive_write_open_memory(a, buf, sizeof buf, &used) != ARCHIVE_OK
+      || archive_write_header(a, e) != ARCHIVE_OK
+      || archive_write_data(a, data, sizeof data) != (la_ssize_t)sizeof data
+      || archive_write_close(a) != ARCHIVE_OK) {
+    printf("FAIL: writing the Zstandard zip entry: %s\n", text(archive_error_string(a)));
+    ok = 0;
+  }
+  if (a != NULL)
+    archive_write_free(a);
+  archive_entry_free(e);
+  if (!ok)
+    return 0;
+  /* Local file header: compression method at 8, 93 for Zstandard */
+  if (used < 30 || memcmp(buf, "PK\3\4", 4) != 0 || buf[8] != 93 || buf[9] != 0) {
+    printf("FAIL: the zip entry is not compressed with Zstandard\n");
+    return 0;
+  }
+  a = archive_read_new();
+  if (a == NULL) {
+    printf("FAIL: archive_read_new returned NULL\n");
+    return 0;
+  }
+  if (archive_read_support_format_zip(a) != ARCHIVE_OK
+      || archive_read_open_memory(a, buf, used) != ARCHIVE_OK
+      || archive_read_next_header(a, &e) != ARCHIVE_OK) {
+    printf("FAIL: reading the Zstandard zip entry: %s\n", text(archive_error_string(a)));
+    ok = 0;
+  } else {
+    while (ok && (n = archive_read_data(a, got, sizeof got)) > 0) {
+      if ((size_t)n > sizeof data - total || memcmp(got, data + total, (size_t)n) != 0) {
+        printf("FAIL: the Zstandard zip entry's data differs at or after byte %zu\n", total);
+        ok = 0;
+      }
+      total += (size_t)n;
+    }
+    if (ok && n < 0) {
+      printf("FAIL: reading the Zstandard zip entry after %zu of %zu bytes: %s\n", total,
+          sizeof data, text(archive_error_string(a)));
+      ok = 0;
+    } else if (ok && total != sizeof data) {
+      printf("FAIL: the Zstandard zip entry read back as %zu bytes, not %zu\n", total, sizeof data);
+      ok = 0;
+    }
+  }
+  archive_read_free(a);
+  if (ok)
+    printf("Zstandard zip entry of 128 KiB: OK\n");
+  return ok;
+}
+
 int main(void) {
   int ok=1;
   printf("archive_zlib_version=%s\n",text(archive_zlib_version()));
@@ -200,5 +281,6 @@ int main(void) {
   ok = (archive_libzstd_version() != NULL)?ok:0;
   ok = check_utf8_names()?ok:0;
   ok = check_xar()?ok:0;
+  ok = check_zip_zstd_end()?ok:0;
   return ok==0;
 }

@@ -84,6 +84,8 @@ they are applied, each with its marker, which every file that it changes carries
   deprecated `LZ4_resetStreamHC()`.
 - `libarchive-zip-aes192.patch` (`LIBARCHIVE_NET_ZIP_AES192`): the zip writer can encrypt with WinZip
   AES-192.
+- `libarchive-zip-zstd-end-of-entry.patch` (`LIBARCHIVE_NET_ZIP_ZSTD_END_OF_ENTRY`): the zip reader
+  ends a Zstandard entry where its data ends, even if that fills the reader's buffer.
 
 The description at the top of each patch lists its changes.
 
@@ -137,6 +139,20 @@ LibArchive.Net's `EncryptionType.AES192` sets the option that the patch adds, `e
 `Test.LibArchive.Net/ZipAesTests.cs` checks the headers and the encryption of what the writer
 writes, and reads an archive that 7-Zip encrypted with AES-192.
 
+`libarchive-zip-zstd-end-of-entry.patch` fixes a bug in libarchive's zip reader, which libarchive
+3.8.11 and libarchive's master branch both have. The reader decompresses a Zstandard entry
+(method 93) into a buffer of `ZSTD_DStreamOutSize()` bytes, 128 KiB. It ended an entry whose sizes
+it knows only if the entry's data ended with part of that buffer unused, so an entry of 128 KiB, or
+of a multiple of 128 KiB, failed with "Truncated zstd file body". The reader knows the sizes of
+every entry that it reads from a file or a seekable stream, and of an entry whose local header
+holds them, as Python's zipfile writes them. The patch ends such an entry once
+`ZSTD_decompressStream()` reports the end of a frame and none of the entry's compressed bytes are
+left; any that are left hold another frame, so an entry of several frames still reads in full. An
+entry whose sizes follow its data (`ZIP_LENGTH_AT_END`), read from a non-seekable stream, still
+ends with its first frame, as before. `Test.LibArchive.Net/ZipZstdTests.cs` reads such entries, as
+Python's zipfile and LibArchive.Net's own writer write them, from a path, a seekable stream and a
+non-seekable stream.
+
 - `patch_libarchive` (in `build-config.sh`) applies them to the freshly unpacked sources in every
   build script: `build-macos.sh`, the three `build-linux*.sh` scripts and `build-windows.sh`, each
   of which unpacks the sources afresh on every run. It applies one patch at a time, in order, to
@@ -148,7 +164,9 @@ writes, and reads an archive that 7-Zip encrypted with AES-192.
 - The macOS native test (`nativetest.c`) and the Linux load test (`write_load_test_source` in
   `build-linux-common.sh`) fail the build unless the linked library's narrow strings are UTF-8 in
   the "C" locale: a name converts between narrow and wide strings as UTF-8, and a zip entry keeps
-  its UTF-8 name, with the UTF-8 flag, and reads back unchanged. The Windows DLLs are
+  its UTF-8 name, with the UTF-8 flag, and reads back unchanged. They also fail it unless a zip
+  entry of 128 KiB that they compress with Zstandard into memory reads back in full from there,
+  as from any seekable source (`libarchive-zip-zstd-end-of-entry.patch`). The Windows DLLs are
   cross-compiled, so the build cannot run them: the .NET tests check them on Windows (the
   `test-net462` job, which runs them on .NET Framework 4.6.2 and on modern .NET).
 - `scripts/check-native-updates.sh` proposes a new libarchive release only if the patches still
