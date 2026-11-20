@@ -12,6 +12,15 @@ v0.3.2 - unreleased
 - Add a `net11.0` build. The package is now built with the .NET 11 SDK.
 - Drop the `net8.0` and `net9.0` builds, as .NET 8 and .NET 9 have reached end of support. The package now ships `netstandard2.0`, `net10.0` and `net11.0` builds, so apps targeting .NET 8 or .NET 9 get the .NET Standard 2.0 build. That build is not marked as trimming or Native AOT compatible: target .NET 10 or later for those.
 
+**Linux Native Libraries:**
+- Ship a native library of its own for each Linux runtime, linked dynamically against that runtime's C library, in place of one library per architecture with musl linked into it, which the glibc and musl runtimes shared. The libraries need:
+  - glibc 2.28 or later for `linux-x64` and `linux-arm64` (RHEL 8 and later);
+  - glibc 2.34 or later for `linux-arm`, which is built with a 64-bit `time_t` and `off_t`. On an older glibc the dynamic loader refuses to load it, where the previous library crashed or misbehaved;
+  - musl 1.2.5 or later (Alpine 3.21 and later) for `linux-musl-x64`, `linux-musl-arm64` and `linux-musl-arm`.
+- The .NET Standard 2.0 build loads the `linux-musl-<arch>` library in a musl process, which it recognises from musl's dynamic linker in `/proc/self/maps`. .NET 6 and later choose between the two libraries from the runtime identifier.
+- The Linux libraries export libarchive's API (`archive_*`) alone, and no longer the functions of the libraries linked into them, such as zlib's and zstd's, which other code in the process could bind to or take the place of.
+- The Linux libraries are built with zig. CI load-tests each of them in containers of old and current distributions, and runs the package's tests on .NET in Alpine x64 as well as on Ubuntu.
+
 v0.3.1 - April 7, 2026
 
 **Native Library Updates:**

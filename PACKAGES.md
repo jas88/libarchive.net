@@ -73,8 +73,12 @@ using var reader = new LibArchiveReader(volumes);
 - ZIP encryption uses the operating system's cryptography (CNG)
 
 #### Linux
-- Native library built with musl-libc and linked into one self-contained file, so the same library serves the glibc and musl runtimes
-- Compatible with both glibc and musl-based distributions
+- Each runtime has a native library of its own, linked dynamically against that runtime's C library, which it needs at run time:
+  - `linux-x64` and `linux-arm64`: glibc 2.28 or later (RHEL 8 and later)
+  - `linux-arm`: glibc 2.34 or later; an older glibc refuses to load it
+  - `linux-musl-x64`, `linux-musl-arm64` and `linux-musl-arm`: musl 1.2.5 or later (Alpine 3.21 and later)
+- The 32-bit ARM libraries are built for ARMv7-A with VFPv3-D16, without NEON
+- ZIP encryption uses the Mbed TLS crypto library, which the native libraries contain
 
 #### macOS
 - Universal binary supporting both Intel (x64) and Apple Silicon (ARM64)
@@ -103,7 +107,7 @@ The package is annotated with trim analysis attributes to ensure safe trimming b
 Each native library is libarchive with these libraries statically linked into it. Their versions are pinned in [native/build-config.sh](native/build-config.sh), and their licence notices are in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt), which the package also contains.
 
 - **All platforms**: zlib, bzip2, liblzma (XZ Utils), Zstandard, LZ4, libxml2, for the XAR format, and lzokay, which provides lzop support in place of the GPL-licensed liblzo2
-- **Linux**: the Mbed TLS crypto library (for ZIP AES encryption and digests; Windows and macOS use the operating system's cryptography instead) and musl libc
+- **Linux**: the Mbed TLS crypto library (for ZIP AES encryption and digests; Windows and macOS use the operating system's cryptography instead). The Linux libraries use the system's C library, glibc or musl, which is not in the package
 
 They also contain some code from their build toolchains, which THIRD-PARTY-NOTICES.txt describes as well.
 

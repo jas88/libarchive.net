@@ -11,7 +11,7 @@
 - **Write** archives: ZIP, 7-Zip, TAR, Ustar, PAX, CPIO, ISO 9660, XAR
 - **Compression**: ZIP, 7-Zip and XAR entries with the format's own methods (ZIP: DEFLATE, BZIP2, LZMA, XZ, Zstandard; 7-Zip: LZMA, LZMA2, DEFLATE, BZIP2, Zstandard; XAR: gzip, BZIP2, LZMA, XZ), and other archives with Gzip, Bzip2, XZ, LZMA, LZ4, Zstd, Compress or LZIP filters
 - **Encryption**: ZIP only, for reading and writing: AES-128, AES-192, AES-256 and traditional PKWARE. 7-Zip encryption is not supported by libarchive
-- **Platform support**: Windows (x86, x64, ARM64), Linux (x64, ARM64, ARM), macOS (x64, ARM64)
+- **Platform support**: Windows (x86, x64, ARM64), Linux (x64, ARM64, ARM; glibc and musl), macOS (x64, ARM64)
 - **Native AOT** and trimming compatible (.NET 10+)
 - **.NET Standard 2.0** support for .NET Framework 4.6.1+
 
@@ -142,9 +142,11 @@ Native libraries for all supported platforms are included in the NuGet package.
 | Platform | Architectures |
 |----------|---------------|
 | Windows | x86, x64, ARM64 |
-| Linux (glibc) | x64, ARM64, ARM |
-| Linux (musl/Alpine) | x64, ARM64, ARM |
+| Linux with glibc 2.28 or later (2.34 or later on ARM) | x64, ARM64, ARM |
+| Linux with musl 1.2.5 or later (Alpine 3.21 or later) | x64, ARM64, ARM |
 | macOS | x64, ARM64 (Apple Silicon) |
+
+Each Linux runtime has a native library of its own, linked against its C library: `linux-x64`, `linux-arm64` and `linux-arm` against glibc, and `linux-musl-x64`, `linux-musl-arm64` and `linux-musl-arm` against musl. The ARM (32-bit) libraries are built for ARMv7-A with VFPv3-D16, without NEON.
 
 ## API Reference
 
