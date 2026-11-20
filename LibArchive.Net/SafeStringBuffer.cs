@@ -48,4 +48,35 @@ public class SafeStringBuffer : SafeHandleZeroOrMinusOneIsInvalid
         Marshal.FreeCoTaskMem(handle);
         return true;
     }
+
+    /// <summary>
+    /// Reads a NUL-terminated UTF-8 string, such as one that libarchive returns, from unmanaged
+    /// memory, or returns null for a null pointer. A byte sequence that is not valid UTF-8 becomes
+    /// U+FFFD.
+    /// </summary>
+    /// <remarks>
+    /// libarchive's narrow strings are UTF-8 on every platform (native/libarchive-narrow-utf8.patch),
+    /// so they are not read with <c>Marshal.PtrToStringAnsi</c>, which takes the ANSI code page on
+    /// Windows, or <c>Marshal.PtrToStringAuto</c>, which reads UTF-16 there. .NET Standard 2.0 has no
+    /// <c>Marshal.PtrToStringUTF8</c>, so there the terminator is found one byte at a time and the
+    /// bytes are decoded in place: a vectorised search, such as IndexOf over a span longer than the
+    /// string, could read past the terminator into memory that is not mapped.
+    /// </remarks>
+    internal static string? PtrToStringUTF8(IntPtr ptr)
+    {
+#if NETSTANDARD2_0
+        if (ptr == IntPtr.Zero)
+            return null;
+        unsafe
+        {
+            var start = (byte*)ptr;
+            var end = start;
+            while (*end != 0)
+                end++;
+            return Encoding.UTF8.GetString(start, checked((int)(end - start)));
+        }
+#else
+        return Marshal.PtrToStringUTF8(ptr);
+#endif
+    }
 }

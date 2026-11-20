@@ -335,37 +335,7 @@ public partial class LibArchiveWriter : SafeHandleZeroOrMinusOneIsInvalid
 
     private string GetErrorMessage()
     {
-        return PtrToStringUTF8(archive_error_string(handle)) ?? "Unknown error";
-    }
-
-    private static string? PtrToStringUTF8(IntPtr ptr)
-    {
-#if NETSTANDARD2_0
-        if (ptr == IntPtr.Zero)
-            return null;
-
-        // Find null terminator
-        var length = 0;
-        unsafe
-        {
-            byte* p = (byte*)ptr;
-            while (p[length] != 0)
-            {
-                length++;
-                if (length > 1000000) // Safety limit
-                    throw new InvalidOperationException("UTF-8 string too long or not null-terminated");
-            }
-        }
-
-        if (length == 0)
-            return string.Empty;
-
-        var bytes = new byte[length];
-        Marshal.Copy(ptr, bytes, 0, length);
-        return System.Text.Encoding.UTF8.GetString(bytes);
-#else
-        return Marshal.PtrToStringUTF8(ptr);
-#endif
+        return SafeStringBuffer.PtrToStringUTF8(archive_error_string(handle)) ?? "Unknown error";
     }
 
     #endregion
