@@ -33,15 +33,16 @@ SHA256 checksums, so neither is repeated here.
    downloads the new tarball from the `<NAME>_URL` that the copy sets, and
    rewrites the copy's `<NAME>_SHA256` line with that tarball's checksum. If any
    of this fails (a line cannot be rewritten, `<NAME>_URL` is not set, the download
-   fails or no SHA256 can be computed, or, for libarchive, this project's patch
-   `native/libarchive-narrow-utf8.patch` does not apply to the new release the way
-   the builds apply it: see "The libarchive patch" in
-   [native/BUILD.md](../native/BUILD.md)), the file keeps that library's current
-   version and checksum, and the library is left out of the pull request and
-   reported as a failed check. Otherwise the update is first recorded for the pull
-   request, and only then does the copy replace the file, in one step: it is
-   written to a temporary file in `native/`, which takes the file's mode and is
-   renamed over it with `mv -f`. If the record cannot be written or the
+   fails or no SHA256 can be computed, or, for libarchive, one of this project's
+   patches, which `LIBARCHIVE_PATCHES` in that file lists, does not apply to the new
+   release: the script applies them to it with the builds' own `patch_libarchive`,
+   in order and without fuzz, and names the patch that fails; see "The libarchive
+   patches" in [native/BUILD.md](../native/BUILD.md)), the file keeps that
+   library's current version and checksum, and the library is left out of the pull
+   request and reported as a failed check. Otherwise the update is first recorded
+   for the pull request, and only then does the copy replace the file, in one step:
+   it is written to a temporary file in `native/`, which takes the file's mode and
+   is renamed over it with `mv -f`. If the record cannot be written or the
    replacement fails, the script removes any temporary file and stops before step
    4 with exit status 1, leaving the file as it was before that update (updates
    applied earlier in the run stay in it).

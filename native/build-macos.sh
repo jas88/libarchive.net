@@ -46,7 +46,7 @@ export lt_cv_apple_cc_single_mod=no
 echo "Setting up library sources..."
 download_all_libraries
 
-# Every narrow string UTF-8, whatever the locale (see "The libarchive patch" in BUILD.md)
+# Apply the libarchive patches, in order (see "The libarchive patches" in BUILD.md)
 patch_libarchive "${SCRIPT_DIR}" "libarchive-${LIBARCHIVE_VERSION}"
 
 # Build compression libraries: only the static library and headers of each, which is
@@ -133,8 +133,8 @@ verify_lzo_support libarchive.dylib -arch x86_64
 
 echo "Building native test..."
 # It also fails unless names are UTF-8 in the "C" locale, which it runs in, as a .NET
-# process does: the libarchive patch is in the library (see BUILD.md). Its zip writer
-# brings in libarchive's table of every writer, the XAR one (libxml2) among them.
+# process does: libarchive-narrow-utf8.patch is in the library (see BUILD.md). Its zip
+# writer brings in libarchive's table of every writer, the XAR one (libxml2) among them.
 gcc -o nativetest "${SCRIPT_DIR}/nativetest.c" local/lib/libarchive.a -Llocal/lib -Ilocal/include -lxml2 -llz4 -lzstd -llzma -lz -liconv -lbz2
 ./nativetest
 

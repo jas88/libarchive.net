@@ -1,11 +1,11 @@
-UTF-8 for every narrow string, whatever the locale of the process; and no call to
-lz4's deprecated LZ4_resetStreamHC().
+UTF-8 for every narrow string, whatever the locale of the process.
 
-Applied by patch_libarchive (native/build-config.sh) to the libarchive release pinned
-in native/build-config.sh, by every build: macOS, Linux and Windows. A build fails if
-any hunk does not apply exactly (no fuzz), and scripts/check-native-updates.sh will
-not propose a libarchive release that it does not apply to. See "The libarchive
-patch" in native/BUILD.md.
+One of this project's patches to libarchive, which every build (macOS, Linux and
+Windows) applies with patch_libarchive (native/build-config.sh), to the libarchive
+release pinned there, in the order that LIBARCHIVE_PATCHES there lists them. A build
+fails if any hunk does not apply exactly (no fuzz), and scripts/check-native-updates.sh
+will not propose a libarchive release that it does not apply to. See "The libarchive
+patches" in native/BUILD.md.
 
 LibArchive.Net passes UTF-8 to libarchive's narrow (char *) functions and decodes
 every narrow string it gets back as UTF-8. libarchive instead takes narrow strings to
@@ -51,19 +51,8 @@ side of each conversion:
    archive_wstring_append_from_mbs_in_codepage() no longer passes MB_PRECOMPOSED
    with it.
 
-One change has nothing to do with character sets:
-
-6. The lz4 writer (archive_write_add_filter_lz4.c) no longer calls
-   LZ4_resetStreamHC(), which lz4 1.11.0 deprecates, so that compiling it does not
-   warn. In lz4 1.11.1 that function is LZ4_initStreamHC(s, sizeof(*s)) followed by
-   setting the compression level (lz4hc.c); in its place the writer makes the two
-   calls that lz4hc.h names, LZ4_initStreamHC(s, sizeof(LZ4_streamHC_t)) and
-   LZ4_resetStreamHC_fast(s, level), which leave the stream in the same state. With
-   an lz4 older than 1.9.0, which lacks them, it still calls LZ4_resetStreamHC().
-
-Changes 1-5 are marked LIBARCHIVE_NET_NARROW_UTF8 and change 6
-LIBARCHIVE_NET_LZ4_INIT_STREAM_HC; patch_libarchive checks that every file the patch
-changes has its marker.
+Each change is marked LIBARCHIVE_NET_NARROW_UTF8, the marker that LIBARCHIVE_PATCHES
+gives this patch: patch_libarchive checks that every file the patch changes has it.
 
 --- a/libarchive/archive_string.c
 +++ b/libarchive/archive_string.c
@@ -370,27 +359,3 @@ changes has its marker.
  		}
  	}
  	/* Reject empty or overlong pathnames */
---- a/libarchive/archive_write_add_filter_lz4.c
-+++ b/libarchive/archive_write_add_filter_lz4.c
-@@ -526,7 +526,21 @@
- 		if (lz4->lz4_stream == NULL) {
- #if LZ4_VERSION_MAJOR >= 1 && LZ4_VERSION_MINOR >= 7
- 			lz4->lz4_stream = LZ4_createStreamHC();
-+#if LZ4_VERSION_NUMBER >= 10900
-+			/*
-+			 * LIBARCHIVE_NET_LZ4_INIT_STREAM_HC: lz4 1.11.0
-+			 * deprecates LZ4_resetStreamHC(), which initialises the
-+			 * state as sizeof(LZ4_streamHC_t) bytes and then sets
-+			 * the level. lz4hc.h names these two calls (lz4 1.9.0
-+			 * and later) in its place: they do the same.
-+			 */
-+			LZ4_initStreamHC(lz4->lz4_stream,
-+			    sizeof(LZ4_streamHC_t));
-+			LZ4_resetStreamHC_fast(lz4->lz4_stream,
-+			    lz4->compression_level);
-+#else
- 			LZ4_resetStreamHC(lz4->lz4_stream, lz4->compression_level);
-+#endif
- #else
- 			lz4->lz4_stream =
- 			    LZ4_createHC(lz4->in_buffer_allocated);

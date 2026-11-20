@@ -59,7 +59,17 @@ it, so libarchive itself is not patched.
   strong (non-weak) unresolved symbol as well (see "How the library is linked and
   tested" below).
 
-### The libarchive patch
+### The libarchive patches
+
+Every build patches libarchive's sources with this project's patches, which are in this directory,
+one for each change. `LIBARCHIVE_PATCHES` in `build-config.sh` lists them, in the order in which
+they are applied, each with the marker that its changes carry in their comments:
+
+- `libarchive-narrow-utf8.patch` (`LIBARCHIVE_NET_NARROW_UTF8`): every narrow string is UTF-8.
+- `libarchive-lz4-init-stream-hc.patch` (`LIBARCHIVE_NET_LZ4_INIT_STREAM_HC`): no call to lz4's
+  deprecated `LZ4_resetStreamHC()`.
+
+The description at the top of each patch lists its changes.
 
 LibArchive.Net passes UTF-8 to libarchive's narrow (`char *`) functions and decodes every narrow
 string that libarchive returns as UTF-8, on every platform. libarchive itself takes narrow strings
@@ -89,9 +99,9 @@ narrow and wide strings are converted with libarchive's own UTF-8 code; on Windo
 OEM code pages are UTF-8, so Windows converts them as UTF-8, and names in formats that declare no
 character set are not converted, as on every other platform. Names read on macOS are NFC (composed)
 as on every other platform instead of NFD, and the zip writer sets the UTF-8 flag on non-ASCII
-names. The description at the top of the patch lists each change.
+names.
 
-The patch makes one more change, which has nothing to do with character sets. libarchive's lz4
+`libarchive-lz4-init-stream-hc.patch` has nothing to do with character sets. libarchive's lz4
 writer calls `LZ4_resetStreamHC()`, which lz4 1.11.0 deprecates, so every build warned. The patch
 makes, in its place, the two calls that `lz4hc.h` names for it: `LZ4_initStreamHC()` on
 `sizeof(LZ4_streamHC_t)` bytes, then `LZ4_resetStreamHC_fast()` with the compression level. lz4's
@@ -100,24 +110,31 @@ the stream is left exactly as before and compresses to the same bytes. Defining 
 `LZ4_DISABLE_DEPRECATE_WARNINGS` instead would also hide any other deprecated call, such as one
 that a later libarchive release makes.
 
-- `patch_libarchive` (in `build-config.sh`) applies it to the freshly unpacked sources in every
+- `patch_libarchive` (in `build-config.sh`) applies them to the freshly unpacked sources in every
   build script: `build-macos.sh`, the three `build-linux*.sh` scripts and `build-windows.sh`, each
-  of which unpacks the sources afresh on every run. It fails the build unless every hunk applies
-  without fuzz, and unless each file the patch changes has the marker of its change
-  (`LIBARCHIVE_NET_NARROW_UTF8`, or `LIBARCHIVE_NET_LZ4_INIT_STREAM_HC` for the lz4 writer); given
-  sources that an earlier build left patched, it fails and says so.
+  of which unpacks the sources afresh on every run. It applies one patch at a time, in order, to
+  the sources as the patches before it leave them, so a patch may change a file that an earlier
+  one changed. It fails the build, naming the patch, unless every hunk of the patch applies without
+  fuzz, and unless every file that the patch changes, as its `+++ b/` lines name them, then has the
+  patch's marker. Given sources that an earlier build left patched, in which a file already has
+  the marker of a patch that changes it, it fails before changing anything and says so.
 - The macOS native test (`nativetest.c`) and the Linux load test (`write_load_test_source` in
-  `build-linux-common.sh`) fail the build unless the linked library behaves that way in the "C"
-  locale: a name converts between narrow and wide strings as UTF-8, and a zip entry keeps its UTF-8
-  name, with the UTF-8 flag, and reads back unchanged. The Windows DLLs are cross-compiled, so the
-  build cannot run them: the .NET tests check them on Windows (the `test-net462` job, which runs
-  them on .NET Framework 4.6.2 and on modern .NET).
-- `scripts/check-native-updates.sh` proposes a new libarchive release only if the patch still
-  applies to it the same way (a dry run, without fuzz), and otherwise reports a failed check. To
-  rework the patch for a new release, apply it to the new sources, resolve any rejected hunks
-  keeping each change's marker comment, and write it again with `diff -u` for each changed file,
-  relative to the unpacked release (`a/libarchive/...` and `b/libarchive/...`), below the
-  description.
+  `build-linux-common.sh`) fail the build unless the linked library's narrow strings are UTF-8 in
+  the "C" locale: a name converts between narrow and wide strings as UTF-8, and a zip entry keeps
+  its UTF-8 name, with the UTF-8 flag, and reads back unchanged. The Windows DLLs are
+  cross-compiled, so the build cannot run them: the .NET tests check them on Windows (the
+  `test-net462` job, which runs them on .NET Framework 4.6.2 and on modern .NET).
+- `scripts/check-native-updates.sh` proposes a new libarchive release only if the patches still
+  apply to it: it applies them to a copy of the new sources with `patch_libarchive`, as the builds
+  do, and otherwise reports a failed check that names the patch at fault.
+- To rework a patch for a new release, apply the patches before it to the new sources, then apply
+  it and resolve any rejected hunks, keeping each change's marker comment. Write it again with
+  `diff -u` for each changed file, relative to the sources as the patches before it leave them
+  (`a/libarchive/...` and `b/libarchive/...`), below the description. A later patch that changes
+  the same file may then need reworking too.
+- A new change gets a patch of its own, with a description and a marker that no other patch uses,
+  added to `LIBARCHIVE_PATCHES` after the others. Where it changes a file that an earlier patch
+  changes, write it against that file as the earlier patch leaves it.
 
 ## Quick Start
 
@@ -276,8 +293,8 @@ bzip2 every script builds just the static library (bzip2's `bzip2recover` warned
 script builds libarchive's programs, and only macOS and Windows, which link libxml2, build
 it. Warnings that came from the dependencies' own build machinery are avoided as follows:
 
-- **lz4's deprecated `LZ4_resetStreamHC()`**, which libarchive's lz4 writer called: the
-  libarchive patch replaces the call (see "The libarchive patch" above).
+- **lz4's deprecated `LZ4_resetStreamHC()`**, which libarchive's lz4 writer called:
+  `libarchive-lz4-init-stream-hc.patch` replaces the call (see "The libarchive patches" above).
 - **libtool's `-single_module` check (macOS).** It links a test library with that
   linker flag and copies the linker's warning about it ("-single_module is obsolete")
   into the configure output. `build-macos.sh` gives the check's answer, `no`, as the
@@ -302,9 +319,9 @@ it. Warnings that came from the dependencies' own build machinery are avoided as
 
 Do not silence a new warning with `-w`, a broad `-Wno-*` or the like. Stop building what
 the libraries do not ship, or fix the flags or code at fault; for a warning in a
-dependency's own sources, make a small, provably equivalent change (for libarchive, in
-the libarchive patch) or use a switch the dependency provides for that one warning,
-scoped to its build, and record it here.
+dependency's own sources, make a small, provably equivalent change (for libarchive, in a
+patch of its own: see "The libarchive patches" above) or use a switch the dependency
+provides for that one warning, scoped to its build, and record it here.
 
 ## Directory Structure
 
@@ -348,7 +365,7 @@ A weekly workflow runs `scripts/check-native-updates.sh`, which looks for new re
 2. Update the version variables (e.g., `LIBARCHIVE_VERSION="3.8.0"`)
 3. Update the matching `*_SHA256` variables to the SHA256 of each new tarball: the builds verify each library tarball against them and fail on a mismatch
 4. Update the URLs if the download pattern changed
-5. For a new libarchive release, check that `libarchive-narrow-utf8.patch` still applies, and rework it if not (see "The libarchive patch" above): every build fails otherwise
+5. For a new libarchive release, check that the patches in `LIBARCHIVE_PATCHES` still apply, in order, and rework any that does not (see "The libarchive patches" above): every build fails otherwise
 6. Test the build on each platform
 
 ## CI/CD Integration

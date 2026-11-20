@@ -74,7 +74,7 @@ echo ""
 echo "Setting up library sources..."
 download_all_libraries
 
-# Every narrow string UTF-8, whatever the locale (see "The libarchive patch" in BUILD.md)
+# Apply the libarchive patches, in order (see "The libarchive patches" in BUILD.md)
 patch_libarchive "${SCRIPT_DIR}" "libarchive-${LIBARCHIVE_VERSION}"
 
 # Build compression libraries (static only to avoid conflicts with -static LDFLAGS)
