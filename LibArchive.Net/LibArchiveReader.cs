@@ -5,9 +5,6 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Reflection;
 using Microsoft.Win32.SafeHandles;
-#if NETSTANDARD2_0
-using System.Text;
-#endif
 
 [assembly: DefaultDllImportSearchPaths(DllImportSearchPath.AssemblyDirectory)]
 namespace LibArchive.Net;
@@ -82,35 +79,6 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         // No custom DllImportResolver needed - the runtime finds libraries automatically.
     }
 
-    // Compatibility method for UTF-8 string marshaling
-    private static string? PtrToStringUTF8(IntPtr ptr)
-    {
-#if NETSTANDARD2_0
-        // Use the custom implementation for .NET Standard 2.0
-        return PtrToStringUTF8Internal(ptr);
-#else
-        // Use the built-in method for modern .NET
-        return Marshal.PtrToStringUTF8(ptr);
-#endif
-    }
-
-    // The bytes of a NUL-terminated narrow string, or null for a null pointer.
-    private static byte[]? ReadNulTerminated(IntPtr ptr)
-    {
-        if (ptr == IntPtr.Zero)
-            return null;
-        var length = 0;
-        unsafe
-        {
-            var p = (byte*)ptr;
-            while (p[length] != 0)
-                length++;
-        }
-        var bytes = new byte[length];
-        Marshal.Copy(ptr, bytes, 0, length);
-        return bytes;
-    }
-
     /// <summary>
     /// Opens the specified archive file for read access with the specified block size.
     /// </summary>
@@ -161,7 +129,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         throw new ApplicationException(ErrorString());
     }
 
-    private string ErrorString() => PtrToStringUTF8(archive_error_string(handle)) ?? "Unknown error";
+    private string ErrorString() => SafeStringBuffer.PtrToStringUTF8(archive_error_string(handle)) ?? "Unknown error";
 
     /// <summary>
     /// Creates the native reader and opens the source with every filter and archive format.
@@ -518,10 +486,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         // when a declared name fails to decode, the name is empty, so that the entry is still
         // returned.
         private static string GetPathname(IntPtr entry)
-        {
-            var bytes = ReadNulTerminated(archive_entry_pathname(entry));
-            return bytes == null ? string.Empty : System.Text.Encoding.UTF8.GetString(bytes);
-        }
+            => SafeStringBuffer.PtrToStringUTF8(archive_entry_pathname(entry)) ?? string.Empty;
 
         internal static Entry Create(IntPtr entryHandle, IntPtr archiveHandle) => new(entryHandle, archiveHandle);
 
@@ -626,7 +591,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
             {
                 // Negative return indicates error (e.g., wrong password, encryption not supported)
                 throw new ApplicationException(
-                    PtrToStringUTF8(archive_error_string(archiveHandle))
+                    SafeStringBuffer.PtrToStringUTF8(archive_error_string(archiveHandle))
                     ?? $"Error reading archive data (code: {result})");
             }
 
@@ -1159,51 +1124,6 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
             return "Unknown platform";
 
         return ptr == IntPtr.Zero ? null : Marshal.PtrToStringAnsi(ptr);
-    }
-
-    // .NET Standard 2.0 UTF-8 Marshaling Support
-    private static string? PtrToStringUTF8Internal(IntPtr ptr)
-    {
-        if (ptr == IntPtr.Zero)
-            return null;
-
-        try
-        {
-            // Find the null terminator to determine string length
-            var length = 0;
-            unsafe
-            {
-                byte* p = (byte*)ptr;
-                while (p[length] != 0)
-                {
-                    length++;
-
-                    // Prevent infinite loop on corrupted data
-                    if (length > 1000000) // 1MB limit for safety
-                        throw new InvalidOperationException("UTF-8 string too long or not null-terminated");
-                }
-            }
-
-            if (length == 0)
-                return string.Empty;
-
-            // Copy the UTF-8 bytes and convert to string
-            var bytes = new byte[length];
-            Marshal.Copy(ptr, bytes, 0, length);
-            return Encoding.UTF8.GetString(bytes);
-        }
-        catch (Exception ex)
-        {
-            // Fallback to basic ASCII conversion if UTF-8 fails
-            try
-            {
-                return Marshal.PtrToStringAnsi(ptr);
-            }
-            catch
-            {
-                throw new InvalidOperationException($"Failed to marshal UTF-8 string: {ex.Message}", ex);
-            }
-        }
     }
 #endif
 }
