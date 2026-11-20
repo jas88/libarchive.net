@@ -162,7 +162,9 @@ ends with its first frame, as before.
 - The macOS native test (`nativetest.c`) and the Linux load test (`write_load_test_source` in
   `build-linux-common.sh`) fail the build unless the linked library's narrow strings are UTF-8 in
   the "C" locale: a name converts between narrow and wide strings as UTF-8, and a zip entry keeps
-  its UTF-8 name, with the UTF-8 flag, and reads back unchanged. The Windows DLLs are
+  its UTF-8 name, with the UTF-8 flag, and reads back unchanged. They also fail it unless a zip
+  entry of 128 KiB that they compress with Zstandard into memory reads back in full from there,
+  as from any seekable source (`libarchive-zip-zstd-end-of-entry.patch`). The Windows DLLs are
   cross-compiled, so the build cannot run them: the .NET tests check them on Windows (the
   `test-net462` job, which runs them on .NET Framework 4.6.2 and on modern .NET).
 - `scripts/check-native-updates.sh` proposes a new libarchive release only if the patches still

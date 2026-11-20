@@ -133,8 +133,11 @@ verify_lzo_support libarchive.dylib -arch x86_64
 
 echo "Building native test..."
 # It also fails unless names are UTF-8 in the "C" locale, which it runs in, as a .NET
-# process does: libarchive-narrow-utf8.patch is in the library (see BUILD.md). Its zip
-# writer brings in libarchive's table of every writer, the XAR one (libxml2) among them.
+# process does, unless a XAR archive that it writes in memory reads back, and unless a
+# zip entry of 128 KiB that it compresses with Zstandard into memory reads back in full
+# from there: libarchive-narrow-utf8.patch and libarchive-zip-zstd-end-of-entry.patch
+# are in the library (see BUILD.md). Its zip writer brings in libarchive's table of
+# every writer, the XAR one (libxml2) among them.
 gcc -o nativetest "${SCRIPT_DIR}/nativetest.c" local/lib/libarchive.a -Llocal/lib -Ilocal/include -lxml2 -llz4 -lzstd -llzma -lz -liconv -lbz2
 ./nativetest
 
