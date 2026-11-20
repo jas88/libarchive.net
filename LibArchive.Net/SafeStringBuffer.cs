@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Text;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
@@ -79,4 +80,32 @@ public class SafeStringBuffer : SafeHandleZeroOrMinusOneIsInvalid
         return Marshal.PtrToStringUTF8(ptr);
 #endif
     }
+
+    /// <summary>
+    /// Reads libarchive's message for a call that did not succeed, or, when libarchive set none,
+    /// says which result the call returned, as in "libarchive returned ARCHIVE_FATAL without a
+    /// message".
+    /// </summary>
+    /// <param name="errorString">What archive_error_string returned after the call.</param>
+    /// <param name="result">What the call returned, such as ARCHIVE_WARN or ARCHIVE_FATAL.</param>
+    /// <remarks>
+    /// libarchive returns some warnings and errors without a message: the tar reader returns
+    /// ARCHIVE_WARN alone when it ignores a pax path record longer than 1 MiB
+    /// (archive_read_support_format_tar.c:2972-2980), and the writer returns ARCHIVE_FATAL alone
+    /// when the callback that writes to a stream fails (archive_write.c:430-439).
+    /// </remarks>
+    internal static string ErrorMessage(IntPtr errorString, int result) =>
+        PtrToStringUTF8(errorString) ?? $"libarchive returned {ResultName(result)} without a message";
+
+    // The name that archive.h gives a result, or its number if it has none
+    private static string ResultName(int result) => result switch
+    {
+        0 => "ARCHIVE_OK",
+        1 => "ARCHIVE_EOF",
+        -10 => "ARCHIVE_RETRY",
+        -20 => "ARCHIVE_WARN",
+        -25 => "ARCHIVE_FAILED",
+        -30 => "ARCHIVE_FATAL",
+        _ => "result " + result.ToString(CultureInfo.InvariantCulture),
+    };
 }

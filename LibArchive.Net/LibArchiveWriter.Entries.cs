@@ -54,7 +54,7 @@ public partial class LibArchiveWriter
                     {
                         nint written = archive_write_data(handle, ptr + offset, (nuint)remaining);
                         if (written < 0)
-                            Throw();
+                            Throw((int)written);
                         if (written == 0)
                             throw new ApplicationException("archive_write_data returned 0 bytes written");
                         offset += (int)written;
@@ -90,11 +90,9 @@ public partial class LibArchiveWriter
             var (seconds, nanoseconds) = ToUnixTime(DateTime.UtcNow);
             archive_entry_set_mtime(entry, seconds, nanoseconds);
 
-            if (archive_write_header(handle, entry) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-                Throw();
+            ThrowUnlessOk(archive_write_header(handle, entry));
 
-            if (archive_write_finish_entry(handle) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-                Throw();
+            ThrowUnlessOk(archive_write_finish_entry(handle));
         }
         finally
         {
@@ -205,8 +203,7 @@ public partial class LibArchiveWriter
             SetEntryMetadata(entry, fileInfo, archivePath);
 
             // Write header
-            if (archive_write_header(handle, entry) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-                Throw();
+            ThrowUnlessOk(archive_write_header(handle, entry));
 
             // Write data using optimal strategy based on file size
             if (fileInfo.Length == 0)
@@ -229,8 +226,7 @@ public partial class LibArchiveWriter
             }
 
             // Finish entry
-            if (archive_write_finish_entry(handle) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-                Throw();
+            ThrowUnlessOk(archive_write_finish_entry(handle));
         }
         finally
         {
@@ -272,7 +268,7 @@ public partial class LibArchiveWriter
                 {
                     nint written = archive_write_data(handle, ptr + offset, (nuint)remaining);
                     if (written < 0)
-                        Throw();
+                        Throw((int)written);
                     if (written == 0)
                         throw new ApplicationException("archive_write_data returned 0 bytes written");
                     offset += (int)written;
@@ -320,7 +316,7 @@ public partial class LibArchiveWriter
                                 throw new InvalidOperationException("Write range out of bounds");
                             nint written = archive_write_data(handle, ptr + writeOffset, (nuint)writeRemaining);
                             if (written < 0)
-                                Throw();
+                                Throw((int)written);
                             if (written == 0)
                                 throw new ApplicationException("archive_write_data returned 0 bytes written");
                             writeOffset += (int)written;
@@ -369,7 +365,7 @@ public partial class LibArchiveWriter
                 {
                     nint written = archive_write_data(handle, ptr + offset + chunkOffset, (nuint)chunkRemaining);
                     if (written < 0)
-                        Throw();
+                        Throw((int)written);
                     if (written == 0)
                         throw new ApplicationException("archive_write_data returned 0 bytes written");
                     chunkOffset += (int)written;
@@ -425,7 +421,7 @@ public partial class LibArchiveWriter
                         written = archive_write_data(handle, ptr, (nuint)pending.Length);
                     }
                     if (written < 0)
-                        Throw();
+                        Throw((int)written);
                     if (written == 0)
                         throw new ApplicationException("archive_write_data returned 0 bytes written");
                     pending = pending.Slice((int)written);
@@ -476,13 +472,11 @@ public partial class LibArchiveWriter
             var (seconds, nanoseconds) = ToUnixTime(modificationTime);
             archive_entry_set_mtime(entry, seconds, nanoseconds);
 
-            if (archive_write_header(handle, entry) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-                Throw();
+            ThrowUnlessOk(archive_write_header(handle, entry));
 
             writeData(null!); // Stream parameter not used in current implementation
 
-            if (archive_write_finish_entry(handle) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-                Throw();
+            ThrowUnlessOk(archive_write_finish_entry(handle));
         }
         finally
         {

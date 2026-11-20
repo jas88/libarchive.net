@@ -129,22 +129,9 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         throw new ApplicationException(ErrorString(result));
     }
 
-    // libarchive's message for the call that returned result, or, when it set none, which result
-    // that was: libarchive returns some errors and warnings without one
-    private string ErrorString(int result) =>
-        SafeStringBuffer.PtrToStringUTF8(archive_error_string(handle))
-        ?? $"libarchive returned {ResultName(result)} without a message";
-
-    private static string ResultName(int result) => result switch
-    {
-        (int)ARCHIVE_RESULT.ARCHIVE_OK => nameof(ARCHIVE_RESULT.ARCHIVE_OK),
-        (int)ARCHIVE_RESULT.ARCHIVE_EOF => nameof(ARCHIVE_RESULT.ARCHIVE_EOF),
-        (int)ARCHIVE_RESULT.ARCHIVE_RETRY => nameof(ARCHIVE_RESULT.ARCHIVE_RETRY),
-        (int)ARCHIVE_RESULT.ARCHIVE_WARN => nameof(ARCHIVE_RESULT.ARCHIVE_WARN),
-        (int)ARCHIVE_RESULT.ARCHIVE_FAILED => nameof(ARCHIVE_RESULT.ARCHIVE_FAILED),
-        (int)ARCHIVE_RESULT.ARCHIVE_FATAL => nameof(ARCHIVE_RESULT.ARCHIVE_FATAL),
-        _ => "result " + result.ToString(System.Globalization.CultureInfo.InvariantCulture),
-    };
+    // libarchive's message for the call that returned result, or which result that was if
+    // libarchive set none (see SafeStringBuffer.ErrorMessage)
+    private string ErrorString(int result) => SafeStringBuffer.ErrorMessage(archive_error_string(handle), result);
 
     /// <summary>
     /// Creates the native reader and opens the source with every filter and archive format.

@@ -114,8 +114,7 @@ public partial class LibArchiveWriter
             _writeCallback,
             _closeCallback);
 
-        if (result != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-            Throw();
+        ThrowUnlessOk(result);
     }
 
     private int OnOpen(IntPtr archive, IntPtr clientData)
