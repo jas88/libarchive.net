@@ -124,12 +124,27 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     // Partial method for cleanup - implemented in LibArchiveReader.Stream.cs
     partial void CleanupCallbacks();
 
-    private void Throw()
+    private void Throw(int result)
     {
-        throw new ApplicationException(ErrorString());
+        throw new ApplicationException(ErrorString(result));
     }
 
-    private string ErrorString() => SafeStringBuffer.PtrToStringUTF8(archive_error_string(handle)) ?? "Unknown error";
+    // libarchive's message for the call that returned result, or, when it set none, which result
+    // that was: libarchive returns some errors and warnings without one
+    private string ErrorString(int result) =>
+        SafeStringBuffer.PtrToStringUTF8(archive_error_string(handle))
+        ?? $"libarchive returned {ResultName(result)} without a message";
+
+    private static string ResultName(int result) => result switch
+    {
+        (int)ARCHIVE_RESULT.ARCHIVE_OK => nameof(ARCHIVE_RESULT.ARCHIVE_OK),
+        (int)ARCHIVE_RESULT.ARCHIVE_EOF => nameof(ARCHIVE_RESULT.ARCHIVE_EOF),
+        (int)ARCHIVE_RESULT.ARCHIVE_RETRY => nameof(ARCHIVE_RESULT.ARCHIVE_RETRY),
+        (int)ARCHIVE_RESULT.ARCHIVE_WARN => nameof(ARCHIVE_RESULT.ARCHIVE_WARN),
+        (int)ARCHIVE_RESULT.ARCHIVE_FAILED => nameof(ARCHIVE_RESULT.ARCHIVE_FAILED),
+        (int)ARCHIVE_RESULT.ARCHIVE_FATAL => nameof(ARCHIVE_RESULT.ARCHIVE_FATAL),
+        _ => "result " + result.ToString(System.Globalization.CultureInfo.InvariantCulture),
+    };
 
     /// <summary>
     /// Creates the native reader and opens the source with every filter and archive format.
@@ -152,9 +167,10 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
     private void Open()
     {
         CreateNativeReader(ReaderFormats.All);
-        if (OpenSource() != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+        var r = OpenSource();
+        if (r != (int)ARCHIVE_RESULT.ARCHIVE_OK)
         {
-            var error = ErrorString();
+            var error = ErrorString(r);
             if (!IsCompressed() || !ReopenCompressed(ReaderFormats.AllAndRaw))
                 throw new ApplicationException(error);
         }
@@ -186,22 +202,26 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         {
             // Registers the raw format and makes it the reader's format: libarchive then only
             // checks that there is data, and no other format can claim it
-            if (archive_read_set_format(handle, ARCHIVE_FORMAT_RAW) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-                Throw();
+            ThrowUnlessOk(archive_read_set_format(handle, ARCHIVE_FORMAT_RAW));
         }
         else
         {
             _ = archive_read_support_format_all(handle);
-            if (formats == ReaderFormats.AllAndRaw && archive_read_support_format_raw(handle) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-                Throw();
+            if (formats == ReaderFormats.AllAndRaw)
+                ThrowUnlessOk(archive_read_support_format_raw(handle));
         }
 
         if (_password != null)
         {
             using var uPassword = new SafeStringBuffer(_password);
-            if (archive_read_add_passphrase(handle, uPassword.Ptr) != 0)
-                Throw();
+            ThrowUnlessOk(archive_read_add_passphrase(handle, uPassword.Ptr));
         }
+    }
+
+    private void ThrowUnlessOk(int result)
+    {
+        if (result != (int)ARCHIVE_RESULT.ARCHIVE_OK)
+            Throw(result);
     }
 
     // Archive files are opened by their UTF-16 name on Windows, with the _w variants of
@@ -287,7 +307,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
             && (archive_format(handle) & ARCHIVE_FORMAT_BASE_MASK) == ARCHIVE_FORMAT_MTREE
             && IsCompressed())
         {
-            var error = ErrorString();
+            var error = ErrorString(r);
             if (!ReopenCompressed(ReaderFormats.RawOnly)
                 || (r = archive_read_next_header(handle, out entryHandle)) != (int)ARCHIVE_RESULT.ARCHIVE_OK)
                 throw new ApplicationException(error);
@@ -345,7 +365,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
             yield return Entry.Create(entryHandle, handle);
 
         if (r != (int)ARCHIVE_RESULT.ARCHIVE_EOF)
-            Throw();
+            Throw(r);
     }
 
     /// <summary>
@@ -403,7 +423,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         if (r == (int)ARCHIVE_RESULT.ARCHIVE_EOF)
             return null;
         if (r != (int)ARCHIVE_RESULT.ARCHIVE_OK)
-            Throw();
+            Throw(r);
         return Entry.Create(entryHandle, handle);
     }
 
