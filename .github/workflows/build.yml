@@ -365,6 +365,166 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # Loads each Linux library in containers, with its load test program (loadtest-<rid>, which
+  # the native job builds for the same target and uploads with the library; see
+  # native/linux-loadtest.c): in the oldest distribution of its C library that can be tested,
+  # and in a current one. The arm64 and arm containers run under QEMU user-mode emulation. In
+  # one row the library must not load: the linux-arm library needs glibc 2.34, so the dynamic
+  # loader of Debian 11 (glibc 2.31) must refuse it.
+  linux-load-test:
+    name: Load test ${{ matrix.rid }} in ${{ matrix.distro }}${{ matrix.expect == 'refused' && ' (must be refused)' || '' }}
+    needs: [native]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # image is pinned by the digest of its index, which covers every platform, with the
+        # tag beside it; distro is that tag, for the job's name. expect is "loads", or
+        # "refused" for a C library older than the library's baseline (see
+        # native/build-linux.sh).
+        include:
+          # glibc 2.28 (RHEL 8), the baseline of linux-x64 and linux-arm64, and glibc 2.41
+          - rid: linux-x64
+            distro: almalinux:8
+            image: almalinux@sha256:768bedc30fe0a536adb0a65d2eddb7caad364e514fbddd0ae9e026975f590342  # almalinux:8
+            platform: linux/amd64
+            expect: loads
+          - rid: linux-x64
+            distro: debian:13
+            image: debian@sha256:9c6e381421d0f48d1b8133e573f33c185ee16cbf505eda9c4a8a4791b25ea8a6  # debian:13
+            platform: linux/amd64
+            expect: loads
+          # glibc 2.28 and 2.39
+          - rid: linux-arm64
+            distro: almalinux:8
+            image: almalinux@sha256:768bedc30fe0a536adb0a65d2eddb7caad364e514fbddd0ae9e026975f590342  # almalinux:8
+            platform: linux/arm64
+            expect: loads
+          - rid: linux-arm64
+            distro: ubuntu:24.04
+            image: ubuntu@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289  # ubuntu:24.04
+            platform: linux/arm64
+            expect: loads
+          # glibc 2.35, the oldest armhf glibc that can be tested (the library's baseline is
+          # 2.34), and glibc 2.41
+          - rid: linux-arm
+            distro: ubuntu:22.04
+            image: ubuntu@sha256:f64b2ffc2f10ab8f8505aa56b2664bd846cbb9df87c7e2532e30f7667021c0e6  # ubuntu:22.04
+            platform: linux/arm/v7
+            expect: loads
+          - rid: linux-arm
+            distro: debian:13
+            image: debian@sha256:9c6e381421d0f48d1b8133e573f33c185ee16cbf505eda9c4a8a4791b25ea8a6  # debian:13
+            platform: linux/arm/v7
+            expect: loads
+          # glibc 2.31, older than the library's baseline
+          - rid: linux-arm
+            distro: debian:11
+            image: debian@sha256:6f519a81440354a85eb592c5f32109ab80605f6b892455983a6f618bf87fabe9  # debian:11
+            platform: linux/arm/v7
+            expect: refused
+          # musl 1.2.5 (Alpine 3.21), the baseline of the musl libraries, and musl 1.2.6
+          - rid: linux-musl-x64
+            distro: alpine:3.21
+            image: alpine@sha256:bc21487101ae47172509130ee1092cc273a831968d64b617776d1f69c81e42ab  # alpine:3.21
+            platform: linux/amd64
+            expect: loads
+          - rid: linux-musl-x64
+            distro: alpine:3.24
+            image: alpine@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf  # alpine:3.24
+            platform: linux/amd64
+            expect: loads
+          - rid: linux-musl-arm64
+            distro: alpine:3.21
+            image: alpine@sha256:bc21487101ae47172509130ee1092cc273a831968d64b617776d1f69c81e42ab  # alpine:3.21
+            platform: linux/arm64
+            expect: loads
+          - rid: linux-musl-arm64
+            distro: alpine:3.24
+            image: alpine@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf  # alpine:3.24
+            platform: linux/arm64
+            expect: loads
+          - rid: linux-musl-arm
+            distro: alpine:3.21
+            image: alpine@sha256:bc21487101ae47172509130ee1092cc273a831968d64b617776d1f69c81e42ab  # alpine:3.21
+            platform: linux/arm/v7
+            expect: loads
+          - rid: linux-musl-arm
+            distro: alpine:3.24
+            image: alpine@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf  # alpine:3.24
+            platform: linux/arm/v7
+            expect: loads
+    env:
+      RID: ${{ matrix.rid }}
+      DISTRO: ${{ matrix.distro }}
+      IMAGE: ${{ matrix.image }}
+      PLATFORM: ${{ matrix.platform }}
+    steps:
+      - name: Retrieve the library and its load test program
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: native-${{ matrix.rid }}
+          path: work
+      # Artifacts do not keep file modes
+      - name: Make the load test program executable
+        run: chmod +x "work/loadtest-$RID"
+      # Registers QEMU's user-mode emulators with binfmt_misc, so that the arm64 and arm
+      # containers run on this x64 runner
+      - name: Set up QEMU
+        if: matrix.platform != 'linux/amd64'
+        uses: docker/setup-qemu-action@v4.4.0
+        with:
+          image: tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0  # tonistiigi/binfmt:latest (qemu-v10.2.3-68)
+          platforms: arm64,arm
+      # Pulled in a step of its own, so that the load test's output is the program's alone,
+      # and retried, as a pull can fail for a moment: up to 4 attempts, 5 seconds apart, as
+      # the native job's downloads make
+      - name: Pull ${{ matrix.distro }} for ${{ matrix.platform }}
+        run: |
+          for attempt in 1 2 3 4; do
+            if docker pull --platform "$PLATFORM" "$IMAGE"; then
+              exit 0
+            fi
+            echo "docker pull failed (attempt $attempt of 4)"
+            [ "$attempt" -eq 4 ] || sleep 5
+          done
+          exit 1
+      # The program exits non-zero unless the library loads, with every symbol bound at once,
+      # and passes every check. It runs as root, in /work, the artifact's directory, mounted
+      # read-write; it writes its own files in the container's /tmp.
+      - name: Run the load test
+        if: matrix.expect == 'loads'
+        run: |
+          docker run --rm --platform "$PLATFORM" --user 0:0 -v "$PWD/work:/work" -w /work "$IMAGE" \
+            "./loadtest-$RID" "./libarchive-$RID.so"
+      # The program, run as above, must fail, with the dynamic loader's refusal of the library
+      # for a glibc version that this glibc lacks. In Debian 11 armhf that is the line
+      # FAIL: dlopen ./libarchive-linux-arm.so: /lib/arm-linux-gnueabihf/libc.so.6: version `GLIBC_2.32' not found (required by ./libarchive-linux-arm.so)
+      # The program itself needs glibc 2.28 only, so that it starts, and the library is what
+      # is refused (see native/build-linux.sh).
+      - name: Check that the library is refused
+        if: matrix.expect == 'refused'
+        run: |
+          status=0
+          output=$(docker run --rm --platform "$PLATFORM" --user 0:0 -v "$PWD/work:/work" -w /work "$IMAGE" \
+            "./loadtest-$RID" "./libarchive-$RID.so" 2>&1) || status=$?
+          printf '%s\n' "$output"
+          echo "Exit status: $status"
+          if [ "$status" -eq 0 ]; then
+            echo "::error::The load test passed in $DISTRO, whose glibc is older than the library's baseline: the library must be refused"
+            exit 1
+          fi
+          # Whatever the glibc version and the C library's path: one line must name a glibc
+          # version as not found, and then the library as the file that needs it
+          if ! printf '%s\n' "$output" | awk -v lib="./libarchive-$RID.so" '
+              { v = index($0, "version `GLIBC_"); n = index($0, "not found (required by " lib ")") }
+              v > 0 && n > v { found = 1 }
+              END { exit !found }'; then
+            echo "::error::The load test failed in $DISTRO, but not because the dynamic loader refused the library for a glibc version (see the output above)"
+            exit 1
+          fi
+          echo "The dynamic loader of $DISTRO refused the library, as it must."
+
   package:
     name: Pack and test .NET package
     needs: [macos-cache, macos, native]
@@ -529,10 +689,11 @@ jobs:
   # Required status check: the branch protection for main requires a check with exactly this
   # name, so do not rename it without updating the rule. The one job that used to carry the
   # name is now split across native, package and test-net462; this reports their combined
-  # result (and macOS's), so the rule keeps gating everything it did before.
+  # result (and macOS's), so the rule keeps gating everything it did before, and the result
+  # of the jobs added since: linux-load-test.
   build-and-test:
     name: Build Windows DLLs, Linux library, and test
-    needs: [macos-cache, macos, native, package, test-net462]
+    needs: [macos-cache, macos, native, linux-load-test, package, test-net462]
     # always(): a skipped job counts as a passing required check, so this job must run and
     # fail explicitly when anything it depends on failed, was cancelled or was skipped.
     if: ${{ always() }}
@@ -544,12 +705,13 @@ jobs:
           MACOS_CACHE_HIT: ${{ needs.macos-cache.outputs.hit }}
           MACOS: ${{ needs.macos.result }}
           NATIVE: ${{ needs.native.result }}
+          LINUX_LOAD_TEST: ${{ needs.linux-load-test.result }}
           PACKAGE: ${{ needs.package.result }}
           TEST_NET462: ${{ needs.test-net462.result }}
         run: |
-          echo "macos-cache=$MACOS_CACHE (hit=$MACOS_CACHE_HIT) macos=$MACOS native=$NATIVE package=$PACKAGE test-net462=$TEST_NET462"
+          echo "macos-cache=$MACOS_CACHE (hit=$MACOS_CACHE_HIT) macos=$MACOS native=$NATIVE linux-load-test=$LINUX_LOAD_TEST package=$PACKAGE test-net462=$TEST_NET462"
           failed=0
-          for result in "$MACOS_CACHE" "$NATIVE" "$PACKAGE" "$TEST_NET462"; do
+          for result in "$MACOS_CACHE" "$NATIVE" "$LINUX_LOAD_TEST" "$PACKAGE" "$TEST_NET462"; do
             [ "$result" = "success" ] || failed=1
           done
           # The macOS build may only be skipped when its dylib came from the cache.
@@ -564,10 +726,11 @@ jobs:
 
   release:
     name: Publish release
-    needs: [package, test-net462]
+    needs: [package, test-net462, linux-load-test]
     if: >-
       ${{ startsWith(github.ref, 'refs/tags/v') && !cancelled() &&
-      needs.package.result == 'success' && needs.test-net462.result == 'success' }}
+      needs.package.result == 'success' && needs.test-net462.result == 'success' &&
+      needs.linux-load-test.result == 'success' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Retrieve package
