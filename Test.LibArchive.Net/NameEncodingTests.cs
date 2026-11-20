@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.IO.Compression;
-using System.Runtime.InteropServices;
 using System.Text;
 using LibArchive.Net;
 using NUnit.Framework;
@@ -24,18 +23,11 @@ public class NameEncodingTests
         "Größe.txt", "日本語.txt", "\U0001F600.txt", "Ã©.txt", "Ã¶Ã¤Ã¼.txt",
     };
 
-    // XAR cannot be written on Linux (see XarTests)
-    public static IEnumerable<ArchiveFormat> WritableFormats()
+    public static IEnumerable<ArchiveFormat> WritableFormats() => new[]
     {
-        foreach (var format in new[]
-                 {
-                     ArchiveFormat.Zip, ArchiveFormat.SevenZip, ArchiveFormat.Tar, ArchiveFormat.Ustar,
-                     ArchiveFormat.Pax, ArchiveFormat.Cpio, ArchiveFormat.Iso9660,
-                 })
-            yield return format;
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-            yield return ArchiveFormat.Xar;
-    }
+        ArchiveFormat.Zip, ArchiveFormat.SevenZip, ArchiveFormat.Tar, ArchiveFormat.Ustar,
+        ArchiveFormat.Pax, ArchiveFormat.Cpio, ArchiveFormat.Iso9660, ArchiveFormat.Xar,
+    };
 
     private static byte[] ContentOf(string name) => Encoding.UTF8.GetBytes("content of " + name);
 

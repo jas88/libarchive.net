@@ -23,7 +23,7 @@ The libraries are:
 - lz4
 - zstd
 - lzokay (lzop support)
-- libxml2 (macOS and Windows only)
+- libxml2
 - zlib
 - xz (liblzma)
 - bzip2
@@ -35,9 +35,18 @@ encryption and digest support. Windows (CNG) and macOS (CommonCrypto) use the
 operating system's crypto instead. It is pinned to the 3.6 LTS line because
 libarchive cannot build against mbedTLS 4.
 
-libxml2 gives libarchive its XAR support, which the Linux libraries do not have
-(libarchive is configured `--without-xml2 --without-expat` there), so only the
-macOS and Windows scripts build it.
+libxml2 gives libarchive its XAR support, on every platform. libarchive's XAR reader
+and writer also need zlib, MD5 and SHA-1. If any of these or the XML library is
+missing, libarchive builds stubs in their place, which fail with "Xar not supported on
+this platform". On Linux:
+- mbedTLS supplies MD5 and SHA-1, as musl has neither, and libarchive is configured
+  `--with-xml2 --without-expat` (expat can read XAR but not write it).
+- `build_libxml2` (in `build-linux-common.sh`) builds libxml2 with only what libarchive
+  uses: its xmlReader and xmlWriter interfaces, and the parser and output code under
+  them. It leaves out libxml2's other modules, its programs and its Python bindings.
+- libxml2 is compiled with `-fvisibility=hidden`, as mbedTLS is. `libarchive.so`
+  therefore does not export libxml2's functions, and another libxml2 in the process can
+  neither clash with them nor take their place.
 
 ### lzop support
 
@@ -189,7 +198,7 @@ This will automatically detect your platform and build the appropriate libraries
 - gcc
 - make
 - sccache (the scripts compile through it)
-- pkg-config (libarchive's configure uses it)
+- pkg-config (libarchive's configure finds libxml2 with it)
 - tar, gzip, xz and bzip2, which unpack the downloads (`.tar.gz`, `.tar.xz` and `.tar.bz2` archives)
 - file (each script runs it on the library it built)
 - unzip, to list a package's contents (see [Testing Changes](#testing-changes))
@@ -303,8 +312,9 @@ ARCH=aarch64 ./build-windows.sh
 
 The builds are kept free of compiler, linker and configure warnings. Of lz4, zstd and
 bzip2 every script builds just the static library (bzip2's `bzip2recover` warned), no
-script builds libarchive's programs, and only macOS and Windows, which link libxml2, build
-it. Warnings that came from the dependencies' own build machinery are avoided as follows:
+script builds libarchive's programs, and the Linux scripts build just libxml2's library,
+not its programs. Warnings that came from the dependencies' own build machinery are
+avoided as follows:
 
 - **lz4's deprecated `LZ4_resetStreamHC()`**, which libarchive's lz4 writer called:
   `libarchive-lz4-init-stream-hc.patch` replaces the call (see "The libarchive patches" above).

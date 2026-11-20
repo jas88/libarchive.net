@@ -42,6 +42,48 @@ build_mbedtls() {
     cd .. || return
 }
 
+# Build and install a static, position-independent libxml2 for libarchive's XAR reader and
+# writer, which use its xmlReader and xmlWriter interfaces and nothing else of it.
+# download_all_libraries must have unpacked it in the current directory, which must be the
+# build directory, and zlib must already be installed in $PREFIX. Installs libxml2.a, its
+# headers and libxml-2.0.pc into $PREFIX, where libarchive's configure finds it with
+# pkg-config (see export_cross_build_tools in build-config.sh).
+# Usage: build_libxml2 [configure option...]
+# The options are the target's own: its --cache-file, and --build and --host for a cross build.
+# Uses CFLAGS, PREFIX, NCPU and LIBXML2_VERSION. Each step ends in "|| return" (see build_mbedtls).
+build_libxml2() {
+    local var
+    for var in PREFIX NCPU LIBXML2_VERSION; do
+        if [ -z "${!var:-}" ]; then
+            echo "ERROR: build_libxml2 needs ${var} to be set"
+            return 1
+        fi
+    done
+
+    echo "Building libxml2 ${LIBXML2_VERSION}..."
+    cd "libxml2-${LIBXML2_VERSION}" || return
+    # The release's own configure, as on Windows, so the Linux builds need no autotools
+    # (macOS runs autogen.sh). --with-zlib names where zlib was installed, as on macOS and
+    # Windows; libxml2 has had no lzma support (and no --with-lzma option) since 2.15.0.
+    # The --without options leave out what libarchive does not use: the Python bindings, and
+    # the C14N, catalog, debug, HTML, module, pattern, regexp, RELAX NG, schema, XInclude,
+    # XPath and XPointer support. The xmlReader and xmlWriter interfaces need the push parser
+    # and the output code, which stay in.
+    ./configure "$@" --prefix="$PREFIX" --enable-silent-rules --disable-shared --enable-static --with-pic \
+        --without-python --with-zlib="$PREFIX" \
+        --without-c14n --without-catalog --without-debug --without-html --without-modules \
+        --without-pattern --without-regexps --without-relaxng --without-schemas \
+        --without-xinclude --without-xpath --without-xptr || return
+    # Only the library, its headers and its pkg-config file: "make install" would also build
+    # and install xmllint, xml2-config and a CMake package file, which nothing here uses.
+    # -fvisibility=hidden, as for mbedTLS: libarchive.so does not export libxml2's functions,
+    # so another libxml2 in the process can neither clash with them nor take their place. The
+    # libarchive code linked with them still calls them.
+    make -sj"$NCPU" install-libLTLIBRARIES install-pkgconfigDATA CFLAGS="$CFLAGS -fvisibility=hidden" || return
+    make -sC include install || return
+    cd .. || return
+}
+
 # Link the final libarchive.so: all of libarchive.a, then the other static libraries,
 # the toolchain's own libgcc.a and musl's static libc.a, and nothing else (-nostdlib).
 # The result needs no other library at run time (it has no DT_NEEDED entry), so the
@@ -89,7 +131,9 @@ link_libarchive() {
     fi
 
     local -a archives=(
-        # The libraries libarchive.a uses
+        # The libraries libarchive.a uses. Its XAR reader and writer use libxml2.a, which
+        # uses libz.a and the C library in turn.
+        "$PREFIX/lib/libxml2.a"
         "$PREFIX/lib/libbz2.a"
         "$PREFIX/lib/libz.a"
         "$PREFIX/lib/liblzma.a"

@@ -5,9 +5,9 @@ using NUnit.Framework;
 
 namespace Test.LibArchive.Net;
 
-// XAR needs libarchive built with an XML library. The Linux native libraries are built
-// without one, so there writing XAR throws and reading it reports an unrecognized format;
-// the Windows and macOS libraries can do both (see ArchiveFormat.Xar).
+// libarchive reads XAR with libxml2 or expat, and writes it only with libxml2, which the native
+// libraries of every platform link (see ArchiveFormat.Xar), so these tests read and write it
+// everywhere. Every test that writes XAR does so through WriteOrIgnore.
 //
 // The fixture was written by the bsdtar of macOS (bsdtar 3.5.3, libarchive 3.7.4):
 //
@@ -22,57 +22,39 @@ public class XarTests
 
     private static readonly byte[] Content = Encoding.ASCII.GetBytes("XAR test entry\n");
 
-    private static bool IsLinux => RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
-
     private const string CannotWrite = "Xar not supported on this platform";
 
     /// <summary>
-    /// Runs <paramref name="write"/>, which creates a XAR writer and writes with it, and returns true, or
-    /// returns false where XAR cannot be written: on Linux, after asserting that creating the writer throws,
-    /// and on a macOS libarchive without libxml2, by ignoring the test. Every test that writes XAR comes
+    /// Runs <paramref name="write"/>, which creates a XAR writer and writes with it, and ignores the test if
+    /// the library cannot write XAR: a macOS libarchive without libxml2. Every test that writes XAR comes
     /// through here, so this is the one place that knows where XAR can be written.
     /// </summary>
-    internal static bool TryWrite(Action write)
+    internal static void WriteOrIgnore(Action write)
     {
-        if (IsLinux)
-        {
-            var ex = Assert.Throws<ApplicationException>(() => write());
-            Assert.That(ex!.Message, Is.EqualTo(CannotWrite));
-            return false;
-        }
-
         try
         {
             write();
-            return true;
         }
         catch (ApplicationException ex) when (RuntimeInformation.IsOSPlatform(OSPlatform.OSX) && ex.Message == CannotWrite)
         {
             // The macOS libraries this project builds include libxml2; Homebrew's libarchive,
             // which can stand in for them locally, has only expat, which reads XAR but cannot write it.
             Assert.Ignore("This macOS libarchive was built without libxml2, so it cannot write XAR");
-            return false;
         }
     }
 
-    /// <summary>Writes a XAR archive through <see cref="TryWrite"/>.</summary>
-    /// <returns>The archive, or null where XAR cannot be written.</returns>
-    internal static byte[]? TryWriteArchive(Func<byte[]> write)
+    /// <summary>Writes a XAR archive through <see cref="WriteOrIgnore"/>.</summary>
+    /// <returns>The archive.</returns>
+    internal static byte[] WriteArchiveOrIgnore(Func<byte[]> write)
     {
-        byte[]? archive = null;
-        return TryWrite(() => archive = write()) ? archive : null;
+        byte[] archive = Array.Empty<byte>();
+        WriteOrIgnore(() => archive = write());
+        return archive;
     }
 
     [Test]
     public void TestReadFixture()
     {
-        if (IsLinux)
-        {
-            var ex = Assert.Throws<ApplicationException>(() => new LibArchiveReader(Fixture).Dispose());
-            Assert.That(ex!.Message, Is.EqualTo("Unrecognized archive format"));
-            return;
-        }
-
         using var reader = new LibArchiveReader(Fixture);
         var entries = reader.Entries().Select(e => (e.Name, Data: e.ReadAllBytes())).ToList();
 
@@ -93,12 +75,11 @@ public class XarTests
 
         try
         {
-            if (!TryWrite(() =>
-                {
-                    using var writer = CreateWriter();
-                    writer.AddEntry("entry.txt", Content);
-                }))
-                return;
+            WriteOrIgnore(() =>
+            {
+                using var writer = CreateWriter();
+                writer.AddEntry("entry.txt", Content);
+            });
 
             using var reader = toStream ? new LibArchiveReader(new MemoryStream(output.ToArray())) : new LibArchiveReader(path);
             var entries = reader.Entries().Select(e => (e.Name, Data: e.ReadAllBytes())).ToList();
