@@ -475,7 +475,7 @@ verify_self_contained() {
 }
 
 # Load a freshly linked library in a process that contains nothing but musl: the load
-# test program (linux-loadtest.c, in this directory) built with the target toolchain as a
+# test program (linux-loadtest*.c, in this directory) built with the target toolchain as a
 # dynamically linked musl executable, run by the musl dynamic loader from the toolchain's
 # sysroot. No glibc and no libgcc_s is present, so nothing else can supply a symbol the
 # library lacks, and it then fails to load. Runs natively (x64), or under the named QEMU
@@ -526,7 +526,7 @@ test_load_musl() {
 
     # -static-libgcc: the program must not depend on libgcc_s, which could supply a
     # helper routine that the library lacks
-    "${cc[@]}" -O2 -Wall -Wextra -static-libgcc -o loadtest-musl "${SCRIPT_DIR}/linux-loadtest.c" || return
+    "${cc[@]}" -O2 -Wall -Wextra -static-libgcc -o loadtest-musl "${SCRIPT_DIR}"/linux-loadtest*.c || return
     if ! dynamic=$("$readelf" -d loadtest-musl) || ! headers=$("$readelf" -l loadtest-musl); then
         echo "ERROR: could not read the load test program with ${readelf}"
         return 1
@@ -558,7 +558,7 @@ test_load_musl() {
     fi
 }
 
-# Load a freshly linked library in the load test program (linux-loadtest.c, in this
+# Load a freshly linked library in the load test program (linux-loadtest*.c, in this
 # directory) built with the host's own gcc and C library (glibc on the CI runners), as a
 # .NET process on a typical Linux distribution would. Only possible for a library built
 # for the host's architecture (x64).
@@ -577,7 +577,7 @@ test_load_host() {
 
     echo "=== Load test: ${lib} in a program built with the host's gcc ==="
     # -ldl for glibc before 2.34, where dlopen is not in libc itself
-    gcc -O2 -Wall -Wextra -o loadtest-host "${SCRIPT_DIR}/linux-loadtest.c" -ldl || return
+    gcc -O2 -Wall -Wextra -o loadtest-host "${SCRIPT_DIR}"/linux-loadtest*.c -ldl || return
     local path="$lib"
     case "$lib" in
         */*) ;;

@@ -1,0 +1,36 @@
+/*
+ * Declarations shared by the source files of the Linux load test program, which
+ * test_load_musl and test_load_host in build-linux-common.sh build into one program:
+ * linux-loadtest.c (main, and the checks that need no files),
+ * linux-loadtest-files.c (archives in files) and linux-loadtest-lfs32.c (glibc's file
+ * functions with a 32-bit off_t).
+ *
+ * Each file defines _GNU_SOURCE and _FILE_OFFSET_BITS=64 before it includes anything, so
+ * that the program's own file functions are 64-bit ones in a 32-bit glibc process too.
+ */
+#ifndef LINUX_LOADTEST_H
+#define LINUX_LOADTEST_H
+
+#include <stddef.h>
+
+struct archive;
+struct archive_entry;
+
+#define ARCHIVE_OK 0
+#define ARCHIVE_EOF 1
+#define AE_IFREG 0100000
+#define AE_IFDIR 0040000
+
+/* The library under test, as dlopen returned it */
+extern void *library;
+
+/* Store the address of the named function in *function, or say why it is missing */
+int find(const char *name, void *function, size_t size);
+
+#define FIND(name, function) find(name, &(function), sizeof (function))
+
+/* Each of these says what failed and returns 0, or returns 1 */
+int check_file_io(void);    /* linux-loadtest-files.c */
+int check_lfs32(void);      /* linux-loadtest-lfs32.c */
+
+#endif

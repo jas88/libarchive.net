@@ -1,11 +1,15 @@
 /*
  * Load test for a freshly linked libarchive.so, which test_load_musl and test_load_host in
- * build-linux-common.sh build and run.
+ * build-linux-common.sh build and run, from this file, linux-loadtest-files.c and
+ * linux-loadtest-lfs32.c (see linux-loadtest.h).
  * Usage: loadtest <path to libarchive.so>
  * Exits non-zero unless the library loads with every symbol bound at once
  * (RTLD_NOW), a little of its API works, names are UTF-8 in the "C" locale, a XAR
- * archive written in memory reads back, and a Zstandard zip entry of 128 KiB reads
- * back in full.
+ * archive written in memory reads back, a Zstandard zip entry of 128 KiB reads back in
+ * full, and archives that the library writes to files read back whole through each of
+ * libarchive's ways of reading a file (check_file_io). In a 32-bit glibc process it also
+ * fails if the library calls any of glibc's file functions with a 32-bit off_t
+ * (check_lfs32).
  *
  * Names must be UTF-8 in the "C" locale, which the program never leaves, as a .NET process
  * never does: libarchive-narrow-utf8.patch is in the library (see "The libarchive patches"
@@ -15,24 +19,23 @@
  * program compresses into memory, reads back in full from there only if
  * libarchive-zip-zstd-end-of-entry.patch is in the library.
  */
+#define _GNU_SOURCE
+#define _FILE_OFFSET_BITS 64
 #include <dlfcn.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
 #include <wchar.h>
+#ifdef __GLIBC__
+#include <gnu/libc-version.h>
+#endif
 
-struct archive;
-struct archive_entry;
+#include "linux-loadtest.h"
 
-#define ARCHIVE_OK 0
-#define ARCHIVE_EOF 1
-#define AE_IFREG 0100000
+void *library;
 
-static void *library;
-
-/* Store the address of the named function in *function, or say why it is missing */
-static int find(const char *name, void *function, size_t size)
+int find(const char *name, void *function, size_t size)
 {
     void *address;
 
@@ -47,8 +50,6 @@ static int find(const char *name, void *function, size_t size)
     memcpy(function, &address, size);
     return 1;
 }
-
-#define FIND(name, function) find(name, &(function), sizeof (function))
 
 /* "Größe.txt", composed (NFC), as UTF-8 and as Unicode code points */
 static const char name_utf8[] = "Gr\xc3\xb6\xc3\x9f" "e.txt";
@@ -476,6 +477,9 @@ int main(int argc, char **argv)
         return 1;
     }
     printf("archive_version_details: %s\n", text);
+#ifdef __GLIBC__
+    printf("C library: glibc %s\n", gnu_get_libc_version());
+#endif
 
     /* Read an empty input with every filter and format enabled: each of them bids on
        it, and the "empty" format must win and report the end of the archive. */
@@ -513,6 +517,10 @@ int main(int argc, char **argv)
     if (!check_xar())
         failed = 1;
     if (!check_zip_zstd_end())
+        failed = 1;
+    if (!check_file_io())
+        failed = 1;
+    if (!check_lfs32())
         failed = 1;
     if (failed)
         return 1;
