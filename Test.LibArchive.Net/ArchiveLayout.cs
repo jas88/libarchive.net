@@ -384,11 +384,18 @@ internal static class ArchiveLayout
                 var data = f.Element("data")!;
                 var offset = (int)(long)data.Element("offset")!;
                 var length = (int)(long)data.Element("length")!;
-                return new XarFile(f.Element("name")!.Value, (string)data.Element("encoding")!.Attribute("style")!,
+                return new XarFile(XarName(f.Element("name")!), (string)data.Element("encoding")!.Attribute("style")!,
                     xar.Skip(heap + offset).Take(length).ToArray());
             })
             .ToList();
     }
+
+    // A name is UTF-8 text, or base64 of its UTF-8, marked enctype="base64", when it has characters beyond
+    // Latin-1, as libarchive's XAR writer stores names (see NameEncodingTests.XarNameElement)
+    private static string XarName(XElement name) =>
+        (string?)name.Attribute("enctype") == "base64"
+            ? Encoding.UTF8.GetString(Convert.FromBase64String(name.Value))
+            : name.Value;
 
     /// <summary>
     /// The table of contents without the time it records the archive was written at

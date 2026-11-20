@@ -32,10 +32,12 @@ public class XarCompressionTests
         _ => throw new ArgumentOutOfRangeException(nameof(compression), compression, null),
     };
 
+    // The last name has characters beyond Latin-1, which the table of contents holds in base64
     private static readonly (string Name, byte[] Data)[] Entries =
     {
         ("first.txt", CompressibleText(16 * 1024, seed: 1)),
         ("second.txt", CompressibleText(8 * 1024, seed: 2)),
+        ("日本語.txt", CompressibleText(4 * 1024, seed: 3)),
     };
 
     private static readonly byte[] Text = CompressibleText(128 * 1024);
