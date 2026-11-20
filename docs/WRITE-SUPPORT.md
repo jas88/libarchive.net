@@ -15,16 +15,9 @@ LibArchive.Net now provides comprehensive write support for creating archives in
 - **PAX** - Modern TAR, with pax extended headers for what ustar cannot hold
 - **CPIO** - Unix archive format (SVR4 "newc")
 - **ISO 9660** - CD-ROM filesystem, with Joliet and Rock Ridge extensions
-- **XAR** - macOS package format (not on Linux, see below)
+- **XAR** - macOS package format
 
 Every format stores names with any Unicode characters: see [Entry Names](#entry-names).
-
-XAR is not available on Linux. libarchive's XAR support needs an XML library, and the Linux native
-libraries are built without one (`native/build-linux*.sh` configure libarchive with
-`--without-xml2 --without-expat`). On Linux, creating a writer for `ArchiveFormat.Xar` throws
-`ApplicationException` ("Xar not supported on this platform") before anything is written, and XAR
-archives cannot be read either. The Windows and macOS native libraries are built with libxml2 and
-support XAR.
 
 ### ✅ Compression
 

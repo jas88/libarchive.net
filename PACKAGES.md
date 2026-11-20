@@ -11,7 +11,7 @@ LibArchive.Net is a .NET wrapper for the native libarchive library, providing re
 ### Key Features
 
 - **Reading**: zip, rar, 7zip, tar, cpio, ISO 9660 and other archive formats, compressed with gzip, bzip2, xz, lzma, lzop, zstd, lz4 and more, including password-protected ZIP archives (traditional PKWARE and AES)
-- **Writing**: ZIP, 7-Zip, TAR (also Ustar and PAX), CPIO, ISO 9660 and XAR archives (XAR not on Linux), compressed with Gzip, Bzip2, XZ, LZMA, LZ4, Zstd, Compress or LZIP, and encrypted ZIP archives (AES-128, AES-192, AES-256 or traditional PKWARE)
+- **Writing**: ZIP, 7-Zip, TAR (also Ustar and PAX), CPIO, ISO 9660 and XAR archives, compressed with Gzip, Bzip2, XZ, LZMA, LZ4, Zstd, Compress or LZIP, and encrypted ZIP archives (AES-128, AES-192, AES-256 or traditional PKWARE)
 - **Cross-Platform**: Native libraries included for:
   - Windows: x86, x64, ARM64 (`win-x86`, `win-x64`, `win-arm64`)
   - Linux: x64, ARM (32-bit), ARM64, on glibc and on musl (`linux-x64`, `linux-arm`, `linux-arm64`, `linux-musl-x64`, `linux-musl-arm`, `linux-musl-arm64`)
@@ -75,7 +75,6 @@ using var reader = new LibArchiveReader(volumes);
 #### Linux
 - Native library built with musl-libc and linked into one self-contained file, so the same library serves the glibc and musl runtimes
 - Compatible with both glibc and musl-based distributions
-- No XAR support: libarchive needs an XML library for it, and the Linux libraries are built without one
 
 #### macOS
 - Universal binary supporting both Intel (x64) and Apple Silicon (ARM64)
@@ -97,15 +96,13 @@ The package is annotated with trim analysis attributes to ensure safe trimming b
 ### Known Limitations
 
 1. **Encryption**: ZIP only. libarchive can neither read nor write encrypted 7-Zip or RAR archives
-2. **XAR**: Not available on Linux (see above)
-3. **Multi-Volume Archives**: Only RAR multi-volume archives are tested
+2. **Multi-Volume Archives**: Only RAR multi-volume archives are tested
 
 ### Bundled Native Libraries
 
 Each native library is libarchive with these libraries statically linked into it. Their versions are pinned in [native/build-config.sh](native/build-config.sh), and their licence notices are in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt), which the package also contains.
 
-- **All platforms**: zlib, bzip2, liblzma (XZ Utils), Zstandard, LZ4, and lzokay, which provides lzop support in place of the GPL-licensed liblzo2
-- **Windows and macOS**: libxml2, for the XAR format
+- **All platforms**: zlib, bzip2, liblzma (XZ Utils), Zstandard, LZ4, libxml2, for the XAR format, and lzokay, which provides lzop support in place of the GPL-licensed liblzo2
 - **Linux**: the Mbed TLS crypto library (for ZIP AES encryption and digests; Windows and macOS use the operating system's cryptography instead) and musl libc
 
 They also contain some code from their build toolchains, which THIRD-PARTY-NOTICES.txt describes as well.

@@ -23,7 +23,7 @@ The libraries are:
 - lz4
 - zstd
 - lzokay (lzop support)
-- libxml2 (macOS and Windows only)
+- libxml2
 - zlib
 - xz (liblzma)
 - bzip2
@@ -35,9 +35,23 @@ encryption and digest support. Windows (CNG) and macOS (CommonCrypto) use the
 operating system's crypto instead. It is pinned to the 3.6 LTS line because
 libarchive cannot build against mbedTLS 4.
 
-libxml2 gives libarchive its XAR support, which the Linux libraries do not have
-(libarchive is configured `--without-xml2 --without-expat` there), so only the
-macOS and Windows scripts build it.
+libxml2 gives libarchive its XAR support, on every platform. libarchive's XAR reader
+and writer also need zlib, MD5 and SHA-1. If any of these or the XML library is
+missing, libarchive builds stubs in their place, which fail with "Xar not supported on
+this platform". On Linux:
+- mbedTLS supplies MD5 and SHA-1, as musl has neither, and libarchive is configured
+  `--with-xml2 --without-expat` (expat can read XAR but not write it).
+- `build_libxml2` (in `build-linux-common.sh`) builds libxml2 with only what libarchive
+  uses: its xmlReader and xmlWriter interfaces, and the parser and output code under
+  them. It leaves out libxml2's other modules, its programs and its Python bindings.
+- libxml2 is compiled with `-fvisibility=hidden`, as mbedTLS is. `libarchive.so`
+  therefore does not export libxml2's functions, and another libxml2 in the process can
+  neither clash with them nor take their place.
+- The builds fail unless libarchive's configure enabled XAR and the linked library has
+  it (see "How the library is linked and tested" below).
+
+The macOS native test and the Linux load test each write a XAR archive in memory and
+read it back.
 
 ### lzop support
 
@@ -189,7 +203,7 @@ This will automatically detect your platform and build the appropriate libraries
 - gcc
 - make
 - sccache (the scripts compile through it)
-- pkg-config (libarchive's configure uses it)
+- pkg-config (libarchive's configure finds libxml2 with it)
 - tar, gzip, xz and bzip2, which unpack the downloads (`.tar.gz`, `.tar.xz` and `.tar.bz2` archives)
 - file (each script runs it on the library it built)
 - unzip, to list a package's contents (see [Testing Changes](#testing-changes))
@@ -228,6 +242,11 @@ it against the `<release>.sha256` file that Bootlin publishes beside each
 
 **How the library is linked and tested** (all three Linux scripts use the functions
 in `build-linux-common.sh`):
+- `verify_xar_configured` fails the build, before libarchive is compiled, unless its
+  configure found libxml2 (with pkg-config, in the `.pc` files under `$PREFIX`) with the
+  headers of its reader and writer, zlib, and mbedTLS's MD5 and SHA-1, which its
+  `config.h` records. configure does not fail without them, even given `--with-xml2`:
+  libarchive then builds its XAR stubs.
 - `link_libarchive` links all of `libarchive.a` with the other static libraries,
   the toolchain's own `libgcc.a` (`$CC -print-libgcc-file-name`) and musl's static
   `libc.a`, with `-nostdlib`. No shared library is linked, not even `libgcc_s`.
@@ -238,6 +257,25 @@ in `build-linux-common.sh`):
   (non-weak) unresolved symbol: the toolchain links with `-z now` (BIND_NOW), so such
   a symbol left for the loader to find would make the library fail to load in any
   process that does not happen to define it.
+- In a glibc process the library's calls of C library functions go to glibc's, which
+  come first when the loader binds them, so glibc's code reads and writes the types
+  that musl's headers laid out. glibc's `pthread_mutex_init` clears 48 bytes on ARM64,
+  where musl's mutex is 40. So `link_libarchive` also links `linux-pthread-init.c`, with
+  `-Wl,--wrap=pthread_mutex_init` and `-Wl,--wrap=pthread_cond_init`: every mutex and
+  condition variable with default attributes (all that libxml2 makes) is cleared at
+  musl's size instead, which both C libraries take as initialised with default
+  attributes (see that file).
+- `verify_xar_support` fails the build unless the library defines libxml2's
+  `xmlReaderForIO` and `xmlNewTextWriterMemory`, leaves no libxml2 symbol undefined,
+  weak or strong, and does not contain the stubs' message.
+- `verify_libc_imports` fails the build if the library's code uses a C library symbol
+  that `linux-libc-imports.txt` does not list, or calls the C library's
+  `pthread_mutex_init` or `pthread_cond_init` other than from `linux-pthread-init.c`.
+  It reads the cross reference table of the map that `link_libarchive` writes beside
+  the library. Each new symbol must first be checked for what glibc's function reads
+  and writes against musl's headers, on x64, ARM64 and ARMv7: the list says how, and
+  marks the entries known to differ on ARMv7, where glibc's default functions use a
+  32-bit `off_t`.
 - `verify_self_contained` then fails the build if the library has a DT_NEEDED
   entry or a strong undefined dynamic symbol. Weak undefined symbols, such as
   zstd's optional `ZSTD_trace_*` hooks, are allowed: they resolve to null.
@@ -246,9 +284,10 @@ in `build-linux-common.sh`):
   so that the process contains nothing but musl and the library: natively for x64,
   and under QEMU user-mode emulation for ARMv7 and ARM64. The program
   loads `./libarchive.so` with `RTLD_NOW`, calls a few of its functions (including
-  reading an empty archive) and fails the build on any error. If QEMU is missing,
-  the ARMv7 and ARM64 tests fail the build under GitHub Actions and are skipped
-  with a warning elsewhere.
+  reading an empty archive, and writing a XAR archive in memory and reading it back,
+  for which the XAR writer needs a temporary file in `$TMPDIR` or `/tmp`) and fails
+  the build on any error. If QEMU is missing, the ARMv7 and ARM64 tests fail the
+  build under GitHub Actions and are skipped with a warning elsewhere.
 - The x64 build also loads the library in the same program built with the host's
   `gcc` and C library (glibc on the CI runners).
 
@@ -303,8 +342,9 @@ ARCH=aarch64 ./build-windows.sh
 
 The builds are kept free of compiler, linker and configure warnings. Of lz4, zstd and
 bzip2 every script builds just the static library (bzip2's `bzip2recover` warned), no
-script builds libarchive's programs, and only macOS and Windows, which link libxml2, build
-it. Warnings that came from the dependencies' own build machinery are avoided as follows:
+script builds libarchive's programs, and the Linux scripts build just libxml2's library,
+not its programs. Warnings that came from the dependencies' own build machinery are
+avoided as follows:
 
 - **lz4's deprecated `LZ4_resetStreamHC()`**, which libarchive's lz4 writer called:
   `libarchive-lz4-init-stream-hc.patch` replaces the call (see "The libarchive patches" above).
@@ -434,7 +474,8 @@ The built libraries are cached between runs, keyed on the contents of `native/**
 3. Update `download_all_libraries()` function
 4. Add build steps to each platform script
 5. Update linker commands to include the new library (for Linux, the archive list in `link_libarchive` in `build-linux-common.sh`)
-6. Test on all platforms
+6. On Linux, check any C library symbol that the new library uses and `linux-libc-imports.txt` does not list, and add it there: `verify_libc_imports` fails the build until then
+7. Test on all platforms
 
 Also add it to the update checker: see "Adding a library" in [scripts/README.md](../scripts/README.md).
 

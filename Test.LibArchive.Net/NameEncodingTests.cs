@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.IO.Compression;
-using System.Runtime.InteropServices;
 using System.Text;
 using LibArchive.Net;
 using NUnit.Framework;
@@ -24,31 +23,34 @@ public class NameEncodingTests
         "Größe.txt", "日本語.txt", "\U0001F600.txt", "Ã©.txt", "Ã¶Ã¤Ã¼.txt",
     };
 
-    // XAR cannot be written on Linux (see XarTests)
-    public static IEnumerable<ArchiveFormat> WritableFormats()
+    public static IEnumerable<ArchiveFormat> WritableFormats() => new[]
     {
-        foreach (var format in new[]
-                 {
-                     ArchiveFormat.Zip, ArchiveFormat.SevenZip, ArchiveFormat.Tar, ArchiveFormat.Ustar,
-                     ArchiveFormat.Pax, ArchiveFormat.Cpio, ArchiveFormat.Iso9660,
-                 })
-            yield return format;
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-            yield return ArchiveFormat.Xar;
-    }
+        ArchiveFormat.Zip, ArchiveFormat.SevenZip, ArchiveFormat.Tar, ArchiveFormat.Ustar,
+        ArchiveFormat.Pax, ArchiveFormat.Cpio, ArchiveFormat.Iso9660, ArchiveFormat.Xar,
+    };
 
     private static byte[] ContentOf(string name) => Encoding.UTF8.GetBytes("content of " + name);
 
-    private static byte[] Write(ArchiveFormat format, params string[] names)
+    // An archive written in memory by add. XAR is written through XarTests.WriteArchiveOrIgnore, which
+    // ignores the test on a macOS libarchive that cannot write XAR.
+    private static byte[] Write(ArchiveFormat format, Action<LibArchiveWriter> add)
     {
-        var writer = LibArchiveWriter.CreateMemoryWriter(format);
-        using (writer)
+        byte[] WriteArchive()
         {
-            foreach (var name in names)
-                writer.AddEntry(name, ContentOf(name));
+            var writer = LibArchiveWriter.CreateMemoryWriter(format);
+            using (writer)
+                add(writer);
+            return writer.ToArray();
         }
-        return writer.ToArray();
+
+        return format == ArchiveFormat.Xar ? XarTests.WriteArchiveOrIgnore(WriteArchive) : WriteArchive();
     }
+
+    private static byte[] Write(ArchiveFormat format, params string[] names) => Write(format, writer =>
+    {
+        foreach (var name in names)
+            writer.AddEntry(name, ContentOf(name));
+    });
 
     private static List<(string Name, byte[] Content)> ReadFiles(byte[] archive)
     {
@@ -210,13 +212,11 @@ public class NameEncodingTests
     public void EntryGoesIntoTheDirectoryAddedForIt([ValueSource(nameof(TreeFormats))] ArchiveFormat format)
     {
         const string path = "Café/日本.txt";
-        var writer = LibArchiveWriter.CreateMemoryWriter(format);
-        using (writer)
+        var archive = Write(format, writer =>
         {
             writer.AddDirectoryEntry("Café");
             writer.AddEntry(path, ContentOf(path));
-        }
-        var archive = writer.ToArray();
+        });
 
         Assert.That(ReadDirectories(archive), Is.EqualTo(new[] { "Café" }));
         var files = ReadFiles(archive);
