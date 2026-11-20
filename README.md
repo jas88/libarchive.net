@@ -8,14 +8,12 @@
 ## Features
 
 - **Read** archives: ZIP, RAR, 7-Zip, TAR, gzip, bzip2, xz, lzma, lzop (decoded by [lzokay](https://github.com/AxioDL/lzokay)), and more
-- **Write** archives: ZIP, 7-Zip, TAR, Ustar, PAX, CPIO, ISO 9660, XAR (not on Linux, see below)
+- **Write** archives: ZIP, 7-Zip, TAR, Ustar, PAX, CPIO, ISO 9660, XAR
 - **Compression**: ZIP, 7-Zip and XAR entries with the format's own methods (ZIP: DEFLATE, BZIP2, LZMA, XZ, Zstandard; 7-Zip: LZMA, LZMA2, DEFLATE, BZIP2, Zstandard; XAR: gzip, BZIP2, LZMA, XZ), and other archives with Gzip, Bzip2, XZ, LZMA, LZ4, Zstd, Compress or LZIP filters
 - **Encryption**: ZIP only, for reading and writing: AES-128, AES-192, AES-256 and traditional PKWARE. 7-Zip encryption is not supported by libarchive
 - **Platform support**: Windows (x86, x64, ARM64), Linux (x64, ARM64, ARM), macOS (x64, ARM64)
 - **Native AOT** and trimming compatible (.NET 10+)
 - **.NET Standard 2.0** support for .NET Framework 4.6.1+
-
-XAR is not available on Linux, for writing or for reading. libarchive's XAR support needs an XML library, and the Linux native libraries are built without one (`native/build-linux*.sh` configure libarchive with `--without-xml2 --without-expat`). On Linux, creating a `LibArchiveWriter` for `ArchiveFormat.Xar` throws `ApplicationException` ("Xar not supported on this platform") before anything is written, and `LibArchiveReader` throws `ApplicationException` ("Unrecognized archive format") when given a XAR archive. The Windows and macOS native libraries are built with libxml2 and support XAR.
 
 ## Quick Start
 

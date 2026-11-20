@@ -71,7 +71,6 @@ public enum ArchiveFormat
 
     /// <summary>
     /// XAR (eXtensible Archive) format - Used by macOS installers.
-    /// Not available on Linux.
     /// XAR compresses each file itself, with gzip by default: the compression type selects the method
     /// (<see cref="CompressionType.Gzip"/>, <see cref="CompressionType.Bzip2"/>, <see cref="CompressionType.Lzma"/>
     /// or <see cref="CompressionType.Xz"/>) and no filter is added; any other type, including
@@ -82,12 +81,9 @@ public enum ArchiveFormat
     /// characters beyond Latin-1.
     /// </summary>
     /// <remarks>
-    /// <para>libarchive's XAR support needs an XML library, and the Linux native libraries are built without one
-    /// (libarchive is configured with --without-xml2 --without-expat). On Linux, creating a
-    /// <see cref="LibArchiveWriter"/> with this format throws <see cref="System.ApplicationException"/>
-    /// ("Xar not supported on this platform") before anything is written, and opening a XAR archive with
-    /// <see cref="LibArchiveReader"/> throws <see cref="System.ApplicationException"/>
-    /// ("Unrecognized archive format").</para>
+    /// <para>libarchive's XAR support needs an XML library. The native libraries for every platform
+    /// (Windows, macOS and Linux) are built with libxml2, so XAR archives can be written and read on
+    /// all of them.</para>
     /// <para>A parent directory that was not added as an entry is added by libarchive, under the
     /// name it has in the entry's path.</para>
     /// </remarks>
