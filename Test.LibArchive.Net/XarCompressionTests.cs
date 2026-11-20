@@ -11,7 +11,9 @@ namespace Test.LibArchive.Net;
 // properties with the dictionary size, which each preset sets, and the xz magic followed by a block header
 // with LZMA2's dictionary size. XAR's gzip method writes zlib streams.
 //
-// XAR cannot be written on Linux (see XarTests): there each test checks that creating the writer throws.
+// Each test writes its first archive through XarTests.TryWrite, which knows where XAR can be written: on
+// Linux the test checks that creating the writer throws, and on a macOS libarchive without libxml2 it is
+// ignored.
 [TestFixture]
 public class XarCompressionTests
 {
@@ -90,11 +92,9 @@ public class XarCompressionTests
     [Test]
     public void TestCompressionSelectsTheEncoding([Values] WriterKind kind, [ValueSource(nameof(Types))] CompressionType compression)
     {
-        byte[] WriteArchive() => Write(kind, ArchiveFormat.Xar, compression, 6, w => AddEntries(w, Entries));
-        if (XarIsUnavailable(WriteArchive))
+        var xar = XarTests.TryWriteArchive(() => Write(kind, ArchiveFormat.Xar, compression, 6, w => AddEntries(w, Entries)));
+        if (xar == null)
             return;
-
-        var xar = WriteArchive();
 
         Assert.That(Encoding.ASCII.GetString(xar, 0, 4), Is.EqualTo("xar!"), "the archive starts with the XAR header: no filter wraps it");
         var files = XarFiles(xar);
@@ -111,10 +111,10 @@ public class XarCompressionTests
     [Test]
     public void TestLevelsOneAndNineDiffer([ValueSource(nameof(Types))] CompressionType compression)
     {
-        if (XarIsUnavailable(() => Write(ArchiveFormat.Xar, compression, 1, ("text.txt", Text))))
+        var fastest = XarTests.TryWriteArchive(() => Write(ArchiveFormat.Xar, compression, 1, ("text.txt", Text)));
+        if (fastest == null)
             return;
 
-        var fastest = Write(ArchiveFormat.Xar, compression, 1, ("text.txt", Text));
         var smallest = Write(ArchiveFormat.Xar, compression, 9, ("text.txt", Text));
 
         AssertLevel(XarFiles(fastest).Single().Data, compression, 1);
@@ -129,10 +129,9 @@ public class XarCompressionTests
     [Test]
     public void TestLevelZeroStores([ValueSource(nameof(Types))] CompressionType compression)
     {
-        if (XarIsUnavailable(() => Write(ArchiveFormat.Xar, compression, 0, Entries)))
+        var xar = XarTests.TryWriteArchive(() => Write(ArchiveFormat.Xar, compression, 0, Entries));
+        if (xar == null)
             return;
-
-        var xar = Write(ArchiveFormat.Xar, compression, 0, Entries);
 
         Assert.That(Encoding.ASCII.GetString(xar, 0, 4), Is.EqualTo("xar!"), "the archive starts with the XAR header: no filter wraps it");
         var files = XarFiles(xar);
@@ -151,10 +150,9 @@ public class XarCompressionTests
     public void TestDefaultIsGzipAtLevelSix([Values] WriterKind kind)
     {
         void Add(LibArchiveWriter writer) => AddEntries(writer, Entries);
-        if (XarIsUnavailable(() => Write(kind, ArchiveFormat.Xar, compression: null, 0, Add)))
+        var defaults = XarTests.TryWriteArchive(() => Write(kind, ArchiveFormat.Xar, compression: null, 0, Add));
+        if (defaults == null)
             return;
-
-        var defaults = Write(kind, ArchiveFormat.Xar, compression: null, 0, Add);
 
         Assert.That(XarFiles(defaults).Select(f => f.Encoding), Has.All.EqualTo(EncodingOf(CompressionType.Gzip)));
         foreach (var (compression, archive) in new[]

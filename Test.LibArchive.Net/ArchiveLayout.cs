@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
@@ -23,8 +22,6 @@ public enum WriterKind
 internal static class ArchiveLayout
 {
     internal static readonly DateTime MTime = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-
-    internal static bool IsLinux => RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
 
     /// <summary>
     /// Writes an archive with a writer of the given kind. With no <paramref name="compression"/>, the writer is
@@ -130,19 +127,6 @@ internal static class ArchiveLayout
 
     /// <summary>LZMA2's one-byte dictionary size n for a power of two: 2^(12 + n/2) for an even n.</summary>
     internal static byte Lzma2DictionarySize(int log) => (byte)((log - 12) * 2);
-
-    /// <summary>
-    /// On Linux, where XAR cannot be written (see <see cref="XarTests"/>), asserts that creating the writer
-    /// throws, and returns true.
-    /// </summary>
-    internal static bool XarIsUnavailable(Func<byte[]> write)
-    {
-        if (!IsLinux)
-            return false;
-        var ex = Assert.Throws<ApplicationException>(() => write());
-        Assert.That(ex!.Message, Is.EqualTo("Xar not supported on this platform"));
-        return true;
-    }
 
     #region ZIP
 

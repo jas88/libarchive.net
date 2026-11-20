@@ -24,6 +24,45 @@ public class XarTests
 
     private static bool IsLinux => RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
 
+    private const string CannotWrite = "Xar not supported on this platform";
+
+    /// <summary>
+    /// Runs <paramref name="write"/>, which creates a XAR writer and writes with it, and returns true, or
+    /// returns false where XAR cannot be written: on Linux, after asserting that creating the writer throws,
+    /// and on a macOS libarchive without libxml2, by ignoring the test. Every test that writes XAR comes
+    /// through here, so this is the one place that knows where XAR can be written.
+    /// </summary>
+    internal static bool TryWrite(Action write)
+    {
+        if (IsLinux)
+        {
+            var ex = Assert.Throws<ApplicationException>(() => write());
+            Assert.That(ex!.Message, Is.EqualTo(CannotWrite));
+            return false;
+        }
+
+        try
+        {
+            write();
+            return true;
+        }
+        catch (ApplicationException ex) when (RuntimeInformation.IsOSPlatform(OSPlatform.OSX) && ex.Message == CannotWrite)
+        {
+            // The macOS libraries this project builds include libxml2; Homebrew's libarchive,
+            // which can stand in for them locally, has only expat, which reads XAR but cannot write it.
+            Assert.Ignore("This macOS libarchive was built without libxml2, so it cannot write XAR");
+            return false;
+        }
+    }
+
+    /// <summary>Writes a XAR archive through <see cref="TryWrite"/>.</summary>
+    /// <returns>The archive, or null where XAR cannot be written.</returns>
+    internal static byte[]? TryWriteArchive(Func<byte[]> write)
+    {
+        byte[]? archive = null;
+        return TryWrite(() => archive = write()) ? archive : null;
+    }
+
     [Test]
     public void TestReadFixture()
     {
@@ -52,27 +91,14 @@ public class XarTests
             ? new LibArchiveWriter(output, ArchiveFormat.Xar)
             : new LibArchiveWriter(path, ArchiveFormat.Xar);
 
-        if (IsLinux)
-        {
-            var ex = Assert.Throws<ApplicationException>(() => CreateWriter().Dispose());
-            Assert.That(ex!.Message, Is.EqualTo("Xar not supported on this platform"));
-            return;
-        }
-
         try
         {
-            try
-            {
-                using var writer = CreateWriter();
-                writer.AddEntry("entry.txt", Content);
-            }
-            catch (ApplicationException ex) when (RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
-                                                  && ex.Message == "Xar not supported on this platform")
-            {
-                // The macOS libraries this project builds include libxml2; Homebrew's libarchive,
-                // which can stand in for them locally, has only expat, which reads XAR but cannot write it.
-                Assert.Ignore("This macOS libarchive was built without libxml2, so it cannot write XAR");
-            }
+            if (!TryWrite(() =>
+                {
+                    using var writer = CreateWriter();
+                    writer.AddEntry("entry.txt", Content);
+                }))
+                return;
 
             using var reader = toStream ? new LibArchiveReader(new MemoryStream(output.ToArray())) : new LibArchiveReader(path);
             var entries = reader.Entries().Select(e => (e.Name, Data: e.ReadAllBytes())).ToList();
