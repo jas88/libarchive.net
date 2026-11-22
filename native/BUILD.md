@@ -92,6 +92,8 @@ they are applied, each with its marker, which every file that it changes carries
   AES-192.
 - `libarchive-zip-zstd-end-of-entry.patch` (`LIBARCHIVE_NET_ZIP_ZSTD_END_OF_ENTRY`): the zip reader
   ends a Zstandard entry where its data ends, even if that fills the reader's buffer.
+- `libarchive-xar-heap-length.patch` (`LIBARCHIVE_NET_XAR_HEAP_LENGTH`): the XAR writer ends an
+  archive where its heap ends, without the first bytes of the compressed table of contents.
 
 The description at the top of each patch lists its changes.
 
@@ -158,6 +160,18 @@ entry whose sizes follow its data (`ZIP_LENGTH_AT_END`), read from a non-seekabl
 ends with its first frame, as before. `Test.LibArchive.Net/ZipZstdTests.cs` reads such entries, as
 Python's zipfile and LibArchive.Net's own writer write them, from a path, a seekable stream and a
 non-seekable stream.
+
+`libarchive-xar-heap-length.patch` fixes a bug in libarchive's XAR writer, which libarchive 3.8.11
+and libarchive's master branch both have. The writer keeps the heap, the extended attributes and
+data of the files, in a temporary file, after room for the checksum of the table of contents, which
+starts the heap, and adds the compressed table of contents to that file after the heap. When it
+closes the archive, it copied the heap out from the end of that room, but took as many bytes as the
+room and the heap together, so every archive ended with the first bytes of its compressed table of
+contents, as many as the checksum has: 20 with SHA-1, the default. Readers ignore them, as they read
+the heap by the offsets and lengths that the table of contents gives. The patch copies the heap
+alone. With `toc-checksum=none` there is no room, and the copy was already exact.
+`Test.LibArchive.Net/XarTests.cs` (`TestArchiveEndsWithItsHeap`) checks that an archive that each
+kind of writer writes ends where the last item of its heap ends.
 
 - `patch_libarchive` (in `build-config.sh`) applies them to the freshly unpacked sources in every
   build script: `build-macos.sh`, `build-linux.sh` and `build-windows.sh`, each of which unpacks

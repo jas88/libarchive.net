@@ -1,7 +1,9 @@
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using LibArchive.Net;
 using NUnit.Framework;
+using static Test.LibArchive.Net.ArchiveLayout;
 
 namespace Test.LibArchive.Net;
 
@@ -92,5 +94,45 @@ public class XarTests
         {
             File.Delete(path);
         }
+    }
+
+    // An archive ends where its heap ends: at the end of the last item that its table of contents places there.
+    // libarchive's XAR writer used to add the first bytes of the compressed table of contents after the heap,
+    // as many as the checksum has (see native/libarchive-xar-heap-length.patch). The archive of a directory
+    // alone has only the checksum in its heap. The large entry takes the heap past the writer's 64 KiB buffer.
+    [Test]
+    public void TestArchiveEndsWithItsHeap([Values] WriterKind kind, [Values] bool directoryOnly)
+    {
+        var archive = WriteArchiveOrIgnore(() => Write(kind, ArchiveFormat.Xar, compression: null, 0, writer =>
+        {
+            writer.AddDirectoryEntry("directory");
+            if (!directoryOnly)
+                AddEntries(writer, new[]
+                {
+                    ("directory/small.txt", Content),
+                    ("large.bin", RandomBytes(200 * 1024)),
+                    ("empty.txt", Array.Empty<byte>()),
+                });
+        }));
+
+        // The default checksum of the table of contents is SHA-1 (1 in the header), the first 20 bytes of the heap
+        var headerSize = (int)BigEndian(archive, 4, 2);
+        var tocLength = (int)BigEndian(archive, 8, 8);
+        Assert.That(BigEndian(archive, 24, 4), Is.EqualTo(1), "checksum algorithm");
+        using var sha1 = SHA1.Create();
+        Assert.That(archive.Skip(headerSize + tocLength).Take(20),
+            Is.EqualTo(sha1.ComputeHash(archive, headerSize, tocLength)), "checksum");
+
+        Assert.That(archive.LongLength, Is.EqualTo(XarHeapEnd(archive)), "archive length");
+    }
+
+    private static long BigEndian(byte[] d, int offset, int size) =>
+        d.Skip(offset).Take(size).Aggregate(0L, (value, b) => value << 8 | b);
+
+    private static byte[] RandomBytes(int length)
+    {
+        var bytes = new byte[length];
+        new Random(1).NextBytes(bytes);
+        return bytes;
     }
 }
