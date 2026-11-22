@@ -1,27 +1,134 @@
-v0.3.2 - unreleased
+v0.3.2 - November 22, 2026
 
 **Bug Fixes:**
 - Fix `DllNotFoundException: Unable to load DLL 'archive'` on Windows under .NET Framework (the .NET Standard 2.0 build). The package deploys `archive.dll` to `runtimes\win-{arch}\native\`, which .NET Framework does not probe, and the library only loaded it explicitly on Linux and macOS. It now does the same on Windows.
 - Fix the .NET Standard 2.0 build failing to initialise on Linux and macOS when running on .NET 10 or later. That happens when an app targeting a framework this package has no dedicated build for (such as `net6.0`) is rolled forward to a newer runtime. Since .NET 10, the assembly-wide `DllImportSearchPath.AssemblyDirectory` no longer falls back to the OS library search, so the `libdl` imports used to load the native library could not be resolved.
+- Fix the Linux ARMv7 and ARM64 native libraries failing to load in processes that do not already provide libgcc's helper routines: in v0.3.1 they left integer division helpers (ARMv7) and 128-bit floating point helpers (ARM64) undefined. Each Linux library now needs nothing but its C library, and its link fails on any symbol left undefined.
+- Fix reading archives from seekable streams. The reader now registers a seek callback, so formats that must seek to read their headers, such as 7-Zip, can be read from a `Stream`. The stream's position when the reader is created is treated as the start of the archive, and `Reset()` returns to it. Contributed by @paoloambrosio in #293.
 - Fix the .NET Standard 2.0 build on Linux and macOS keeping a stale copy of the native library in the application's base directory, where it copies the library for Mono: a copy left there by an earlier version of the package, or made in a process of the other C library, was never replaced. A copy that differs from the library loaded is now replaced, with a new copy renamed over it, so that a process which has the old one loaded is not disturbed; as before, a copy that cannot be made is no error.
 - Fix every XAR archive ending with 20 bytes too many: the first 20 bytes of its compressed table of contents, as many as its SHA-1 checksum has. libarchive's XAR writer copied the heap out of its temporary file with the room for that checksum counted twice. Readers ignored the bytes. The native libraries now carry a patch to libarchive (`native/libarchive-xar-heap-length.patch`), so that an archive ends where its heap ends.
 - Fix incorrect Unix permission defaults in `LibArchiveWriter` — bare `0644`/`0755`/`0444` literals were being interpreted as decimal in C# (no octal literal syntax), producing nonsensical permission bits. Files now correctly default to `rw-r--r--` (and `r--r--r--` for read-only attributes), directories to `rwxr-xr-x`. Reported and initial fix contributed by @JuanCalle1606 in #220.
+- Fix creating AES-encrypted ZIP archives, the default encryption, on Linux. The Linux native libraries were built without a cryptography backend; they now statically link a minimal mbedTLS.
+- Fix a password with the 7-Zip format silently producing an unencrypted archive, which read back in full without the password. libarchive can only encrypt ZIP, so 7-Zip now throws `NotSupportedException` before the output is created, as the other formats besides ZIP already did. With `EncryptionType.None` the password is ignored, for every format.
+- `EncryptionType.None` with a password now writes an unencrypted ZIP archive, instead of failing with an `ApplicationException` reading ``Undefined option: `encryption'``.
+- `WithPassword` now throws `InvalidOperationException`, pointing to the constructor and `CreateMemoryWriter`, instead of failing and leaving the writer unusable. libarchive accepts encryption settings only before an archive is opened, and the writer opens it when it is created, so encryption cannot be enabled, changed or removed afterwards. With `EncryptionType.None` on a writer that is not encrypting, `WithPassword` does nothing.
+- Fix non-ASCII entry names, in every format, on every platform, whatever the process locale. libarchive converted names through the C runtime's locale, which a .NET process leaves as "C".
+  - On macOS and Linux, writing such a name failed in pax/tar and XAR, 7-Zip archives with one could not be read, and ZIP archives lacked the UTF-8 flag.
+  - On Windows, names were stored double-encoded in pax, 7-Zip, XAR and ISO 9660 Joliet names, and the .NET Standard 2.0 build lost every character outside the ANSI code page.
+
+  Names are now stored as UTF-8 (UTF-16 in 7-Zip and Joliet), with ZIP's UTF-8 flag, and read back as UTF-8. Archive files with non-ASCII paths now open on Windows.
+- Fix reading a plain compressed file that is not an archive (`.gz`, `.bz2`, `.xz`, `.lzma`, `.zst`, `.lz4` or `.lzo`), which threw "Unrecognized archive format": the README's own example failed. Such a file now reads as one entry holding the decompressed data, from a path, from volumes or from a stream. So does compressed text that libarchive took for an mtree spec. A compressed file holding no data, like empty data, opens as an archive with no entries.
+- Fix the file writer ignoring `blockSize`: its import of `archive_write_open_filename` had a third argument that the C function does not have. The file, stream and memory writers now set the block size, without padding the last block, so archives are byte-identical whatever the block size. A block size above `int.MaxValue` throws `ArgumentOutOfRangeException`.
+- Fix the P/Invoke declarations to match libarchive 3.8.11:
+  - every import and callback is explicitly cdecl, where Windows x86 defaulted to stdcall;
+  - `size_t` parameters are `nuint`;
+  - `mode_t` has its per-platform width;
+  - `time_t`'s companion `long` is a C `long`.
+
+  The entry stream's `Read` now validates its arguments.
+- Fix a crash when disposing a stream reader: the native reader was freed after its stream callbacks were released, and freeing it still calls them.
+- An entry whose name libarchive cannot convert is now returned with an empty name instead of being skipped silently.
+- Names read from a format that declares its character set (ZIP with the UTF-8 flag, pax, 7-Zip, Joliet, XAR) are returned composed (NFC), as libarchive normalizes them. Other formats return names as stored, decoded as UTF-8.
+- The .NET Standard 2.0 build marshals strings as UTF-8 instead of the Windows ANSI code page. A non-ASCII password on that build is therefore UTF-8, as other ZIP tools expect.
+- Fix `Entries()` and `FirstEntry()` throwing at an entry that libarchive reads with a warning, such as one with a pax attribute that it ignores or a name that it cannot convert. The exception lost that entry and every one after it. Such an entry is now returned, as bsdtar goes on with it, with libarchive's message in the new `Entry.Warning`. Uncompressed text that libarchive takes for an mtree spec is now read as mtree, each entry with its warning, as bsdtar reads it.
+- An error for which libarchive sets no message now names libarchive's result, as in "libarchive returned ARCHIVE_FATAL without a message", instead of "Unknown error".
+- Fix the compression settings of ZIP, 7-Zip and XAR archives, which compress their own entries. `compressionLevel` had no effect on them, and every `CompressionType` wrapped the whole archive in a filter: `ArchiveFormat.Zip` with `CompressionType.Bzip2` wrote a bzip2 stream holding a ZIP archive, which ZIP tools cannot open. For these formats:
+  - `compression` now selects the format's own method, and `compressionLevel` its level. ZIP has DEFLATE, BZIP2, LZMA, XZ and Zstandard; 7-Zip has DEFLATE, BZip2, LZMA, LZMA2 (for `Xz`) and Zstandard; XAR has gzip, bzip2, lzma and xz.
+  - Level 0 stores the entries uncompressed, whatever the method.
+  - `CompressionType.None` keeps each format's default method, so the default calls write the same bytes as before.
+  - A type that the format has no method for throws `NotSupportedException` before anything is written, listing the types that it supports, instead of wrapping the archive. `CompressionType.Deflate` now works with ZIP and 7-Zip; with the other formats it still throws, pointing to `Gzip`.
+  - A level outside 0 to 9 throws `ArgumentOutOfRangeException`, where it was ignored.
+- Fix reading a ZIP archive's Zstandard entry (method 93) whose data ends exactly as libarchive's 128 KiB buffer fills, such as an entry of 128 KiB or a multiple of it, from a file or a seekable stream. It failed with "Truncated zstd file body", wherever the archive came from. An entry of several Zstandard frames now also reads in full when its sizes are known. libarchive 3.8.11 and its master branch have the bug, so the native libraries are built with a patch that fixes it.
+- On .NET Standard 2.0, read libarchive's error messages as UTF-8 whatever their length. One over 1,000,000 bytes made the writer throw `InvalidOperationException` in place of the error, and the reader decode it with the ANSI code page.
 
 **API Improvements:**
 - `LibArchiveWriter.GetUnixPermissions` now returns `System.IO.UnixFileMode` and uses `FileInfo.UnixFileMode` directly on .NET 7+, falling back to defaults when the platform reports `0` (Windows) or `-1` (file missing). On .NET Standard 2.0 an internal `UnixFileMode` polyfill mirrors the BCL flags enum so the same code paths and constants are used everywhere.
+- Add a `CreateMemoryWriter(uint blockSize, ArchiveFormat format, ...)` overload. The existing signature is unchanged, so compiled callers keep working.
+- Write ZIP archives encrypted with WinZip AES-192 (`EncryptionType.AES192`), which failed in v0.3.1 with an `ApplicationException` reading ``Undefined option: `encryption'``. libarchive's ZIP writer has only AES-128 and AES-256, so the native libraries are built with a patch that adds AES-192.
+- Add `LibArchiveReader.Entry.Warning`: libarchive's warning about the entry, or null if there was none.
+- Read and write XAR archives on Linux, as on macOS and Windows. XAR never worked on Linux: libarchive's XAR support needs MD5 and SHA-1 as well as libxml2, and the Linux libraries had neither until this release. They now link mbedTLS and a minimal libxml2, and the Linux builds fail if XAR is missing.
 
 **Target Frameworks:**
 - Add a `net11.0` build. The package is now built with the .NET 11 SDK.
 - Drop the `net8.0` and `net9.0` builds, as .NET 8 and .NET 9 have reached end of support. The package now ships `netstandard2.0`, `net10.0` and `net11.0` builds, so apps targeting .NET 8 or .NET 9 get the .NET Standard 2.0 build. That build is not marked as trimming or Native AOT compatible: target .NET 10 or later for those.
 
-**Linux Native Libraries:**
-- Ship a native library of its own for each Linux runtime, linked dynamically against that runtime's C library, in place of one library per architecture with musl linked into it, which the glibc and musl runtimes shared. The libraries need:
+**Native Library Updates:**
+- Bump libarchive from 3.8.6 to 3.8.11
+- Bump xz from 5.8.3 to 5.8.4
+- Bump zlib from 1.3.2 to 1.4
+- Bump libxml2 from 2.15.2 to 2.15.4
+- Bump lz4 from 1.10.0 to 1.11.1
+- Replace the GPL-licensed liblzo2 2.10 with lzokay (MIT), pinned to commit `db2df1f`, behind a small shim that provides the part of the liblzo2 API libarchive uses, so lzop-compressed data is still read in-process
+- Add mbedTLS 3.6.8, statically linked into the Linux libraries only, for AES-encrypted ZIP archives and for the MD5 and SHA-1 that XAR needs
+- Link libxml2 into the Linux libraries as well, for XAR, built with only the parts that libarchive's XAR support uses and seeded from `getentropy`
+- Add `THIRD-PARTY-NOTICES.txt` at the root of the package, with the licence notices for the third-party code linked into the native libraries
+- Stop building and shipping the Linux x86 library, which the loader never supported and for which .NET has no official runtime; a .NET 10+ app on an unofficial Linux x86 runtime, which could previously load the packaged library, now gets a `DllNotFoundException`
+- Patch libarchive at build time, with one patch for each change, in the order that `LIBARCHIVE_PATCHES` in `native/build-config.sh` lists them:
+  - `libarchive-narrow-utf8.patch` makes its narrow strings UTF-8 on every platform, whatever the process locale, without changing the locale;
+  - `libarchive-lz4-init-stream-hc.patch` stops its lz4 writer calling lz4's deprecated `LZ4_resetStreamHC`;
+  - `libarchive-zip-aes192.patch` adds WinZip AES-192 to its ZIP writer;
+  - `libarchive-zip-zstd-end-of-entry.patch` fixes its ZIP reader for Zstandard entries that end exactly as its buffer fills;
+  - `libarchive-xar-heap-length.patch` ends its XAR archives where their heap ends, without the first bytes of the compressed table of contents after it.
+
+  Every native build fails if a patch does not apply exactly, and the update checker does not propose a libarchive release that a patch does not apply to, naming the patch
+- Ship a native library of its own for each of the six Linux runtimes (`runtimes/linux-{x64,arm64,arm}/native/` for glibc, `runtimes/linux-musl-{x64,arm64,arm}/native/` for musl), linked dynamically against that runtime's C library, in place of v0.3.1's one library per architecture with musl linked into it, which the glibc and musl runtimes shared. The libraries need:
   - glibc 2.28 or later for `linux-x64` and `linux-arm64` (RHEL 8 and later);
   - glibc 2.34 or later for `linux-arm`, which is built with a 64-bit `time_t` and `off_t`. On an older glibc the dynamic loader refuses to load it, where the previous library crashed or misbehaved;
   - musl 1.2.5 or later (Alpine 3.21 and later) for `linux-musl-x64`, `linux-musl-arm64` and `linux-musl-arm`.
-- The .NET Standard 2.0 build loads the `linux-musl-<arch>` library in a musl process, which it recognises from an executable mapping of musl's dynamic linker in `/proc/self/maps`, or, when that cannot be read, from `dlsym` not finding glibc's `gnu_get_libc_version`. .NET 6 and later choose between the two libraries from the runtime identifier.
+
+  **Compatibility:** `linux-arm` now needs glibc 2.34 or later (Debian 12, Ubuntu 22.04 and later), so 32-bit ARM systems with an older glibc, such as Debian 11, can no longer use the package.
 - The Linux libraries export libarchive's API (`archive_*`) alone, and no longer the functions of the libraries linked into them, such as zlib's and zstd's, which other code in the process could bind to or take the place of.
-- The Linux libraries are built with zig. CI load-tests each of them in containers of old and current distributions, and runs the package's tests on .NET in Alpine x64 as well as on Ubuntu.
+- The .NET Standard 2.0 build loads the `linux-musl-<arch>` library in a musl process, which it recognises from an executable mapping of musl's dynamic linker in `/proc/self/maps`, or, when that cannot be read, from `dlsym` not finding glibc's `gnu_get_libc_version`. .NET 6 and later choose between the two libraries from the runtime identifier.
+
+**Build & CI Improvements:**
+- Build the native libraries in parallel, one job per target, and reuse the previous binaries when nothing under `native/` has changed
+- Run the .NET Framework tests on Windows instead of under Mono on Linux, and test only the package that was just built
+- Publish to nuget.org with Trusted Publishing instead of a stored API key
+- Retry native source downloads that fail their checksum, fetch zlib from its GitHub release, and fall back to ftp.gnu.org when a GNU mirror serves a bad file
+- Fix the macOS build failing on a libtool version mismatch
+- Pin all GitHub Actions to exact versions
+- Fail CI with instructions when `Directory.Build.props` is out of date for the SDK, instead of trying to push the fix
+- Fail the Linux builds unless each library needs (DT_NEEDED) only its own C library; a glibc library imports no symbol version later than its glibc baseline and, on `linux-arm`, none of glibc's functions with a 32-bit `time_t` or `off_t`; it exports `archive_*` alone and every function that LibArchive.Net imports (`native/verify-exports.sh`); and, for a glibc library, its load test passes, under QEMU for ARM64 and ARMv7. The package job also checks, with `native/verify-linux-runtimes.sh`, that each Linux runtime holds the library of its own architecture and C library
+- Select the win32 MinGW compilers by name in the Windows build, which failed on the x86 and x64 targets when the apt package cache was restored
+- Harden the native dependency update checker: apply an update only once its new tarball's SHA-256 is recorded and checked, replace `native/build-config.sh` atomically, accept only plain dotted version numbers from upstream, and send the GitHub token only to `api.github.com`, without following redirects; its workflow gives the default token no permissions
+- Fix `native/build-all.sh` for local builds: copy the libraries from `~/libarchive-native`, where the platform scripts leave them. `--package` now takes its version from `PACKAGE_VERSION`, which MinVer previously overrode, and tests the packed package as CI does: the modern .NET target everywhere, and net462 on Windows only
+- Remove the unused Perl update checker, `scripts/check-native-updates.pl`
+- Verify the zig download against its pinned SHA-256 before every use, so a truncated download or an error page is never reused, and the LLVM-MinGW download against a pinned SHA-256
+- Cache native source downloads and configure results under `${XDG_CACHE_HOME:-~/.cache}/libarchive-net/`. They were in `~/downloads`, which is `~/Downloads` on macOS's case-insensitive file system, and `~/config-cache`. Each native CI job now has its own download cache
+- Stop tracking a prebuilt 2022 `archive.dll` (libarchive 3.6.1), which a local `dotnet pack` shipped as the only native library, and ignore `runtimes/*/native/`
+- Warn (`LIBARCHIVENET001`) when packing without a native library for every runtime, naming the runtimes that have none
+- Make every pre-commit hook pass on all files, and exclude patch files from the trailing-whitespace hook, which would change them
+- Run the Windows package tests on the modern .NET target as well as .NET Framework 4.6.2
+- Unpack fresh sources on every Windows native build, so a second local build no longer fails on the libarchive tree that the first one patched
+- Keep the plain-text test fixtures byte-exact on Windows checkouts
+- Fix `XarCompressionTests.TestDefaultIsGzipAtLevelSix` failing when its archives were written in different seconds: the file data that it compares now ends with the last item in the heap, before the bytes that libarchive copies from the compressed table of contents, which change with the creation time (#328)
+- `scripts/generate-build-props.sh`: the .NET 13 SDK targets net12.0 and net13.0, and the .NET 14 SDK follows the same rule instead of targeting net14.0 alone
+- Build the native libraries without compiler, linker, libtool or configure warnings:
+  - build only the dependency libraries that are linked: no `bzip2recover` and no lz4 programs;
+  - pass libxml2 only the options it has;
+  - stop libarchive's lz4 writer calling lz4's deprecated `LZ4_resetStreamHC`, through a patch of its own;
+  - name the cross tools for cross-compiling configure runs.
+- Make the build scripts pass shellcheck
+- Build the Linux libraries with zig 0.17.1 in place of the Bootlin musl toolchains: one `native/build-linux.sh` builds any of the six Linux runtimes, on Linux or macOS
+- Load-test each Linux library in containers of old and current distributions (AlmaLinux 8, Debian 13, Ubuntu 22.04 and 24.04, Alpine 3.21 and 3.24), under QEMU for ARM64 and ARMv7, and check that Debian 11's glibc 2.31 refuses the `linux-arm` library
+- Run the package's tests in Alpine x64 as well as on Ubuntu, each checking that the runtime's own library is the one loaded, and on .NET 8 as well, where they run the .NET Standard 2.0 build and its loader
+
+**Documentation:**
+- The package description and `PACKAGES.md` now describe what the package ships: reading and writing, the supported platforms and runtimes, and the libraries bundled on each platform. `PACKAGES.md`'s code samples now compile
+- Correct API names, target frameworks and the license link in `README.md` and `docs/WRITE-SUPPORT.md`
+- `native/BUILD.md`: liblzma is 0BSD (since XZ Utils 5.6.0), not public domain. It also gains the cache locations and a section on testing a package locally
+- `README.md` and `docs/WRITE-SUPPORT.md` describe how each format stores entry names and how they are read back
+- Correct the doc comments on the ZIP encryption variants and on 7-Zip having no encryption. Also correct the error-handling sample in `docs/WRITE-SUPPORT.md`
+- `README.md`, `docs/WRITE-SUPPORT.md` and the doc comments describe the compression methods and levels of each format, and what each filter does with the level
+
+**Tooling Updates:**
+- Bump .NET SDK from 10.0.201 to 11.0.100
+- Bump MinVer from 7.0.0 to 8.0.0
+- Bump NUnit from 4.5.1 to 5.0.0
+- Bump NUnit3TestAdapter from 6.2.0 to 6.3.1
+- Bump NUnit.Analyzers from 4.12.0 to 4.15.0
+- Bump Microsoft.NET.Test.Sdk from 18.4.0 to 18.12.0
+- Bump coverlet.collector from 8.0.1 to 10.1.1
 
 v0.3.1 - April 7, 2026
 
