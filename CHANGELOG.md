@@ -3,7 +3,7 @@ v0.3.2 - November 16, 2026
 **Bug Fixes:**
 - Fix `DllNotFoundException: Unable to load DLL 'archive'` on Windows under .NET Framework (the .NET Standard 2.0 build). The package deploys `archive.dll` to `runtimes\win-{arch}\native\`, which .NET Framework does not probe, and the library only loaded it explicitly on Linux and macOS. It now does the same on Windows.
 - Fix the .NET Standard 2.0 build failing to initialise on Linux and macOS when running on .NET 10 or later. That happens when an app targeting a framework this package has no dedicated build for (such as `net6.0`) is rolled forward to a newer runtime. Since .NET 10, the assembly-wide `DllImportSearchPath.AssemblyDirectory` no longer falls back to the OS library search, so the `libdl` imports used to load the native library could not be resolved.
-- Fix the Linux ARMv7 and ARM64 native libraries failing to load in processes that do not already provide libgcc's helper routines: in v0.3.1 they left integer division helpers (ARMv7) and 128-bit floating point helpers (ARM64) undefined. Every Linux library is now self-contained.
+- Fix the Linux ARMv7 and ARM64 native libraries failing to load in processes that do not already provide libgcc's helper routines: in v0.3.1 they left integer division helpers (ARMv7) and 128-bit floating point helpers (ARM64) undefined. Each Linux library now needs nothing but its C library, and its link fails on any symbol left undefined.
 - Fix reading archives from seekable streams. The reader now registers a seek callback, so formats that must seek to read their headers, such as 7-Zip, can be read from a `Stream`. The stream's position when the reader is created is treated as the start of the archive, and `Reset()` returns to it. Contributed by @paoloambrosio in #293.
 - Fix the .NET Standard 2.0 build on Linux and macOS keeping a stale copy of the native library in the application's base directory, where it copies the library for Mono: a copy left there by an earlier version of the package, or made in a process of the other C library, was never replaced. A copy that differs from the library loaded is now replaced, with a new copy renamed over it, so that a process which has the old one loaded is not disturbed; as before, a copy that cannot be made is no error.
 - Fix every XAR archive ending with 20 bytes too many: the first 20 bytes of its compressed table of contents, as many as its SHA-1 checksum has. libarchive's XAR writer copied the heap out of its temporary file with the room for that checksum counted twice. Readers ignored the bytes. The native libraries now carry a patch to libarchive (`native/libarchive-xar-heap-length.patch`), so that an archive ends where its heap ends.
@@ -58,7 +58,6 @@ v0.3.2 - November 16, 2026
 - Bump zlib from 1.3.2 to 1.4
 - Bump libxml2 from 2.15.2 to 2.15.4
 - Bump lz4 from 1.10.0 to 1.11.1
-- Bump the Bootlin musl toolchains used for the Linux builds from 2025.08-1 to 2026.08-1
 - Replace the GPL-licensed liblzo2 2.10 with lzokay (MIT), pinned to commit `db2df1f`, behind a small shim that provides the part of the liblzo2 API libarchive uses, so lzop-compressed data is still read in-process
 - Add mbedTLS 3.6.8, statically linked into the Linux libraries only, for AES-encrypted ZIP archives and for the MD5 and SHA-1 that XAR needs
 - Link libxml2 into the Linux libraries as well, for XAR, built with only the parts that libarchive's XAR support uses and seeded from `getentropy`
@@ -71,10 +70,12 @@ v0.3.2 - November 16, 2026
   - `libarchive-zip-zstd-end-of-entry.patch` fixes its ZIP reader for Zstandard entries that end exactly as its buffer fills.
 
   Every native build fails if a patch does not apply exactly, and the update checker does not propose a libarchive release that a patch does not apply to, naming the patch
-- Ship a native library of its own for each Linux runtime, linked dynamically against that runtime's C library, in place of one library per architecture with musl linked into it, which the glibc and musl runtimes shared. The libraries need:
+- Ship a native library of its own for each of the six Linux runtimes (`runtimes/linux-{x64,arm64,arm}/native/` for glibc, `runtimes/linux-musl-{x64,arm64,arm}/native/` for musl), linked dynamically against that runtime's C library, in place of v0.3.1's one library per architecture with musl linked into it, which the glibc and musl runtimes shared. The libraries need:
   - glibc 2.28 or later for `linux-x64` and `linux-arm64` (RHEL 8 and later);
   - glibc 2.34 or later for `linux-arm`, which is built with a 64-bit `time_t` and `off_t`. On an older glibc the dynamic loader refuses to load it, where the previous library crashed or misbehaved;
   - musl 1.2.5 or later (Alpine 3.21 and later) for `linux-musl-x64`, `linux-musl-arm64` and `linux-musl-arm`.
+
+  **Compatibility:** `linux-arm` now needs glibc 2.34 or later (Debian 12, Ubuntu 22.04 and later), so 32-bit ARM systems with an older glibc, such as Debian 11, can no longer use the package.
 - The Linux libraries export libarchive's API (`archive_*`) alone, and no longer the functions of the libraries linked into them, such as zlib's and zstd's, which other code in the process could bind to or take the place of.
 - The .NET Standard 2.0 build loads the `linux-musl-<arch>` library in a musl process, which it recognises from an executable mapping of musl's dynamic linker in `/proc/self/maps`, or, when that cannot be read, from `dlsym` not finding glibc's `gnu_get_libc_version`. .NET 6 and later choose between the two libraries from the runtime identifier.
 
@@ -86,13 +87,12 @@ v0.3.2 - November 16, 2026
 - Fix the macOS build failing on a libtool version mismatch
 - Pin all GitHub Actions to exact versions
 - Fail CI with instructions when `Directory.Build.props` is out of date for the SDK, instead of trying to push the fix
-- Restrict Renovate to the Bootlin musl toolchains, which no other updater covers
-- Fail the Linux builds if a library is not self-contained or does not load in a process that contains only musl, using QEMU for the ARMv7 and ARM64 load tests, and also load the x64 library from a glibc program
+- Fail the Linux builds unless each library needs (DT_NEEDED) only its own C library; a glibc library imports no symbol version later than its glibc baseline and, on `linux-arm`, none of glibc's functions with a 32-bit `time_t` or `off_t`; it exports `archive_*` alone and every function that LibArchive.Net imports (`native/verify-exports.sh`); and, for a glibc library, its load test passes, under QEMU for ARM64 and ARMv7. The package job also checks, with `native/verify-linux-runtimes.sh`, that each Linux runtime holds the library of its own architecture and C library
 - Select the win32 MinGW compilers by name in the Windows build, which failed on the x86 and x64 targets when the apt package cache was restored
 - Harden the native dependency update checker: apply an update only once its new tarball's SHA-256 is recorded and checked, replace `native/build-config.sh` atomically, accept only plain dotted version numbers from upstream, and send the GitHub token only to `api.github.com`, without following redirects; its workflow gives the default token no permissions
 - Fix `native/build-all.sh` for local builds: copy the libraries from `~/libarchive-native`, where the platform scripts leave them. `--package` now takes its version from `PACKAGE_VERSION`, which MinVer previously overrode, and tests the packed package as CI does: the modern .NET target everywhere, and net462 on Windows only
 - Remove the unused Perl update checker, `scripts/check-native-updates.pl`
-- Verify each Bootlin toolchain download against the `.sha256` file that Bootlin publishes beside it, before every use, so a truncated download or an error page is never reused. Verify the LLVM-MinGW download against a pinned SHA-256
+- Verify the zig download against its pinned SHA-256 before every use, so a truncated download or an error page is never reused, and the LLVM-MinGW download against a pinned SHA-256
 - Cache native source downloads and configure results under `${XDG_CACHE_HOME:-~/.cache}/libarchive-net/`. They were in `~/downloads`, which is `~/Downloads` on macOS's case-insensitive file system, and `~/config-cache`. Each native CI job now has its own download cache
 - Stop tracking a prebuilt 2022 `archive.dll` (libarchive 3.6.1), which a local `dotnet pack` shipped as the only native library, and ignore `runtimes/*/native/`
 - Warn (`LIBARCHIVENET001`) when packing without a native library for every runtime, naming the runtimes that have none
@@ -100,6 +100,7 @@ v0.3.2 - November 16, 2026
 - Run the Windows package tests on the modern .NET target as well as .NET Framework 4.6.2
 - Unpack fresh sources on every Windows native build, so a second local build no longer fails on the libarchive tree that the first one patched
 - Keep the plain-text test fixtures byte-exact on Windows checkouts
+- Fix `XarCompressionTests.TestDefaultIsGzipAtLevelSix` failing when its archives were written in different seconds: the file data that it compares now ends with the last item in the heap, before the bytes that libarchive copies from the compressed table of contents, which change with the creation time (#328)
 - `scripts/generate-build-props.sh`: the .NET 13 SDK targets net12.0 and net13.0, and the .NET 14 SDK follows the same rule instead of targeting net14.0 alone
 - Build the native libraries without compiler, linker, libtool or configure warnings:
   - build only the dependency libraries that are linked: no `bzip2recover` and no lz4 programs;
@@ -107,7 +108,9 @@ v0.3.2 - November 16, 2026
   - stop libarchive's lz4 writer calling lz4's deprecated `LZ4_resetStreamHC`, through a patch of its own;
   - name the cross tools for cross-compiling configure runs.
 - Make the build scripts pass shellcheck
-- The Linux libraries are built with zig. CI load-tests each of them in containers of old and current distributions, and runs the package's tests on .NET in Alpine x64 as well as on Ubuntu.
+- Build the Linux libraries with zig 0.17.1 in place of the Bootlin musl toolchains: one `native/build-linux.sh` builds any of the six Linux runtimes, on Linux or macOS
+- Load-test each Linux library in containers of old and current distributions (AlmaLinux 8, Debian 13, Ubuntu 22.04 and 24.04, Alpine 3.21 and 3.24), under QEMU for ARM64 and ARMv7, and check that Debian 11's glibc 2.31 refuses the `linux-arm` library
+- Run the package's tests in Alpine x64 as well as on Ubuntu, each checking that the runtime's own library is the one loaded, and on .NET 8 as well, where they run the .NET Standard 2.0 build and its loader
 
 **Documentation:**
 - The package description and `PACKAGES.md` now describe what the package ships: reading and writing, the supported platforms and runtimes, and the libraries bundled on each platform. `PACKAGES.md`'s code samples now compile
