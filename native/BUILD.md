@@ -225,7 +225,10 @@ This will automatically detect your platform and build the appropriate libraries
 
 `build-linux.sh <rid>` builds the library of one Linux runtime with [zig](#zig) (`zig cc` and
 `zig c++`), linked dynamically against that runtime's own C library: glibc for the `linux-*`
-runtimes and musl for the `linux-musl-*` ones. No C library is linked into any of them. Each
+runtimes and musl for the `linux-musl-*` ones. No C library is linked into any of them whole:
+`linux-x64` and `linux-arm64` take a few functions (`stat` and the like) from glibc's static
+`libc_nonshared.a`, which glibc links into every program, and the two 32-bit ARM libraries hold
+zig's compiler-rt, which also supplies `memcpy` and a few other string functions. Each
 library needs its C library at run time and nothing else, and exports libarchive's API
 (`archive_*`) alone. Every configure is a cross configure, so the script runs on x86_64 and
 aarch64 Linux and on macOS alike.
