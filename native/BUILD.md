@@ -453,6 +453,15 @@ fails the build:
   by compiler-rt (`compiler_rt`) for musl. The symbol table names the object that defines each
   local symbol, hidden ones included, in the `STT_FILE` symbol before it, which `strip_debug_info`
   keeps.
+- For the other four libraries, `verify_libc_stack_guard <library>`: neither `.symtab` nor
+  `.dynsym` defines `__stack_chk_guard` or `__stack_chk_fail`, which the C library gives them
+  (`linux-x64` and `linux-musl-x64` keep the guard in thread-local storage, and `linux-arm64` and
+  `linux-musl-arm64` import it), and no symbol names zig's compiler-rt (`compiler_rt` or
+  `compiler_rt.*`). A change of zig or of the flags that pulled compiler-rt into one of them, for
+  outline atomics or 128-bit floats, say, would bring its constant guard, which would take the
+  place of the C library's, as it did on 32-bit ARM. Both tables must define
+  `archive_version_string`, and `.symtab` must have `STT_FILE` symbols, so that a missing or
+  stripped table cannot pass.
 - The load test (see [The load tests](#the-load-tests)).
 - `verify_lzo_support` and `verify_lzo_shim_resolved` (in `build-lzo-shim.sh`; see [lzop
   support](#lzop-support)).

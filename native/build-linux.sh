@@ -269,10 +269,14 @@ READELF="${AR%ar}readelf" "${SCRIPT_DIR}/verify-exports.sh" libarchive.so
 # On 32-bit ARM, fail the build unless the stack protector's guard is the one that
 # linux-arm-stack-guard.c seeds when the library loads, and its __stack_chk_fail the one that
 # ends the process as the C library's own does: linux-arm-stack-guard.c's for glibc, and zig's
-# compiler-rt's for musl (see build-linux-common.sh)
+# compiler-rt's for musl. Elsewhere, fail it if the library defines either of the stack
+# protector's symbols, which the C library gives it, or contains any of compiler-rt, which
+# would bring a constant guard of its own (see build-linux-common.sh)
 if [ -n "$STACK_GUARD" ]; then
     verify_stack_guard libarchive.so
     verify_stack_chk_fail libarchive.so "$LIBC"
+else
+    verify_libc_stack_guard libarchive.so
 fi
 
 # The load test program, which is kept beside the library for CI to run with it in

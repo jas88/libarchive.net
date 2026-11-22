@@ -688,6 +688,95 @@ verify_stack_chk_fail() {
     echo "__stack_chk_fail is the hidden one of ${object}, which ends the process as ${libc}'s does"
 }
 
+# Fail the build unless a library that does not link linux-arm-stack-guard.c (every library
+# but the 32-bit ARM ones) leaves its stack protector to its C library and contains none of
+# zig's compiler-rt. Today linux-x64 and linux-musl-x64 keep the guard in thread-local
+# storage, and linux-arm64 and linux-musl-arm64 import __stack_chk_guard from the C library;
+# none of the four contains compiler-rt. If a change of zig or of the flags pulled compiler-rt
+# into one of them (for outline atomics or 128-bit floats, say), its weak, constant guard
+# would silently take the place of the C library's, as it did on 32-bit ARM, and its
+# __stack_chk_fail that of the C library's handler. So neither .symtab nor .dynsym may define
+# __stack_chk_guard or __stack_chk_fail, and no symbol may name compiler-rt's object
+# ("compiler_rt", its STT_FILE symbol) or its local symbols ("compiler_rt.<file>.<name>").
+# So that a missing, empty or stripped table cannot pass, both tables must be there and
+# define archive_version_string, and .symtab must have STT_FILE symbols, which
+# strip_debug_info keeps.
+# Usage: verify_libc_stack_guard <library>
+# Uses AR to find readelf.
+verify_libc_stack_guard() {
+    local lib="${1:-}"
+    if [ -z "$lib" ]; then
+        echo "ERROR: verify_libc_stack_guard needs the library to check as its argument"
+        return 1
+    fi
+    if [ -z "${AR:-}" ]; then
+        echo "ERROR: verify_libc_stack_guard needs AR to be set"
+        return 1
+    fi
+
+    echo "=== Verifying that ${lib} leaves its stack protector to the C library ==="
+    # Only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
+    local readelf="${AR%ar}readelf" symbols report
+    if ! symbols=$("$readelf" -W -s "$lib"); then
+        echo "ERROR: could not read ${lib} with ${readelf}"
+        return 1
+    fi
+    # One line for each finding, as "<kind> <detail>": "table <name>" for each table that
+    # defines archive_version_string, "files <count>" for .symtab's STT_FILE symbols,
+    # "defined <symbol> <table>" for each stack protector symbol defined, "imported <symbol>"
+    # for each one imported, and "compiler_rt <count> <example>", the example being the first
+    # compiler_rt.* name, if any
+    report=$(awk '
+        /^Symbol table / { table = index($0, ".symtab") ? ".symtab" : (index($0, ".dynsym") ? ".dynsym" : "other"); next }
+        $1 !~ /^[0-9]+:$/ { next }
+        { name = $8; sub(/@.*/, "", name) }
+        table == ".symtab" && $4 == "FILE" { files++ }
+        name == "archive_version_string" && $7 != "UND" { anchor[table] = 1 }
+        name == "__stack_chk_guard" || name == "__stack_chk_fail" {
+            if ($7 != "UND") print "defined", name, table
+            else imported[name] = 1
+        }
+        name == "compiler_rt" || index(name, "compiler_rt.") == 1 {
+            cr++
+            if (example == "" || (example == "compiler_rt" && name != "compiler_rt")) example = name
+        }
+        END {
+            for (t in anchor) print "table", t
+            print "files", files + 0
+            for (s in imported) print "imported", s
+            if (cr) print "compiler_rt", cr, example
+        }' <<< "$symbols")
+
+    local failed=0 tables defined imported
+    tables=$(awk '$1 == "table" {print $2}' <<< "$report" | sort | paste -sd ' ' -)
+    if [ "$tables" != ".dynsym .symtab" ]; then
+        echo "ERROR: ${lib} lacks a .symtab or a .dynsym that defines archive_version_string, so nothing here can be"
+        echo "checked. Tables that define it: ${tables:-none}"
+        return 1
+    fi
+    if ! awk '$1 == "files" && $2 > 0 {found = 1} END {exit !found}' <<< "$report"; then
+        echo "ERROR: ${lib}'s .symtab has no STT_FILE symbols, which name the objects linked in (see strip_debug_info)"
+        return 1
+    fi
+    defined=$(awk '$1 == "defined" {print "  " $2 ", in " $3}' <<< "$report")
+    if [ -n "$defined" ]; then
+        echo "ERROR: ${lib} defines a stack protector symbol of its own, in place of its C library's:"
+        echo "$defined"
+        failed=1
+    fi
+    if awk '$1 == "compiler_rt" {found = 1} END {exit !found}' <<< "$report"; then
+        echo "ERROR: ${lib} contains zig's compiler-rt: $(awk '$1 == "compiler_rt" {print $2 " symbols name it, such as " $3}' <<< "$report")."
+        echo "Its constant __stack_chk_guard and its __stack_chk_fail would take the place of the C library's,"
+        echo "as they did on 32-bit ARM (see linux-arm-stack-guard.c), and the notices say that only the arm libraries contain it."
+        failed=1
+    fi
+    if [ "$failed" -ne 0 ]; then
+        return 1
+    fi
+    imported=$(awk '$1 == "imported" {print $2}' <<< "$report" | sort | paste -sd ' ' -)
+    echo "Defines no __stack_chk_guard or __stack_chk_fail (imports: ${imported:-neither}), and has no compiler-rt symbol"
+}
+
 # Fail the build unless a library linked against musl needs musl's libc.so and nothing else
 # (DT_NEEDED), and no symbol versions, which musl does not have. Anything more would make
 # the library fail to load in a musl process, or bind to something other than musl.
