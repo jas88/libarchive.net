@@ -11,6 +11,17 @@
         <!-- Enable Microsoft Testing Platform via NUnit3TestAdapter -->
         <UseTestingPlatform>true</UseTestingPlatform>
     </PropertyGroup>
+    <!-- net8.0, only when asked for with -p:LibArchiveNetTestNet8=true, so that no other build or
+         test run needs a .NET 8 runtime. LibArchive.Net has no build for .NET 8, so there the tests
+         run its .NET Standard 2.0 build, which finds and loads its native library itself; CI runs
+         them on Linux, for glibc and for musl. The SDK's warning that .NET 8 is out of support
+         (NETSDK1138) is turned off for this target alone. -->
+    <PropertyGroup Condition="'$(LibArchiveNetTestNet8)' == 'true'">
+        <TargetFrameworks>$(TargetFrameworks);net8.0</TargetFrameworks>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(TargetFramework)' == 'net8.0'">
+        <CheckEolTargetFramework>false</CheckEolTargetFramework>
+    </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
         <PackageReference Include="NUnit" Version="5.0.0" />
