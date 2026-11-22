@@ -1,4 +1,4 @@
-v0.3.2 - November 16, 2026
+v0.3.2 - November 22, 2026
 
 **Bug Fixes:**
 - Fix `DllNotFoundException: Unable to load DLL 'archive'` on Windows under .NET Framework (the .NET Standard 2.0 build). The package deploys `archive.dll` to `runtimes\win-{arch}\native\`, which .NET Framework does not probe, and the library only loaded it explicitly on Linux and macOS. It now does the same on Windows.
