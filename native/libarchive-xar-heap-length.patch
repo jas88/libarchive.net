@@ -1,0 +1,52 @@
+The XAR writer ends an archive with its heap, without the first bytes of the compressed TOC.
+
+One of this project's patches to libarchive, which every build (macOS, Linux and
+Windows) applies with patch_libarchive (native/build-config.sh), to the libarchive
+release pinned there, in the order that LIBARCHIVE_PATCHES there lists them. A build
+fails if any hunk does not apply exactly (no fuzz), and scripts/check-native-updates.sh
+will not propose a libarchive release that it does not apply to. See "The libarchive
+patches" in native/BUILD.md.
+
+The XAR writer (archive_write_set_format_xar.c) keeps the heap, the extended
+attributes and data of the files, in a temporary file until the archive is closed.
+The heap starts with the checksum of the TOC, so the writer leaves room for it at the
+start of that file, as many bytes as the checksum has (20 for SHA-1, the default), and
+temp_offset, the end of what it has written there, starts after that room. make_toc()
+then writes the compressed TOC to the same file, after the heap. xar_close() takes
+length, which it calls "the length of all file extended attributes and contents",
+from temp_offset before make_toc() runs, and copies length bytes out from the end of
+the room. length counts the room too, so the copy took as many bytes too many as the
+checksum has: every XAR archive that the writer wrote ended with the first 20 bytes of
+its compressed TOC, which no item of the heap holds. Readers, libarchive's and xar's,
+ignore them, as they read the heap by the offsets and lengths that the TOC gives. With
+toc-checksum=none the writer leaves no room, the checksum has no bytes, and the copy
+was already exact.
+
+xar_close() now copies length less the size of the checksum, so an archive ends where
+the last item of its heap ends.
+
+libarchive 3.8.11 and libarchive's master branch (0fdf26e5, 22 November 2026) have the
+old copy, which came with the writer (b7115a7d, "Add xar writer", May 2010).
+
+The change is marked LIBARCHIVE_NET_XAR_HEAP_LENGTH, the marker that
+LIBARCHIVE_PATCHES gives this patch: patch_libarchive checks that every file the patch
+changes has it.
+
+--- a/libarchive/archive_write_set_format_xar.c
++++ b/libarchive/archive_write_set_format_xar.c
+@@ -1960,8 +1960,14 @@
+ 
+ 	/*
+ 	 * Write all file extended attributes and contents.
++	 *
++	 * LIBARCHIVE_NET_XAR_HEAP_LENGTH: they follow the room kept for
++	 * the checksum of the TOC at the start of the temporary file, so
++	 * they are that much shorter than temp_offset; copying all of
++	 * temp_offset added the first bytes of the compressed TOC, which
++	 * make_toc() writes after them, to the end of the archive.
+ 	 */
+-	r = copy_out(a, xar->toc.a_sum.len, length);
++	r = copy_out(a, xar->toc.a_sum.len, length - xar->toc.a_sum.len);
+ 	if (r != ARCHIVE_OK)
+ 		return (r);
+ 	r = flush_wbuff(a);

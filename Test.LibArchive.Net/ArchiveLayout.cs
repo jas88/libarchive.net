@@ -400,8 +400,7 @@ internal static class ArchiveLayout
     /// <summary>
     /// The table of contents without the time it records the archive was written at
     /// (archive_write_set_format_xar.c:1660), the one thing in an archive that depends on when it is written.
-    /// The compressed table of contents changes with it, and so do its checksum and the bytes that follow the
-    /// data of the files (see <see cref="XarFileData"/>).
+    /// The compressed table of contents changes with it, and so does its checksum.
     /// </summary>
     internal static string XarTableOfContentsWithoutCreationTime(byte[] xar) =>
         Regex.Replace(NameEncodingTests.XarTableOfContents(xar), "<creation-time>[^<]*</creation-time>", "<creation-time/>");
@@ -411,26 +410,35 @@ internal static class ArchiveLayout
     /// to the end of the last item that the table of contents places in it, a file's data or extended attribute
     /// (<c>ea</c>). An archive with neither, such as one of directories alone, has none.
     /// </summary>
-    /// <remarks>
-    /// The archive goes on after that: libarchive ends it with a copy of the first bytes of the compressed table
-    /// of contents, as many as the checksum has, and they change with the creation time. It keeps the heap in a
-    /// temporary file, after room for the checksum (archive_write_set_format_xar.c:657-665), and make_toc adds
-    /// the compressed table of contents to that file after the heap (1803). xar_close then copies the heap out
-    /// from the end of that room, but takes as many bytes as the room and the heap together (1920, 1964).
-    /// </remarks>
     internal static byte[] XarFileData(byte[] xar)
     {
         var toc = XDocument.Parse(NameEncodingTests.XarTableOfContents(xar)).Root!.Element("toc")!;
         var checksum = toc.Element("checksum")!;
         Assert.That((long)checksum.Element("offset")!, Is.Zero, "checksum offset");
         var start = (int)(long)checksum.Element("size")!;
-        var end = toc.Descendants()
-            .Where(item => item.Name == "data" || item.Name == "ea")
-            .Select(item => (int)((long)item.Element("offset")! + (long)item.Element("length")!))
-            .DefaultIfEmpty(start)
-            .Max();
+        var end = (int)Math.Max(start, XarFileItemsEnd(toc));
         return xar.Skip(XarHeapOffset(xar) + start).Take(end - start).ToArray();
     }
+
+    /// <summary>
+    /// Where the heap of a XAR archive ends, as an offset in the archive: at the end of the last item that the
+    /// table of contents places in it, its own checksum, which starts the heap when it has one, a file's data or
+    /// an extended attribute (<c>ea</c>). Nothing follows the heap.
+    /// </summary>
+    internal static long XarHeapEnd(byte[] xar)
+    {
+        var toc = XDocument.Parse(NameEncodingTests.XarTableOfContents(xar)).Root!.Element("toc")!;
+        var checksum = toc.Element("checksum");
+        var checksumEnd = checksum == null ? 0 : (long)checksum.Element("offset")! + (long)checksum.Element("size")!;
+        return XarHeapOffset(xar) + Math.Max(checksumEnd, XarFileItemsEnd(toc));
+    }
+
+    // The end of the last file data or extended attribute in the heap, or 0 if there are none
+    private static long XarFileItemsEnd(XElement toc) => toc.Descendants()
+        .Where(item => item.Name == "data" || item.Name == "ea")
+        .Select(item => (long)item.Element("offset")! + (long)item.Element("length")!)
+        .DefaultIfEmpty(0)
+        .Max();
 
     // The heap follows the header and the compressed table of contents, whose size the header gives
     private static int XarHeapOffset(byte[] xar) => ReadUInt16BigEndian(xar, 4) + (int)ReadUInt64BigEndian(xar, 8);
