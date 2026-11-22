@@ -610,6 +610,11 @@ jobs:
       # LibArchive.Net imports from it (native/verify-exports.sh)
       - name: Check the exports of the Linux libraries
         run: ./native/verify-exports.sh LibArchive.Net/runtimes/linux-*/native/libarchive.so
+      # Each Linux library must be in the folder of its own runtime: built for its architecture,
+      # and linked against its runtime's C library (native/verify-linux-runtimes.sh). The tests
+      # would not tell, as musl loads the glibc linux-x64 library too.
+      - name: Check the runtime of each Linux library
+        run: ./native/verify-linux-runtimes.sh LibArchive.Net/runtimes
       - name: Pack
         id: pack
         run: |
@@ -623,6 +628,8 @@ jobs:
       - name: Test package (modern .NET)
         env:
           PACKAGE_VERSION: ${{ steps.pack.outputs.PACKAGE_VERSION }}
+          # The runtime whose native library the tests must find loaded (see LoadedLibraryTests.cs)
+          LIBARCHIVE_NET_EXPECT_RID: linux-x64
         run: |
           # Restore against the package just packed: source mapping pins LibArchive.Net to
           # this directory and an empty packages folder rules out any cached copy.
@@ -818,9 +825,11 @@ jobs:
           dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework "$TEST_TFM" --configuration Release --no-build --nologo \
             -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION"
           EOF
+          # LIBARCHIVE_NET_EXPECT_RID: the runtime whose native library the tests must find loaded
+          # (see LoadedLibraryTests.cs)
           docker run --rm --user "$(id -u):$(id -g)" \
             -e HOME=/tmp/home -e PACKAGE_VERSION -e SDK_VERSION -e TEST_NUGET_CONFIG="$RUNNER_TEMP/nuget-test/nuget.config" \
-            -e CI -e GITHUB_ACTIONS \
+            -e LIBARCHIVE_NET_EXPECT_RID=linux-musl-x64 -e CI -e GITHUB_ACTIONS \
             -v "$SDK_DIR:/usr/share/dotnet:ro" \
             -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -v "$RUNNER_TEMP/nuget-test:$RUNNER_TEMP/nuget-test" \
             -v "$RUNNER_TEMP/test-alpine.sh:/test-alpine.sh:ro" -w "$GITHUB_WORKSPACE" \
