@@ -67,7 +67,8 @@ v0.3.2 - November 16, 2026
   - `libarchive-narrow-utf8.patch` makes its narrow strings UTF-8 on every platform, whatever the process locale, without changing the locale;
   - `libarchive-lz4-init-stream-hc.patch` stops its lz4 writer calling lz4's deprecated `LZ4_resetStreamHC`;
   - `libarchive-zip-aes192.patch` adds WinZip AES-192 to its ZIP writer;
-  - `libarchive-zip-zstd-end-of-entry.patch` fixes its ZIP reader for Zstandard entries that end exactly as its buffer fills.
+  - `libarchive-zip-zstd-end-of-entry.patch` fixes its ZIP reader for Zstandard entries that end exactly as its buffer fills;
+  - `libarchive-xar-heap-length.patch` ends its XAR archives where their heap ends, without the first bytes of the compressed table of contents after it.
 
   Every native build fails if a patch does not apply exactly, and the update checker does not propose a libarchive release that a patch does not apply to, naming the patch
 - Ship a native library of its own for each of the six Linux runtimes (`runtimes/linux-{x64,arm64,arm}/native/` for glibc, `runtimes/linux-musl-{x64,arm64,arm}/native/` for musl), linked dynamically against that runtime's C library, in place of v0.3.1's one library per architecture with musl linked into it, which the glibc and musl runtimes shared. The libraries need:
