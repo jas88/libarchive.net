@@ -39,6 +39,12 @@ setup_linux_tools() {
     local bindir="${BINUTILS_DIR:-}" source candidate tool path
     if [ -n "$bindir" ]; then
         source="BINUTILS_DIR (${bindir})"
+        # ln -s resolves a relative target from the tool directory, so the links take the
+        # absolute path of the directory
+        if ! bindir=$(CDPATH='' cd -- "$bindir" 2>/dev/null && pwd); then
+            echo "ERROR: BINUTILS_DIR (${BINUTILS_DIR}) is not a directory that can be entered."
+            return 1
+        fi
     elif [ "$(uname -s)" = Linux ]; then
         source="PATH"
     else
