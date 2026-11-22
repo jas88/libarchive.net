@@ -719,12 +719,39 @@ jobs:
     if: ${{ !cancelled() && needs.package.result == 'success' }}
     runs-on: ubuntu-24.04
     env:
-      # Alpine 3.24.4 with the .NET SDK 11.0.100, pinned by the digest of its index. It has no
-      # bash, so what runs in it is POSIX sh, for its BusyBox ash.
-      SDK_IMAGE: mcr.microsoft.com/dotnet/sdk@sha256:52556c0fb9d0f609ae9aeab9efeeba96f4acc2f7038f7696f2235ccbdbb8e290  # 11.0-alpine, also 11.0-alpine3.24
+      # Alpine 3.24.4, as the .NET SDK's image for it has it, pinned by the digest of its index,
+      # for the system libraries that .NET needs there (ICU, libstdc++, OpenSSL and so on). The
+      # image's own SDK, 11.0.100, goes unused: the test step mounts the SDK that global.json
+      # names over it (see the install step). It has no bash, so what runs in it is POSIX sh,
+      # for its BusyBox ash.
+      ALPINE_IMAGE: mcr.microsoft.com/dotnet/sdk@sha256:52556c0fb9d0f609ae9aeab9efeeba96f4acc2f7038f7696f2235ccbdbb8e290  # 11.0-alpine, also 11.0-alpine3.24
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
+      # The .NET SDK of the version that global.json names, built for musl, from dotnet-install,
+      # the script that setup-dotnet runs too. The image's SDK is pinned with the image, so once
+      # Dependabot moved global.json on to a newer SDK, the container would have none that
+      # global.json allows; this one follows global.json. dotnet-install is a bash script, so
+      # it runs here, where the SDK that it installs cannot run: that runs in the container.
+      - name: Install the .NET SDK for musl
+        id: sdk
+        run: |
+          if ! version=$(jq -er '.sdk.version' global.json); then
+            echo "::error::global.json names no .NET SDK version (sdk.version)"
+            exit 1
+          fi
+          dir="$RUNNER_TEMP/dotnet-musl"
+          if ! curl -fsSL --retry 4 --retry-delay 5 --retry-all-errors -o "$RUNNER_TEMP/dotnet-install.sh" https://dot.net/v1/dotnet-install.sh ||
+            ! bash "$RUNNER_TEMP/dotnet-install.sh" --jsonfile global.json --os linux-musl --architecture x64 --install-dir "$dir" --no-path; then
+            echo "::error::Could not install the .NET SDK $version for linux-musl-x64, the version that global.json names"
+            exit 1
+          fi
+          if [ ! -x "$dir/dotnet" ] || [ ! -d "$dir/sdk/$version" ]; then
+            echo "::error::dotnet-install did not install the .NET SDK $version for linux-musl-x64 in $dir"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
       - name: Retrieve package
         uses: actions/download-artifact@v8.0.2
         with:
@@ -736,10 +763,10 @@ jobs:
       - name: Write the NuGet config for the package
         run: ./scripts/write-package-test-nuget-config.sh dist "$RUNNER_TEMP/nuget-test"
       # Retried as the load test job's pulls are: up to 4 attempts, 5 seconds apart
-      - name: Pull the .NET SDK image
+      - name: Pull the Alpine image
         run: |
           for attempt in 1 2 3 4; do
-            if docker pull "$SDK_IMAGE"; then
+            if docker pull "$ALPINE_IMAGE"; then
               exit 0
             fi
             echo "docker pull failed (attempt $attempt of 4)"
@@ -747,8 +774,11 @@ jobs:
           done
           exit 1
       # The restore, build and test commands of the package job's "Test package (modern .NET)"
-      # step, in the SDK image. The checkout (with dist) and the NuGet config's directory are
+      # step, in the Alpine image. The checkout (with dist) and the NuGet config's directory are
       # mounted at their paths here, so that the paths in nuget.config hold in the container.
+      # The SDK of the install step is mounted, read-only, over the image's own in
+      # /usr/share/dotnet, which /usr/bin/dotnet links to, so that nothing in the container can
+      # run the image's; the script stops unless dotnet is that SDK.
       # The container runs as the runner's user, not as root, so that every file it writes
       # there (the restored packages, bin and obj) belongs to that user, as the other steps'
       # files do; HOME, for the SDK's and NuGet's own files, is in the container's /tmp, which
@@ -756,11 +786,21 @@ jobs:
       - name: Test the package in Alpine
         env:
           PACKAGE_VERSION: ${{ needs.package.outputs.package-version }}
+          SDK_VERSION: ${{ steps.sdk.outputs.version }}
+          SDK_DIR: ${{ steps.sdk.outputs.dir }}
         run: |
           cat > "$RUNNER_TEMP/test-alpine.sh" <<'EOF'
           # No pipefail, so that a TEST_TFM that is not found reaches its error message below
           set -eu
           mkdir -p "$HOME"
+          if ! sdk=$(dotnet --version); then
+            echo "::error::The .NET SDK $SDK_VERSION, which global.json names, does not run in the container"
+            exit 1
+          fi
+          if [ "$sdk" != "$SDK_VERSION" ]; then
+            echo "::error::The container runs the .NET SDK $sdk, not $SDK_VERSION, which global.json names"
+            exit 1
+          fi
           dotnet --info
           dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --configfile "$TEST_NUGET_CONFIG" -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION"
 
@@ -779,11 +819,12 @@ jobs:
             -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION"
           EOF
           docker run --rm --user "$(id -u):$(id -g)" \
-            -e HOME=/tmp/home -e PACKAGE_VERSION -e TEST_NUGET_CONFIG="$RUNNER_TEMP/nuget-test/nuget.config" \
+            -e HOME=/tmp/home -e PACKAGE_VERSION -e SDK_VERSION -e TEST_NUGET_CONFIG="$RUNNER_TEMP/nuget-test/nuget.config" \
             -e CI -e GITHUB_ACTIONS \
+            -v "$SDK_DIR:/usr/share/dotnet:ro" \
             -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -v "$RUNNER_TEMP/nuget-test:$RUNNER_TEMP/nuget-test" \
             -v "$RUNNER_TEMP/test-alpine.sh:/test-alpine.sh:ro" -w "$GITHUB_WORKSPACE" \
-            "$SDK_IMAGE" sh /test-alpine.sh
+            "$ALPINE_IMAGE" sh /test-alpine.sh
 
   # Required status check: the branch protection for main requires a check with exactly this
   # name, so do not rename it without updating the rule. The one job that used to carry the
