@@ -383,12 +383,19 @@ contain them hold that too until it is stripped (see below). The link has:
   can bind to it, or take its place by defining a symbol of the same name.
 - On 32-bit ARM, `linux-arm-stack-guard.c`, compiled for the target and linked in ahead of the
   archives. There the stack protector checks each protected frame against the global
-  `__stack_chk_guard`. zig's compiler-rt defines one, weakly and as a constant, and in a link it
-  takes the place of the C library's, which glibc and musl seed from the kernel's random bytes.
+  `__stack_chk_guard`, and calls `__stack_chk_fail` when a frame fails the check. zig's
+  compiler-rt defines both, weakly, and the guard as a constant, and in a link they take the
+  place of the C library's; glibc and musl seed their guard from the kernel's random bytes.
   `linux-arm-stack-guard.c` defines a strong, hidden `__stack_chk_guard` instead, which a
   first-priority constructor seeds from the process's `AT_RANDOM` bytes, with its lowest byte
-  cleared, as glibc clears it. compiler-rt's `__stack_chk_fail` stays, which stops the process at
-  once.
+  cleared, as glibc clears it. compiler-rt's `__stack_chk_fail` stops the process at an undefined
+  instruction (SIGILL), with no message, as musl's own does, so `linux-musl-arm` keeps it. glibc's
+  writes `*** stack smashing detected ***: terminated` to stderr and aborts (SIGABRT), and for
+  `linux-arm`, `linux-arm-stack-guard.c` defines a strong, hidden `__stack_chk_fail` that does the
+  same, with glibc's `syscall` and `abort` alone, so that it needs neither the heap nor the frames
+  that failed the check. It makes the `write` system call itself, as glibc's handler does: `write`
+  is a cancellation point, where a thread with a cancellation request pending would unwind those
+  frames.
 
 Right after the link, before every check, `strip_debug_info` (in `build-linux-common.sh`) strips
 that debugging information from the library with GNU `strip --strip-debug --keep-file-symbols`,
@@ -396,10 +403,10 @@ the `strip` of the tool directory. It is about 776 KB in each 32-bit ARM library
 compiler-rt whole, and names the directory that zig built compiler-rt in, and about 10 KB in
 `linux-x64` and `linux-arm64`, from `libc_nonshared.a`; `linux-musl-x64` and `linux-musl-arm64`
 hold none. `--strip-debug` removes the `.debug_*` sections and keeps the symbol table (`.symtab`),
-which the checks and the guard check of the 32-bit ARM load test read, and
+which the checks and the stack protector checks of the 32-bit ARM load test read, and
 `--keep-file-symbols` keeps in it the symbols that name the objects linked in (`STT_FILE`), which
-`--strip-debug` would remove too. zig's own `-Wl,--strip-debug` is not used, as zig makes it a
-full strip, which removes `.symtab`.
+`--strip-debug` would remove too, and which `verify_stack_chk_fail` reads. zig's own
+`-Wl,--strip-debug` is not used, as zig makes it a full strip, which removes `.symtab`.
 
 #### The checks
 
@@ -441,6 +448,11 @@ fails the build:
   the uninitialised one of `linux-arm-stack-guard.c` (`nm` type `b` or `B`), not compiler-rt's
   initialised constant, and the constructor that seeds it, `libarchive_net_seed_stack_guard`, is
   in `.init_array`, where the dynamic loader finds what to run when it loads the library.
+- For `linux-arm` and `linux-musl-arm`, `verify_stack_chk_fail <library> <glibc|musl>`: the
+  library's `__stack_chk_fail` is hidden, and defined by `linux-arm-stack-guard.c` for glibc and
+  by compiler-rt (`compiler_rt`) for musl. The symbol table names the object that defines each
+  local symbol, hidden ones included, in the `STT_FILE` symbol before it, which `strip_debug_info`
+  keeps.
 - The load test (see [The load tests](#the-load-tests)).
 - `verify_lzo_support` and `verify_lzo_shim_resolved` (in `build-lzo-shim.sh`; see [lzop
   support](#lzop-support)).
@@ -449,7 +461,7 @@ fails the build:
 
 The load test program is built from `linux-loadtest.c` (`main`, and the checks that need no
 files), `linux-loadtest-files.c` (archives in files), `linux-loadtest-lfs32.c` (glibc's 32-bit file
-functions) and `linux-loadtest-guard.c` (the stack protector's guard on 32-bit ARM), with
+functions) and `linux-loadtest-guard.c` (the stack protector on 32-bit ARM), with
 `linux-loadtest.h`. Run as `loadtest-<rid> <path to libarchive.so>`, it exits non-zero unless:
 - the library loads with every symbol bound at once (`RTLD_NOW`) and a little of its API works;
 - names are UTF-8 in the "C" locale, a XAR archive written in memory reads back, and a Zstandard
@@ -463,7 +475,13 @@ functions) and `linux-loadtest-guard.c` (the stack protector's guard on 32-bit A
   `off_t` (or that open files without `O_LARGEFILE`): the program defines each of them itself,
   counts the library's calls of it and passes them on to glibc's;
 - on 32-bit ARM, the library's `__stack_chk_guard` holds the first bytes of the process's
-  `AT_RANDOM`, with the lowest byte cleared.
+  `AT_RANDOM`, with the lowest byte cleared, and its `__stack_chk_fail`, called in a child
+  process, ends it as the one that the C library exports ends another: by the same signal, after
+  the same output on stderr, which the program reads through a pipe. With glibc that is SIGABRT
+  after glibc's message, and with musl SIGILL with no output; the program has no message of its
+  own to compare them with. glibc writes the message to stderr even in a process with a terminal
+  (2.31, 2.35, 2.36 and 2.41 were seen to), where older glibc wrote it to `/dev/tty` unless
+  `LIBC_FATAL_STDERR_` was set.
 
 `build_load_test` builds `loadtest-<rid>` for the library's C library, as a dynamically linked
 program: for glibc with `-rdynamic`, which exports its stand-ins for glibc's 32-bit file functions,

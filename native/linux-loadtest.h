@@ -3,8 +3,8 @@
  * build_load_test in build-linux-common.sh builds into one program:
  * linux-loadtest.c (main, and the checks that need no files),
  * linux-loadtest-files.c (archives in files), linux-loadtest-lfs32.c (glibc's file
- * functions with a 32-bit off_t) and linux-loadtest-guard.c (the stack protector's guard
- * of a 32-bit ARM library).
+ * functions with a 32-bit off_t) and linux-loadtest-guard.c (the stack protector of a
+ * 32-bit ARM library: its guard, and its __stack_chk_fail).
  *
  * Each file defines _GNU_SOURCE and _FILE_OFFSET_BITS=64 before it includes anything, so
  * that the program's own file functions are 64-bit ones in a 32-bit glibc process too.
@@ -34,5 +34,6 @@ int find(const char *name, void *function, size_t size);
 int check_file_io(void);    /* linux-loadtest-files.c */
 int check_lfs32(void);      /* linux-loadtest-lfs32.c */
 int check_stack_guard(const char *path);    /* linux-loadtest-guard.c; path: the library */
+int check_stack_chk_fail(const char *path); /* linux-loadtest-guard.c; path: the library */
 
 #endif

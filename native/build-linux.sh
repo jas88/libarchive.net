@@ -34,7 +34,8 @@ usage() {
 #   runtime of glibc that it runs the program with (see test_load_glibc).
 # - STACK_GUARD, for the 32-bit ARM libraries: linux-arm-stack-guard.c, which gives the
 #   stack protector a guard seeded from the process's random bytes, in place of zig's
-#   constant one (see that file).
+#   constant one, and for glibc a __stack_chk_fail that ends the process as glibc's does
+#   (see that file).
 ARM_CPU="-mcpu=generic+v7a+vfp3d16-neon-vfp3-vfp3sp-d32"
 QEMU=""
 LOADER=""
@@ -266,9 +267,12 @@ fi
 READELF="${AR%ar}readelf" "${SCRIPT_DIR}/verify-exports.sh" libarchive.so
 
 # On 32-bit ARM, fail the build unless the stack protector's guard is the one that
-# linux-arm-stack-guard.c seeds when the library loads (see build-linux-common.sh)
+# linux-arm-stack-guard.c seeds when the library loads, and its __stack_chk_fail the one that
+# ends the process as the C library's own does: linux-arm-stack-guard.c's for glibc, and zig's
+# compiler-rt's for musl (see build-linux-common.sh)
 if [ -n "$STACK_GUARD" ]; then
     verify_stack_guard libarchive.so
+    verify_stack_chk_fail libarchive.so "$LIBC"
 fi
 
 # The load test program, which is kept beside the library for CI to run with it in

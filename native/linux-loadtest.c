@@ -11,7 +11,8 @@
  * libarchive's ways of reading a file (check_file_io). In a 32-bit glibc process it also
  * fails if the library calls any of glibc's file functions with a 32-bit off_t
  * (check_lfs32), and on 32-bit ARM unless the library's stack protector guard holds the
- * process's random bytes (check_stack_guard).
+ * process's random bytes (check_stack_guard) and its __stack_chk_fail ends a process as the
+ * C library's own does (check_stack_chk_fail).
  *
  * Names must be UTF-8 in the "C" locale, which the program never leaves, as a .NET process
  * never does: libarchive-narrow-utf8.patch is in the library (see "The libarchive patches"
@@ -525,6 +526,8 @@ int main(int argc, char **argv)
     if (!check_lfs32())
         failed = 1;
     if (!check_stack_guard(argv[1]))
+        failed = 1;
+    if (!check_stack_chk_fail(argv[1]))
         failed = 1;
     if (failed)
         return 1;

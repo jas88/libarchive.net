@@ -251,8 +251,9 @@ link_libarchive() {
 # a few members of libc_nonshared.a (linux-musl-x64 and linux-musl-arm64 hold none).
 # GNU strip --strip-debug removes the .debug_* sections. It would also remove the symbols
 # that name the objects linked in (STT_FILE), as debugging symbols, which
-# --keep-file-symbols keeps. The rest of the symbol table (.symtab) stays: the checks after
-# this and the guard check of the 32-bit ARM load test read it. zig's own
+# --keep-file-symbols keeps, for verify_stack_chk_fail. The rest of the symbol table
+# (.symtab) stays: the checks after this and the stack protector checks of the 32-bit ARM
+# load test read it. zig's own
 # -Wl,--strip-debug is not used, as zig makes it a full strip, which removes .symtab too.
 # Run it right after link_libarchive, before every check.
 # Usage: strip_debug_info <library>
@@ -635,6 +636,56 @@ verify_stack_guard() {
         return 1
     fi
     echo "__stack_chk_guard is linux-arm-stack-guard.c's (nm: ${guard}), seeded by the constructor at ${seed}, entry ${position} of .init_array"
+}
+
+# Fail the build unless a 32-bit ARM library's stack protector ends the process, when a frame
+# fails its check, as the library's C library ends it (see linux-arm-stack-guard.c, in this
+# directory). Its __stack_chk_fail must be hidden, and defined by linux-arm-stack-guard.c for
+# glibc, which then writes glibc's message and aborts, and by zig's compiler-rt for musl,
+# which then stops the process at an undefined instruction, as musl's own does. The symbol
+# table (.symtab) names the object that defines each local symbol, hidden ones included: the
+# linker puts an object's local symbols after the STT_FILE symbol that names it, "compiler_rt"
+# for compiler-rt, and strip_debug_info keeps those (--keep-file-symbols).
+# Usage: verify_stack_chk_fail <library> <glibc|musl>
+# Uses AR to find readelf.
+verify_stack_chk_fail() {
+    local lib="${1:-}" libc="${2:-}" object
+    if [ -z "$lib" ] || [ -z "$libc" ]; then
+        echo "ERROR: verify_stack_chk_fail needs the library to check and its C library, glibc or musl, as its arguments"
+        return 1
+    fi
+    case "$libc" in
+        glibc) object=linux-arm-stack-guard.c ;;
+        musl)  object=compiler_rt ;;
+        *)
+            echo "ERROR: verify_stack_chk_fail: unknown C library \"${libc}\" (glibc or musl)"
+            return 1
+            ;;
+    esac
+    if [ -z "${AR:-}" ]; then
+        echo "ERROR: verify_stack_chk_fail needs AR to be set"
+        return 1
+    fi
+
+    echo "=== Verifying the stack protector's __stack_chk_fail of ${lib} ==="
+    # Only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
+    local readelf="${AR%ar}readelf" symbols found
+    if ! symbols=$("$readelf" -W -s "$lib"); then
+        echo "ERROR: could not read ${lib} with ${readelf}"
+        return 1
+    fi
+    # Each __stack_chk_fail that .symtab defines, indented, as "<type> <binding> <visibility>
+    # <object>", where <object> is the name of the STT_FILE symbol before it
+    found=$(awk '/^Symbol table / { symtab = index($0, ".symtab") > 0; file = "(none)"; next }
+        symtab && $4 == "FILE" { file = $8; next }
+        symtab && $8 == "__stack_chk_fail" && $7 != "UND" { print "  " $4, $5, $6, file }' <<< "$symbols")
+    if [ "$found" != "  FUNC LOCAL HIDDEN ${object}" ]; then
+        echo "ERROR: ${lib}'s __stack_chk_fail is not the hidden one of ${object}, which ends the process"
+        echo "as ${libc}'s own __stack_chk_fail does. .symtab defines (type, binding, visibility, object):"
+        echo "${found:-  no __stack_chk_fail}"
+        return 1
+    fi
+    echo "__stack_chk_fail is the hidden one of ${object}, which ends the process as ${libc}'s does"
 }
 
 # Fail the build unless a library linked against musl needs musl's libc.so and nothing else

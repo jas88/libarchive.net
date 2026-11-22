@@ -175,7 +175,12 @@ This file is written and updated by hand. Nothing generates it.
   names of some local symbols in their string tables: the numbers in the
   names that zig gives to anonymous constants of compiler-rt ("__anon_" and
   a number), which differed between the two builds. The strip keeps the
-  symbol tables, with the symbols that name the objects linked in. The texts
+  symbol tables, with the symbols that name the objects linked in. What
+  section 14 says of linux-arm's __stack_chk_fail, and of the names that
+  linux-arm defines in compiler-rt's code, is of a linux-arm library built
+  in the same way after native/linux-arm-stack-guard.c gained that
+  function; linux-musl-arm, built again with it, differed from the library
+  checked after the strip only in those "__anon_" numbers. The texts
   copied in sections 14 and 15, and the files of the zig release that
   sections 9, 10 and 13 to 16 name, were read in that tarball. The text
   copied in section 16 is from the Go project's repository (see that
@@ -2745,11 +2750,14 @@ Verified on the binaries inspected (see "How this file is maintained"):
 
 * linux-arm and linux-musl-arm: zig's compiler-rt is inside both, whole.
   Their symbol tables name its object, "compiler_rt", after all the others,
-  and define 852 functions in its code: 426 local to the object, named after
-  their source files (such as compiler_rt.count0bits.__clzsi2_arm32), and
-  426 others, among them the routines of the ARM run-time ABI, such as
-  __aeabi_uldivmod (64-bit unsigned division), which the code of
-  libarchive, zlib and Zstandard in the libraries calls. Its code, about
+  and define 852 functions in its code in linux-musl-arm: 426 local to the
+  object, named after their source files (such as
+  compiler_rt.count0bits.__clzsi2_arm32), and 426 others, among them the
+  routines of the ARM run-time ABI, such as __aeabi_uldivmod (64-bit
+  unsigned division), which the code of libarchive, zlib and Zstandard in
+  the libraries calls. linux-arm defines the same names there but one,
+  __stack_chk_fail (see below), whose code it still holds under the other
+  name that compiler-rt gives that code, __chk_fail. Its code, about
   180 KiB, comes last in each library, and is as long as the code of the
   object in zig's cache from the build, apart from alignment. Each library
   also held the debugging information of that object, and of nothing
@@ -2758,8 +2766,8 @@ Verified on the binaries inspected (see "How this file is maintained"):
   source files of the zig release: lib/compiler_rt.zig, 67 files of
   lib/compiler_rt and 14 of lib/std. The stack protector's guard of these
   libraries is not compiler-rt's but that of native/linux-arm-stack-guard.c,
-  which is this project's own; compiler-rt's __stack_chk_fail is the one
-  that they use.
+  which is this project's own, and so is the __stack_chk_fail of linux-arm.
+  linux-musl-arm uses compiler-rt's __stack_chk_fail.
 * linux-x64, linux-arm64, linux-musl-x64 and linux-musl-arm64: none of it.
   zig built compiler-rt for these links as well (the cache of each build
   holds the object, with its debugging information), but none of the names
