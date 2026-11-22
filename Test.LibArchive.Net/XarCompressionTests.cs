@@ -148,6 +148,7 @@ public class XarCompressionTests
         var defaults = XarTests.WriteArchiveOrIgnore(() => Write(kind, ArchiveFormat.Xar, compression: null, 0, Add));
 
         Assert.That(XarFiles(defaults).Select(f => f.Encoding), Has.All.EqualTo(EncodingOf(CompressionType.Gzip)));
+        Assert.That(XarFileData(defaults), Is.Not.Empty, "file data, default");
         foreach (var (compression, archive) in new[]
                  {
                      (CompressionType.Gzip, Write(kind, ArchiveFormat.Xar, CompressionType.Gzip, 6, Add)),
@@ -158,5 +159,15 @@ public class XarCompressionTests
                 $"table of contents, {compression}, level 6");
             Assert.That(XarFileData(archive), Is.EqualTo(XarFileData(defaults)), $"file data, {compression}, level 6");
         }
+    }
+
+    // An archive whose table of contents places nothing in the heap, as one of a directory alone, has no file data
+    [Test]
+    public void TestDirectoryOnlyArchiveHasNoFileData([Values] WriterKind kind)
+    {
+        var archive = XarTests.WriteArchiveOrIgnore(() =>
+            Write(kind, ArchiveFormat.Xar, compression: null, 0, writer => writer.AddDirectoryEntry("directory")));
+
+        Assert.That(XarFileData(archive), Is.Empty);
     }
 }
