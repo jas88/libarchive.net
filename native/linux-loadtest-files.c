@@ -91,6 +91,8 @@ static const struct test_entry {
 #define PATH_SIZE (2 * WORK_DIR_SIZE)
 #define WHAT_SIZE (PATH_SIZE + 64)
 static char work_dir[WORK_DIR_SIZE];
+/* What check_file_io appends to the temporary directory's name for mkdtemp */
+static const char work_dir_template[] = "/libarchive-loadtest-XXXXXX";
 
 /* Say what failed, followed by the library's error message for a, if a is not null */
 __attribute__((format(printf, 2, 3)))
@@ -469,10 +471,11 @@ int check_file_io(void)
         return 0;
     if (tmp == NULL || *tmp == '\0')
         tmp = "/tmp";
-    i = (size_t)snprintf(work_dir, sizeof work_dir, "%s/libarchive-loadtest-XXXXXX", tmp);
+    i = (size_t)snprintf(work_dir, sizeof work_dir, "%s%s", tmp, work_dir_template);
     if (i >= sizeof work_dir) {
+        /* The name, the template and the terminating NUL must fit; sizeof counts the NUL */
         fprintf(stderr, "FAIL: the temporary directory %s has a name longer than %d bytes\n", tmp,
-            WORK_DIR_SIZE - 30);
+            (int)(sizeof work_dir - sizeof work_dir_template));
         return 0;
     }
     if (mkdtemp(work_dir) == NULL) {
