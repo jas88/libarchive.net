@@ -258,12 +258,19 @@ aarch64 Linux and on macOS alike.
 - `shasum` or `sha256sum`, which check the downloads
 - pkg-config (libarchive's configure finds libxml2 with it)
 - file (the script runs it on the library it built)
-- GNU binutils: `ar`, `ranlib`, `nm`, `readelf`, `objdump`, `strings` and `strip`. They come from
-  `PATH` on Linux (Debian/Ubuntu: `apt-get install binutils`), from Homebrew's binutils on macOS
-  (`brew install binutils`, found in `/opt/homebrew/opt/binutils/bin` or
-  `/usr/local/opt/binutils/bin`), or from the directory that `BINUTILS_DIR` names. zig has no
-  `nm`, `readelf`, `objdump` or `strings` of its own, and GNU binutils read the ELF files of every
-  target.
+- GNU binutils for the target: `ar`, `ranlib`, `nm`, `readelf`, `objdump` and `strip`. They come
+  from the directory that `BINUTILS_DIR` names, under their unprefixed names, if it is set;
+  otherwise from `PATH` on Linux (Debian/Ubuntu: `apt-get install binutils`) and from Homebrew's
+  binutils on macOS (`brew install binutils`, found in `/opt/homebrew/opt/binutils/bin` or
+  `/usr/local/opt/binutils/bin`). zig has no `nm`, `readelf` or `objdump` of its own. `readelf`
+  reads the ELF files of every target, but the other tools read and write only those of the
+  targets that their binutils were built for: Homebrew's are built for every target, and a Linux
+  distribution's own binutils for its own architecture. A build on Linux for another architecture
+  takes that architecture's binutils from `BINUTILS_DIR`. CI, whose Ubuntu runners have x86
+  binutils, installs Ubuntu's `binutils-aarch64-linux-gnu` for `linux-arm64` and
+  `linux-musl-arm64`, and `binutils-arm-linux-gnueabihf` for `linux-arm` and `linux-musl-arm`,
+  and sets `BINUTILS_DIR` to `/usr/aarch64-linux-gnu/bin` or `/usr/arm-linux-gnueabihf/bin`,
+  where those packages put the unprefixed tools.
 - For the glibc load tests (see [The load tests](#the-load-tests)): an x86_64 Linux machine, and
   for `linux-arm64` and `linux-arm` QEMU user-mode emulation (`qemu-aarch64`, `qemu-arm`;
   Debian/Ubuntu package `qemu-user`) and Ubuntu's cross runtime of glibc for the architecture
@@ -323,9 +330,13 @@ triplet that configure is given as `--host`, such as `arm-linux-gnueabihf`.
     `--version`, or `-v` on its own) gets the target without its glibc version, which zig rejects
     there ("version '.2.28' in target triple ... is invalid"). libtool's configure would otherwise
     print that error for `$CC -print-search-dirs`.
-- `<host>-ar`, `<host>-ranlib`, `<host>-nm`, `<host>-readelf`, `<host>-objdump`, `<host>-strings`
-  and `<host>-strip` are links to GNU binutils, so that configure finds every tool that it looks
-  for under the host triplet. The checks below use them too.
+- `<host>-ar`, `<host>-ranlib`, `<host>-nm`, `<host>-readelf`, `<host>-objdump` and
+  `<host>-strip` are links to GNU binutils (see
+  [Requirements](#linux-x64-armv7-arm64-glibc-and-musl)), so that configure finds every tool that
+  it looks for under the host triplet. The checks below run binutils through these links alone, so
+  that every tool comes from the same binutils. `verify_xar_support` reads the library's text with
+  `tr` rather than `strings`, which Ubuntu's cross binutils have only under its prefixed name, as
+  `/usr/bin/<host>-strings`.
 
 `CFLAGS` and `CXXFLAGS` are `-fPIC -O2`, with the build's `$PREFIX/include`. pkg-config is confined
 to the `.pc` files under `$PREFIX` (`export_cross_build_tools` in `build-config.sh`). The
@@ -643,8 +654,8 @@ The built libraries are cached between runs, keyed on the contents of `native/**
 - Check internet connectivity to ziglang.org
 - A cached zig tarball is checked on every use, and downloaded again if it does not match its pinned SHA-256 (see [zig](#zig)). If every attempt reports a mismatch, the server is serving a tarball that differs from the pinned one: try again later rather than working around the check, and if it persists, compare the SHA-256s in zig's index of its releases with those in `build-config.sh`
 
-**Problem:** "GNU ar was not found" (or ranlib, nm, readelf, objdump, strings or strip), or "... is not the readelf of GNU binutils"
-- Install GNU binutils (Debian/Ubuntu: `apt-get install binutils`; macOS: `brew install binutils`), or set `BINUTILS_DIR` to the directory that holds them (see [Requirements](#linux-x64-armv7-arm64-glibc-and-musl))
+**Problem:** "GNU ar was not found" (or ranlib, nm, readelf, objdump or strip), or "... is not the readelf of GNU binutils"
+- Install GNU binutils (Debian/Ubuntu: `apt-get install binutils`; macOS: `brew install binutils`), or set `BINUTILS_DIR` to the directory that holds them under their unprefixed names, such as `/usr/aarch64-linux-gnu/bin` for Ubuntu's `binutils-aarch64-linux-gnu` (see [Requirements](#linux-x64-armv7-arm64-glibc-and-musl))
 
 **Problem:** `verify_glibc_imports` fails, naming symbol versions that glibc 2.28 (or 2.34) does not have, or `-z defs` fails the link on an undefined symbol
 - The code needs a glibc function that is newer than the library's baseline, typically after a dependency update. Keep the dependency's use of it out of the build, for example with a configure option or cache variable, or raise the baseline (the version that ends the zig target in `build-linux.sh`), which drops the distributions with an older glibc

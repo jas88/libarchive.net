@@ -7,15 +7,22 @@
 # indirect expansion, arrays).
 
 # Make the tool directory of a Linux build afresh: zig-cc.sh (in this directory) as
-# <host>-gcc and <host>-g++, and GNU binutils' ar, ranlib, nm, readelf, objdump, strings
-# and strip as <host>-ar and so on, where <host> is the triplet that configure is given as
-# --host. For a cross build, configure looks for each tool under its prefixed name, and
-# only if it finds none takes the build machine's unprefixed one, warning "using cross
-# tools not prefixed with host triplet".
-# GNU binutils read the ELF files of every target, and zig has no nm, readelf, objdump or
-# strings of its own. They come from BINUTILS_DIR if that is set, otherwise from PATH on
-# Linux and from Homebrew's binutils (in /opt/homebrew/opt/binutils/bin or
-# /usr/local/opt/binutils/bin) on macOS, whose own tools are Apple's.
+# <host>-gcc and <host>-g++, and GNU binutils' ar, ranlib, nm, readelf, objdump and strip
+# as <host>-ar and so on, where <host> is the triplet that configure is given as --host.
+# For a cross build, configure looks for each tool under its prefixed name, and only if it
+# finds none takes the build machine's unprefixed one, warning "using cross tools not
+# prefixed with host triplet". The build and its checks run binutils through these links
+# alone (as ${AR%ar}nm and so on), so that every tool comes from the same place.
+# zig has no nm, readelf or objdump of its own. The tools come from BINUTILS_DIR, under
+# their unprefixed names, if that is set, otherwise from PATH on Linux and from Homebrew's
+# binutils (in /opt/homebrew/opt/binutils/bin or /usr/local/opt/binutils/bin) on macOS,
+# whose own tools are Apple's. readelf reads the ELF files of every target, but the other
+# tools read and write only those of the targets that their binutils were built for:
+# Homebrew's are built for every target, and a Linux distribution's own binutils for its
+# own architecture, such as the x86 ones of CI's Ubuntu runners. A build for another
+# architecture there takes that architecture's binutils from BINUTILS_DIR: CI sets it to
+# /usr/aarch64-linux-gnu/bin or /usr/arm-linux-gnueabihf/bin, where Ubuntu's packages
+# binutils-aarch64-linux-gnu and binutils-arm-linux-gnueabihf put them.
 # Usage: setup_linux_tools <tool directory> <host triplet>
 # Uses SCRIPT_DIR.
 setup_linux_tools() {
@@ -46,7 +53,7 @@ setup_linux_tools() {
 
     rm -rf "$dir" || return
     mkdir -p "$dir" || return
-    for tool in ar ranlib nm readelf objdump strings strip; do
+    for tool in ar ranlib nm readelf objdump strip; do
         if [ -n "$bindir" ]; then
             path="${bindir}/${tool}"
         else
@@ -60,9 +67,9 @@ setup_linux_tools() {
             path=""
         fi
         if [ -z "$path" ] || [ ! -x "$path" ]; then
-            echo "The Linux builds need GNU binutils' ar, ranlib, nm, readelf, objdump, strings and strip."
+            echo "The Linux builds need GNU binutils' ar, ranlib, nm, readelf, objdump and strip, for the target."
             echo "Install binutils (Debian/Ubuntu: apt-get install binutils; macOS: brew install binutils),"
-            echo "or set BINUTILS_DIR to the directory that holds them."
+            echo "or set BINUTILS_DIR to the directory that holds them under their unprefixed names."
             return 1
         fi
         ln -s "$path" "${dir}/${host}-${tool}" || return
@@ -320,7 +327,7 @@ verify_xar_configured() {
 # Fail the build unless a linked library has libarchive's XAR reader and writer, and the
 # libxml2 code that they call, none of it left undefined.
 # Usage: verify_xar_support <library>
-# Uses AR to find the toolchain's nm and strings.
+# Uses AR to find the toolchain's nm.
 verify_xar_support() {
     local lib="${1:-}"
     if [ -z "$lib" ]; then
@@ -334,14 +341,19 @@ verify_xar_support() {
 
     echo "=== Verifying XAR support ==="
     # Only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
-    local nm="${AR%ar}nm" strings="${AR%ar}strings"
+    local nm="${AR%ar}nm"
     local symbols undefined text
     if ! symbols=$("$nm" "$lib") || ! undefined=$("$nm" -D --undefined-only "$lib"); then
         echo "ERROR: could not read the symbols of ${lib} with ${nm}"
         return 1
     fi
-    if ! text=$("$strings" -a "$lib"); then
-        echo "ERROR: could not read the strings of ${lib} with ${strings}"
+    # The runs of printable characters in the whole file, one to a line, as strings -a
+    # prints them. tr does it in place of binutils' strings, which the target's binutils
+    # may lack under its unprefixed name (Ubuntu's cross binutils have it only as
+    # /usr/bin/<triplet>-strings; see setup_linux_tools). The C locale makes tr read the
+    # file as bytes.
+    if ! text=$(LC_ALL=C tr -cs '[:print:]' '\n' < "$lib"); then
+        echo "ERROR: could not read the text of ${lib} with tr"
         return 1
     fi
 

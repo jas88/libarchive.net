@@ -149,19 +149,31 @@ jobs:
             # test_load_glibc (native/build-linux-common.sh) runs the load test under QEMU,
             # with the dynamic loader and libraries of this package's glibc
             glibc-cross-runtime: libc6-arm64-cross
+            # GNU binutils for the target, which the build takes from binutils-dir, where
+            # this package puts them under their unprefixed names (BINUTILS_DIR; see
+            # setup_linux_tools in native/build-linux-common.sh). The runner's own binutils
+            # are built for x86 only, so the x64 rows use those.
+            binutils: binutils-aarch64-linux-gnu
+            binutils-dir: /usr/aarch64-linux-gnu/bin
           - target: linux-arm
             kind: linux
             output: libarchive-linux-arm.so
             glibc-cross-runtime: libc6-armhf-cross
+            binutils: binutils-arm-linux-gnueabihf
+            binutils-dir: /usr/arm-linux-gnueabihf/bin
           - target: linux-musl-x64
             kind: linux
             output: libarchive-linux-musl-x64.so
           - target: linux-musl-arm64
             kind: linux
             output: libarchive-linux-musl-arm64.so
+            binutils: binutils-aarch64-linux-gnu
+            binutils-dir: /usr/aarch64-linux-gnu/bin
           - target: linux-musl-arm
             kind: linux
             output: libarchive-linux-musl-arm.so
+            binutils: binutils-arm-linux-gnueabihf
+            binutils-dir: /usr/arm-linux-gnueabihf/bin
           - target: win-x86
             kind: windows
             arch: x86
@@ -254,6 +266,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends qemu-user ${{ matrix.glibc-cross-runtime }}
+      # The arm and arm64 builds run GNU binutils for their target (see the matrix)
+      - name: Install GNU binutils for the target
+        if: steps.native-cache.outputs.cache-hit != 'true' && matrix.binutils
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ${{ matrix.binutils }}
       - name: Install LLVM-MinGW for ARM64
         if: steps.native-cache.outputs.cache-hit != 'true' && matrix.target == 'win-arm64'
         run: |
@@ -331,6 +349,9 @@ jobs:
           variant: sccache
       - name: Build Linux library
         if: steps.native-cache.outputs.cache-hit != 'true' && matrix.kind == 'linux'
+        env:
+          # Empty for the x64 rows, for which the build takes binutils from PATH
+          BINUTILS_DIR: ${{ matrix.binutils-dir }}
         run: |
           ./native/build-linux.sh ${{ matrix.target }}
           mkdir -p native-out
