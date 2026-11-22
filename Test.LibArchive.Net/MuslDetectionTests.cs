@@ -235,6 +235,39 @@ public class MuslDetectionTests
         7ffe2c7c5000-7ffe2c7c7000 r-xp 00000000 00:00 0                          [vdso]
         """;
 
+    // The Ubuntu 24.04 process of UbuntuX64, once it has mapped files named as musl's dynamic linker
+    // is as data: Debian's musl package's /usr/lib/x86_64-linux-musl/libc.so, read-only and shared, as
+    // a memory-mapped file maps it, and the ld-musl-x86_64.so.1 of an Alpine root file system unpacked
+    // in a directory, read-only and private, then shared for writing. None of those is executable.
+    private const string UbuntuX64WithMuslMappedAsData = """
+        5612e1f3e000-5612e1f45000 r--p 00000000 08:01 3933247                    /usr/lib/dotnet/dotnet
+        5612e1f45000-5612e1f52000 r-xp 00007000 08:01 3933247                    /usr/lib/dotnet/dotnet
+        5612e1f52000-5612e1f55000 r--p 00014000 08:01 3933247                    /usr/lib/dotnet/dotnet
+        5612e1f55000-5612e1f56000 rw-p 00016000 08:01 3933247                    /usr/lib/dotnet/dotnet
+        5612e3b1f000-5612e3b40000 rw-p 00000000 00:00 0                          [heap]
+        7f2a68000000-7f2a68021000 rw-p 00000000 00:00 0
+        7f2a6c000000-7f2a6c0a0000 r--s 00000000 08:01 3807002                    /usr/lib/x86_64-linux-musl/libc.so
+        7f2a6c200000-7f2a6c2a0000 r--p 00000000 08:01 3901517                    /home/runner/alpine-rootfs/lib/ld-musl-x86_64.so.1
+        7f2a6c400000-7f2a6c4a0000 rw-s 00000000 08:01 3901517                    /home/runner/alpine-rootfs/lib/ld-musl-x86_64.so.1
+        7f2a6e5ff000-7f2a6e600000 r-xs 00000000 00:01 2059                       /memfd:doublemapper (deleted)
+        7f2a6f040000-7f2a6f544000 r--p 00000000 08:01 3933790                    /usr/lib/dotnet/shared/Microsoft.NETCore.App/10.0.0/System.Private.CoreLib.dll
+        7f2a6f9a0000-7f2a6fa60000 r--p 00000000 08:01 3933712                    /usr/lib/dotnet/shared/Microsoft.NETCore.App/10.0.0/libcoreclr.so
+        7f2a6fa60000-7f2a6fda1000 r-xp 000c0000 08:01 3933712                    /usr/lib/dotnet/shared/Microsoft.NETCore.App/10.0.0/libcoreclr.so
+        7f2a70600000-7f2a70628000 r--p 00000000 08:01 3803138                    /usr/lib/x86_64-linux-gnu/libc.so.6
+        7f2a70628000-7f2a707b0000 r-xp 00028000 08:01 3803138                    /usr/lib/x86_64-linux-gnu/libc.so.6
+        7f2a707b0000-7f2a707ff000 r--p 001b0000 08:01 3803138                    /usr/lib/x86_64-linux-gnu/libc.so.6
+        7f2a707ff000-7f2a70803000 r--p 001fe000 08:01 3803138                    /usr/lib/x86_64-linux-gnu/libc.so.6
+        7f2a70803000-7f2a70805000 rw-p 00202000 08:01 3803138                    /usr/lib/x86_64-linux-gnu/libc.so.6
+        7f2a70b4c000-7f2a70b4d000 r--p 00000000 08:01 3803112                    /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
+        7f2a70b4d000-7f2a70b78000 r-xp 00001000 08:01 3803112                    /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
+        7f2a70b78000-7f2a70b82000 r--p 0002c000 08:01 3803112                    /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
+        7f2a70b82000-7f2a70b84000 r--p 00036000 08:01 3803112                    /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
+        7f2a70b84000-7f2a70b86000 rw-p 00038000 08:01 3803112                    /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
+        7ffd7b2f1000-7ffd7b312000 rw-p 00000000 00:00 0                          [stack]
+        7ffd7b3b5000-7ffd7b3b9000 r--p 00000000 00:00 0                          [vvar]
+        7ffd7b3b9000-7ffd7b3bb000 r-xp 00000000 00:00 0                          [vdso]
+        """;
+
     [Test]
     public void AlpineX64IsMusl()
     {
@@ -291,6 +324,27 @@ public class MuslDetectionTests
         Assert.That(MuslDetection.IsMuslProcess(DebianX64WithMuslInPaths), Is.False);
     }
 
+    // Only an executable mapping counts: a glibc process may map a file of either name as data, as
+    // through a memory-mapped file, before LibArchive.Net's type initialiser runs, and taken for musl's
+    // it would load the musl library, which needs a libc.so that glibc does not have
+    [Test]
+    public void GlibcWithMuslMappedAsDataIsNotMusl()
+    {
+        Assert.That(MuslDetection.IsMuslProcess(UbuntuX64WithMuslMappedAsData), Is.False);
+    }
+
+    // The same rule seen from Alpine: without its executable mapping, musl's dynamic linker is mapped
+    // as data alone, read-only, and that does not count
+    [Test]
+    public void MuslDynamicLinkerMappedAsDataAloneIsNotMusl()
+    {
+        var withoutCode = string.Join("\n", AlpineX64.Split('\n')
+            .Where(line => !(line.Contains(" r-xp ") && line.EndsWith("/lib/ld-musl-x86_64.so.1", StringComparison.Ordinal))));
+
+        Assert.That(withoutCode, Does.Contain("/lib/ld-musl-x86_64.so.1"));
+        Assert.That(MuslDetection.IsMuslProcess(withoutCode), Is.False);
+    }
+
     [Test]
     public void EmptyMapsAreNotMusl()
     {
@@ -310,6 +364,18 @@ public class MuslDetectionTests
         // Read here as well, so that maps which cannot be read fail the test rather than pass it as glibc's
         Assert.That(MuslDetection.IsMuslProcess(File.ReadAllText("/proc/self/maps")), Is.EqualTo(musl));
         Assert.That(MuslDetection.IsMuslProcess(), Is.EqualTo(musl));
+    }
+
+    // What a process whose maps cannot be read goes by: dlsym, reached through libdl.so.2 as the
+    // loader reaches dlopen, finds gnu_get_libc_version under glibc and not under musl. CI runs this
+    // under both, on Ubuntu and in Alpine.
+    [Test]
+    public void DlsymAgreesWithTheCLibrary()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            Assert.Ignore("Only Linux has a glibc or musl C library");
+
+        Assert.That(MuslDetection.DefinesGnuGetLibcVersion(), Is.EqualTo(ResolvesGnuGetLibcVersion()));
     }
 
     // Whether gnu_get_libc_version resolves. On musl the name libc.so.6 loads musl, whose dynamic

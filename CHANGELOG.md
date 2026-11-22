@@ -17,7 +17,7 @@ v0.3.2 - unreleased
   - glibc 2.28 or later for `linux-x64` and `linux-arm64` (RHEL 8 and later);
   - glibc 2.34 or later for `linux-arm`, which is built with a 64-bit `time_t` and `off_t`. On an older glibc the dynamic loader refuses to load it, where the previous library crashed or misbehaved;
   - musl 1.2.5 or later (Alpine 3.21 and later) for `linux-musl-x64`, `linux-musl-arm64` and `linux-musl-arm`.
-- The .NET Standard 2.0 build loads the `linux-musl-<arch>` library in a musl process, which it recognises from musl's dynamic linker in `/proc/self/maps`. .NET 6 and later choose between the two libraries from the runtime identifier.
+- The .NET Standard 2.0 build loads the `linux-musl-<arch>` library in a musl process, which it recognises from an executable mapping of musl's dynamic linker in `/proc/self/maps`, or, when that cannot be read, from `dlsym` not finding glibc's `gnu_get_libc_version`. .NET 6 and later choose between the two libraries from the runtime identifier.
 - The Linux libraries export libarchive's API (`archive_*`) alone, and no longer the functions of the libraries linked into them, such as zlib's and zstd's, which other code in the process could bind to or take the place of.
 - The Linux libraries are built with zig. CI load-tests each of them in containers of old and current distributions, and runs the package's tests on .NET in Alpine x64 as well as on Ubuntu.
 
