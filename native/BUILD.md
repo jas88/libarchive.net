@@ -11,6 +11,7 @@ The build system consists of:
 - **build-linux-common.sh**: Steps of the Linux build: its tool directory, the libxml2 and mbedTLS builds, the final link, and the checks and load test of the linked library
 - **zig-cc.sh**: The C and C++ compiler of the Linux builds, which runs `zig cc` and `zig c++` for the target
 - **verify-exports.sh**: Checks that a Linux library exports libarchive's API alone, with every function that LibArchive.Net imports
+- **verify-linux-runtimes.sh**: Checks that each Linux runtime in a `runtimes` folder has a library of its own, built for its architecture and linked against its C library
 - **linux-loadtest.c**, **linux-loadtest-files.c**, **linux-loadtest-lfs32.c**, **linux-loadtest-guard.c** (with **linux-loadtest.h**): the Linux load test program
 - **build-macos.sh**: macOS universal binary build script (x86_64 + arm64)
 - **build-windows.sh**: Windows build script (x86, x64, arm64 via MinGW)
@@ -468,6 +469,21 @@ fails the build:
 - `verify_lzo_support` and `verify_lzo_shim_resolved` (in `build-lzo-shim.sh`; see [lzop
   support](#lzop-support)).
 
+The package job of the workflow (see [CI/CD Integration](#cicd-integration)) also runs
+`verify-linux-runtimes.sh <runtimes folder>` on the runtimes that it assembles. It fails unless each
+of the six Linux runtimes has `runtimes/<rid>/native/libarchive.so`, of the ELF class and machine of
+its architecture, which needs (DT_NEEDED) musl's `libc.so` alone for a `linux-musl-*` runtime, and
+glibc's `libc.so.6` but not `libc.so` for the other `linux-*` runtimes, and unless no other
+`linux-*` folder has a library. `READELF` names the readelf that it uses. Without it the tests
+would not find the glibc and musl libraries swapped: musl's dynamic linker loads the glibc
+`linux-x64` library as well, since it takes `libc.so.6` and `libpthread.so.0` to be itself and
+provides every symbol that the library imports, so the tests in Alpine x64 pass with either library.
+The tests check which library is loaded where `LIBARCHIVE_NET_EXPECT_RID` names a runtime:
+`LoadedLibraryTests` (`Test.LibArchive.Net/LoadedLibraryTests.cs`) fails unless the library whose
+code LibArchive.Net's P/Invokes run is `runtimes/<rid>/native/libarchive.so` of that runtime, and
+is the only file named `libarchive.so` that the process maps. The package job sets it to
+`linux-x64`, and the test-alpine job to `linux-musl-x64`; without it the test is skipped.
+
 #### The load tests
 
 The load test program is built from `linux-loadtest.c` (`main`, and the checks that need no
@@ -677,10 +693,10 @@ The GitHub Actions workflow (`.github/workflows/build.yml`) uses these scripts:
 4. **package job**:
    - Downloads all the native libraries
    - Places them in runtimes/, each Linux library in its own runtime's folder
-   - Runs `verify-exports.sh` on the six Linux libraries
-   - Creates the NuGet package and tests it on Ubuntu x64, where .NET loads the `linux-x64` library
+   - Runs `verify-exports.sh` on the six Linux libraries, and `verify-linux-runtimes.sh` on the runtimes folder (see [The checks](#the-checks))
+   - Creates the NuGet package and tests it on Ubuntu x64, where .NET loads the `linux-x64` library, as `LoadedLibraryTests` checks (`LIBARCHIVE_NET_EXPECT_RID=linux-x64`): on the test project's .NET target, and on .NET 8, which `-p:LibArchiveNetTestNet8=true` adds to the test project's targets. LibArchive.Net has no build for .NET 8, so there the tests run its .NET Standard 2.0 build, which finds and loads the native library itself. setup-dotnet installs .NET 8 beside the SDK that `global.json` names
 5. **test-net462 job**: tests the package on Windows, on .NET Framework 4.6.2 and on modern .NET
-6. **test-alpine job**: tests the package on .NET in Alpine x64, where .NET loads the `linux-musl-x64` library. It runs the package job's restore, build and test commands in the .NET SDK's Alpine image, pinned by digest, with a plain `docker run`, as GitHub's JavaScript actions do not run in an Alpine container job
+6. **test-alpine job**: tests the package on .NET in Alpine x64, where .NET loads the `linux-musl-x64` library, as `LoadedLibraryTests` checks (`LIBARCHIVE_NET_EXPECT_RID=linux-musl-x64`), on the test project's .NET target and on .NET 8, as the package job does. It installs the .NET SDK that `global.json` names, built for musl, and the .NET 8 runtime for musl, with dotnet-install on the runner, then runs the package job's restore, build and test commands with a plain `docker run`, as GitHub's JavaScript actions do not run in an Alpine container job, in the .NET SDK's Alpine image, pinned by digest, with that SDK mounted read-only over the image's own in `/usr/share/dotnet`. The image provides Alpine's system libraries alone: its own SDK, pinned with it, would fall behind `global.json` once Dependabot moved that on. The tests stop unless `dotnet --version` in the container gives the version that `global.json` names
 7. **build-and-test job** (the required status check): fails unless all the jobs above succeeded; the release jobs need the package, test-net462, linux-load-test and test-alpine jobs
 
 The built libraries are cached between runs, keyed on the contents of `native/**`; tag builds always rebuild them from source.
