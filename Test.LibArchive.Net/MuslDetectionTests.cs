@@ -334,11 +334,13 @@ public class MuslDetectionTests
     }
 
     // The same rule seen from Alpine: without its executable mapping, musl's dynamic linker is mapped
-    // as data alone, read-only, and that does not count
+    // as data alone, read-only, and that does not count. A raw string literal takes the line endings
+    // of the source file, which are CRLF in a Windows checkout, so the lines are split on either.
     [Test]
     public void MuslDynamicLinkerMappedAsDataAloneIsNotMusl()
     {
         var withoutCode = string.Join("\n", AlpineX64.Split('\n')
+            .Select(line => line.TrimEnd('\r'))
             .Where(line => !(line.Contains(" r-xp ") && line.EndsWith("/lib/ld-musl-x86_64.so.1", StringComparison.Ordinal))));
 
         Assert.That(withoutCode, Does.Contain("/lib/ld-musl-x86_64.so.1"));
