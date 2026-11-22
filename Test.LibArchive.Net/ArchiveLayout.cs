@@ -408,7 +408,8 @@ internal static class ArchiveLayout
 
     /// <summary>
     /// The data of the files: the heap from the end of the checksum of the table of contents, which starts it,
-    /// to the end of the last file's data.
+    /// to the end of the last item that the table of contents places in it, a file's data or extended attribute
+    /// (<c>ea</c>). An archive with neither, such as one of directories alone, has none.
     /// </summary>
     /// <remarks>
     /// The archive goes on after that: libarchive ends it with a copy of the first bytes of the compressed table
@@ -423,7 +424,11 @@ internal static class ArchiveLayout
         var checksum = toc.Element("checksum")!;
         Assert.That((long)checksum.Element("offset")!, Is.Zero, "checksum offset");
         var start = (int)(long)checksum.Element("size")!;
-        var end = toc.Descendants("data").Max(data => (int)((long)data.Element("offset")! + (long)data.Element("length")!));
+        var end = toc.Descendants()
+            .Where(item => item.Name == "data" || item.Name == "ea")
+            .Select(item => (int)((long)item.Element("offset")! + (long)item.Element("length")!))
+            .DefaultIfEmpty(start)
+            .Max();
         return xar.Skip(XarHeapOffset(xar) + start).Take(end - start).ToArray();
     }
 
