@@ -59,7 +59,7 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         // .NET Standard 2.0 doesn't have automatic RID resolution, so we need manual loading
         // Supported platforms:
         // - Windows: x64, x86, ARM64
-        // - Linux: x64, ARM, ARM64
+        // - Linux: x64, ARM, ARM64, each on glibc or musl
         // - macOS: x64, ARM64
         var arch = RuntimeInformation.ProcessArchitecture;
         var isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
@@ -1048,12 +1048,14 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         {
             var arch = RuntimeInformation.ProcessArchitecture switch
             {
-                Architecture.X64 => "linux-x64",
-                Architecture.Arm => "linux-arm",
-                Architecture.Arm64 => "linux-arm64",
+                Architecture.X64 => "x64",
+                Architecture.Arm => "arm",
+                Architecture.Arm64 => "arm64",
                 _ => throw new PlatformNotSupportedException($"Unsupported Linux architecture: {RuntimeInformation.ProcessArchitecture}")
             };
-            return (arch, "libarchive.so");
+            // glibc and musl each have a library of their own (see MuslDetection)
+            var libc = MuslDetection.IsMuslProcess() ? "linux-musl" : "linux";
+            return ($"{libc}-{arch}", "libarchive.so");
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
@@ -1099,25 +1101,17 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         var baseDir = AppDomain.CurrentDomain.BaseDirectory;
         var destPath = Path.Combine(baseDir, Path.GetFileName(libraryPath));
 
-        // Copy library to base directory if not already there
-        if (!File.Exists(destPath))
+        // Copy the library to the base directory, or replace a copy there that differs from it, as one
+        // left by an earlier version of the package or made under the other C library does: the P/Invoke
+        // calls that bind to the copy must find the same library as the one that dlopen loads below,
+        // from libraryPath. A copy that cannot be made is not an error (see NativeLibraryCopy).
+        var outcome = NativeLibraryCopy.Refresh(libraryPath, destPath, out var copyError);
+        if (Environment.GetEnvironmentVariable("LIBARCHIVE_NET_DEBUG") == "1")
         {
-            try
-            {
-                File.Copy(libraryPath, destPath, overwrite: false);
-
-                if (Environment.GetEnvironmentVariable("LIBARCHIVE_NET_DEBUG") == "1")
-                {
-                    Console.Error.WriteLine($"[LibArchive.Net] Copied {libraryPath} to {destPath}");
-                }
-            }
-            catch (Exception ex)
-            {
-                if (Environment.GetEnvironmentVariable("LIBARCHIVE_NET_DEBUG") == "1")
-                {
-                    Console.Error.WriteLine($"[LibArchive.Net] Warning: Failed to copy library to base directory: {ex.Message}");
-                }
-            }
+            if (outcome == NativeLibraryCopy.Outcome.Copied)
+                Console.Error.WriteLine($"[LibArchive.Net] Copied {libraryPath} to {destPath}");
+            else if (outcome == NativeLibraryCopy.Outcome.Failed)
+                Console.Error.WriteLine($"[LibArchive.Net] Warning: Failed to copy library to base directory: {copyError?.Message}");
         }
 
         // Load the library with RTLD_GLOBAL so symbols are available

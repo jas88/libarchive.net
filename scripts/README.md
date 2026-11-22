@@ -97,6 +97,9 @@ check_dependency <name> <current-version> <method> <method-arguments>
   the `web` method to that directory. The directory name must pass the same
   version check.
 
+zig, which compiles the Linux libraries, is not a library and has a check of its
+own, `check_zig`: see [Limitations](#limitations).
+
 ## Running it locally
 
 Run it from the repository root. The script expects `native/build-config.sh` under
@@ -181,11 +184,19 @@ For a library called `foo`:
   `LZOKAY_VERSION` and no `check_dependency` call, so the script never looks at
   it. Check its commit history by hand. When the pin moves, also check that
   `native/lzo-shim/lzokay-bounds-checks.patch` still applies and is still needed.
-- **Toolchains are not checked.** The Linux builds use Bootlin prebuilt toolchains
-  (<https://toolchains.bootlin.com/>), selected by `BOOTLIN_RELEASE` in
-  `native/build-config.sh`. The script does not check that release and only prints
-  a note saying so. Renovate is configured to keep it current
-  (`.github/renovate.json`).
+- **zig is reported, not updated.** The Linux libraries are compiled with zig,
+  whose release `native/build-config.sh` pins as `ZIG_VERSION`, with the SHA256 of
+  its tarball for each of the four build machines (`ZIG_SHA256_X86_64_LINUX`,
+  `ZIG_SHA256_AARCH64_LINUX`, `ZIG_SHA256_X86_64_MACOS` and
+  `ZIG_SHA256_AARCH64_MACOS`). It has no `ZIG_URL`, as `download_zig` builds the
+  URL for the build machine, so step 3 cannot update it. Instead `check_zig` reads
+  zig's index of its releases (<https://ziglang.org/download/index.json>) and, for
+  a newer release, prints the five lines that `native/build-config.sh` needs, with
+  the index's SHA256s, which `download_zig` checks each download against. It prints
+  them only if the index gives all four. Copy them into the file by hand. A zig
+  update is in no pull request and does not change the exit status. A zig check
+  that fails (the index cannot be read, has no valid release version, or lacks one
+  of the four SHA256s) is a failed check like any other.
 - **Authenticated requests do not follow redirects.** With a token, a GitHub API
   answer that redirects, as it does for a renamed repository, is reported as a
   failed check. Update the repository named in the script to fix it.

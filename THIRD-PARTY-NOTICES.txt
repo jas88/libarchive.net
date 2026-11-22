@@ -4,7 +4,8 @@ THIRD-PARTY NOTICES
 LibArchive.Net is licensed under the BSD 2-Clause licence in LICENSE.md. That
 licence covers the managed wrapper and the build scripts in this repository,
 the interface code for lzokay in native/lzo-shim (see section 9), and
-native/linux-pthread-init.c, which the Linux libraries contain.
+native/linux-arm-stack-guard.c, which the linux-arm and linux-musl-arm
+libraries contain.
 
 The LibArchive.Net NuGet package also ships prebuilt native libraries
 (runtimes/<rid>/native/libarchive.so, libarchive.dylib and archive.dll). Code
@@ -43,28 +44,33 @@ This file is written and updated by hand. Nothing generates it.
 
 * Each section says which native binaries it applies to:
 
-    Linux    runtimes/linux-*/native/libarchive.so (x64, arm, arm64; the
-             same files are also shipped for the linux-musl-* RIDs)
+    Linux    runtimes/linux-*/native/libarchive.so: six different files.
+             linux-x64, linux-arm64 and linux-arm are linked against glibc,
+             and linux-musl-x64, linux-musl-arm64 and linux-musl-arm against
+             musl. "Linux arm" means the two 32-bit ARM libraries, linux-arm
+             and linux-musl-arm, and so on for x64 and arm64.
     macOS    runtimes/osx-*/native/libarchive.dylib (universal x64 + arm64)
     Windows  runtimes/win-*/native/archive.dll (x86, x64, arm64)
 
 * Not listed here: tools that are only used while building, and system
   libraries that the native binaries load at run time but that are not part of
-  the package (on macOS the system C library and libiconv; on Windows the
+  the package (on Linux the C library that each library is linked against,
+  glibc or musl; on macOS the system C library and libiconv; on Windows the
   system DLLs named on the link command, such as kernel32, ws2_32 and bcrypt,
   and the system C runtime).
 
-* The toolchain sections (10 to 13) were checked against the native binaries
-  of a package built by .github/workflows/build.yml before Mbed TLS was added
-  to the Linux builds, except for what section 11 says about the Linux
-  libraries, which rests on a fourth package (see below). Each section says
-  what was found in those binaries and how, and says so plainly where
-  something could not be established. The copied licence texts in those
-  sections were compared with the upstream source releases named below. The
-  binaries inspected were built with:
+* The toolchain sections (10 to 15) say what was found in the binaries
+  inspected and how, and say so plainly where something could not be
+  established. What they say of the macOS library and the Windows DLLs was
+  checked against the native binaries of a package built by
+  .github/workflows/build.yml before Mbed TLS was added to the Linux builds,
+  and what they say of the Linux libraries against the six Linux libraries
+  built with zig that are described below. The copied licence texts in those
+  sections were compared with the upstream source releases named below and
+  in that description. The binaries of that package were built with:
 
     Linux    Bootlin release stable-2026.08-1, whose manifest names GCC
-             15.3.0 and musl 1.2.6
+             15.3.0 and musl 1.2.6 (the earlier Linux libraries; see below)
     Windows  x86 and x64: the Ubuntu 24.04 packages gcc-mingw-w64
              13.2.0-6ubuntu1+26.1 (GCC 13.2.0; the default compilers, which
              use the "win32" thread model) and mingw-w64 11.0.1-3build1
@@ -76,7 +82,7 @@ This file is written and updated by hand. Nothing generates it.
 
   This records what was inspected, not what is built today. When
   native/build-config.sh or .github/workflows/build.yml names a different
-  toolchain, repeat the checks that sections 10 to 13 describe and update this
+  toolchain, repeat the checks that sections 11 to 13 describe and update this
   record. The compilers that build the Windows x86 and x64 DLLs come from the
   build machine's package repository and are not pinned by this repository,
   so check sections 11 and 12 again when the build image in
@@ -94,7 +100,8 @@ This file is written and updated by hand. Nothing generates it.
   tarball at the address that native/build-config.sh gives, whose SHA-256
   checksum matches the one pinned there. When MBEDTLS_VERSION or
   native/mbedtls-config.h changes, repeat the checks that section 8 describes
-  and update this record.
+  and update this record. What section 8 says of the six Linux libraries
+  built with zig rests on those (see below).
 
 * The lzokay section (9) was checked against the native binaries of a third
   package, built by the same workflow from the branch that added lzokay,
@@ -124,36 +131,65 @@ This file is written and updated by hand. Nothing generates it.
   macOS 27.2 SDK, whose libc++ is version 22.1.6. The earlier release that
   section 9 uses as an example of libraries built with liblzo2 is 0.3.1.
   When LZOKAY_COMMIT, native/lzo-shim or a build toolchain changes, repeat
-  the checks that section 9 describes and update this record.
+  the checks that section 9 describes and update this record. What sections
+  5, 7 and 9 say of the six Linux libraries built with zig rests on those
+  (see below).
 
-* What section 11 says about the Linux libraries was checked against the
-  native binaries of a fourth package, built by the same workflow in run
-  43997057296 for commit 1597e17 of the branch that links each Linux library
-  with the toolchain's libgcc.a in one group with musl's libc.a. (The run
-  built 2475b72, the merge commit that GitHub made for the pull request,
-  which the package's metadata names; its files are those of 1597e17.) Its
-  Linux libraries were all built in that run, not taken from the
-  workflow's cache, and its linux-musl-* files are identical copies of them.
-  Only those statements of section 11 rest on this package; what section 10
-  says about the Linux libraries was checked again on it and holds for it as
-  well. Its Linux libraries were built with the Bootlin release named above
-  (as the compiler identification recorded in each of them shows), and their
-  code was compared with the libgcc.a of that release's toolchain archives,
-  checked against Bootlin's published checksums. The notices of the GCC
-  source files that section 11 names for the Linux libraries were read in
-  the GCC 15.3.0 release tarball, gcc-15.3.0.tar.xz from ftp.gnu.org, whose
-  signature was checked against the GNU keyring; it was made with one of
-  the keys that gcc.gnu.org lists for GCC releases. When the link command in
-  native/build-linux-common.sh or BOOTLIN_RELEASE changes, repeat the checks
-  that section 11 describes for the Linux libraries and update this record.
-
-* Each of the four packages described above also held a Linux x86 (32-bit)
+* Each of the packages described above also held a Linux x86 (32-bit)
   library. Linux x86 is no longer built or shipped, and this file no longer
   describes that library or what was found in it: the Linux libraries that
   the sections below describe are the x64, arm and arm64 ones. In none of
   the binaries that are shipped were all 13 functions of lzokay and the
   interface code found identical to those of the objects compiled for the
   check in section 9; that was found only in the x86 library.
+
+* The packages described above were built before the Linux libraries were
+  built with zig. Each held one Linux library for each of x64, arm and arm64,
+  which the Bootlin toolchains named above linked with musl's static C
+  library (libc.a) and GCC's libgcc.a, and which the package shipped for the
+  linux-musl-* RIDs as well. What sections 5, 7, 8 and 9 record of the Linux
+  libraries of those packages is of those earlier libraries. This file no
+  longer describes the code of musl's libc.a and of libgcc.a in them, as no
+  Linux library that is built today links either: section 10 now concerns
+  code that zig ported from musl, and section 11 the Windows DLLs alone.
+
+* The six Linux libraries are now built with zig (native/build-linux.sh, one
+  library for each Linux RID). What sections 5, 7 to 11 and 13 to 16 say of
+  them was checked against six libraries that native/build-linux.sh built on
+  macOS (Apple silicon), not by the workflow, with the sources and patches
+  pinned in native/build-config.sh and zig 0.17.1, from its aarch64-macos
+  tarball, whose SHA-256 checksum matches ZIG_SHA256_AARCH64_MACOS. That zig
+  release brings its own copies of glibc's sources, musl 1.2.5 and the
+  headers of libc++ 22.1.8, and each library records its compiler as "clang
+  version 22.1.8" and its linker as "LLD 22.1.8", which are that release's.
+  The libraries keep their symbol tables, which name the objects linked in,
+  in the order of the link command, and the functions and data that each of
+  them defines; they were read with GNU binutils (readelf, nm, objdump and
+  strings). native/build-linux.sh now strips the debugging information of
+  each library right after the link, with GNU strip --strip-debug
+  --keep-file-symbols (see native/BUILD.md). The six libraries checked were
+  built before it did, and what sections 10 and 13 to 16 say of their
+  debugging information is of them. Built again on that machine with the
+  strip, four of the six are, byte for byte, the libraries checked after the
+  same strip, and linux-arm and linux-musl-arm differ from those only in the
+  names of some local symbols in their string tables: the numbers in the
+  names that zig gives to anonymous constants of compiler-rt ("__anon_" and
+  a number), which differed between the two builds. The strip keeps the
+  symbol tables, with the symbols that name the objects linked in. What
+  section 14 says of linux-arm's __stack_chk_fail, and of the names that
+  linux-arm defines in compiler-rt's code, is of a linux-arm library built
+  in the same way after native/linux-arm-stack-guard.c gained that
+  function; linux-musl-arm, built again with it, differed from the library
+  checked after the strip only in those "__anon_" numbers. The texts
+  copied in sections 14 and 15, and the files of the zig release that
+  sections 9, 10 and 13 to 16 name, were read in that tarball. The text
+  copied in section 16 is from the Go project's repository (see that
+  section).
+  The COPYRIGHT text in section 10 is still that of musl 1.2.6, the musl of
+  the Bootlin release named above (see that section). When ZIG_VERSION, the
+  targets in native/build-linux.sh or link_libarchive in
+  native/build-linux-common.sh change, repeat the checks that those sections
+  describe and update this record.
 
 
 Summary
@@ -170,12 +206,16 @@ Summary
    8  Mbed TLS                Apache 2.0 (chosen from           Linux
       (libmbedcrypto)         Apache 2.0 or GPLv2 or later)
    9  lzokay                  MIT; parts as noted               all
-  10  musl libc               MIT; parts as noted               Linux
-  11  GCC runtime (libgcc)    GPLv3 with GCC Runtime Library    Linux arm,
-                              Exception; parts as noted         arm64;
-                                                                Windows x86, x64
+  10  musl libc               MIT; parts as noted               Linux arm
+  11  GCC runtime (libgcc)    GPLv3 with GCC Runtime Library    Windows x86, x64
+                              Exception; parts as noted
   12  MinGW-w64 runtime       several; see its licensing file   Windows
-  13  LLVM compiler-rt        Apache 2.0 with LLVM Exceptions   Windows arm64
+  13  LLVM compiler-rt        Apache 2.0 with LLVM Exceptions   Windows arm64;
+                                                                Linux arm
+  14  zig's compiler-rt       MIT; parts as noted               Linux arm
+  15  GNU C Library (glibc)   LGPL 2.1 or later, with           linux-x64,
+                              unlimited permission to link      linux-arm64
+  16  Go (math/tan.go)        BSD 3-Clause                      Linux arm
 
 
 ==============================================================================
@@ -623,6 +663,10 @@ divsufsort.c (lg_table and sqq_table) and for a message each of zdict.c,
 cover.c and fastcover.c. The search finds them in objects compiled for this
 check from those files of the pinned release, and in none of the binaries.
 
+Nor is the dictionary builder in the six Linux libraries built with zig (see
+"How this file is maintained"): their symbol tables name none of those four
+files, and define and refer to none of the names above.
+
 
 ==============================================================================
 6. LZ4 (liblz4)
@@ -787,16 +831,25 @@ writer ("xmlTextWriterStartDocument : invalid writer!"), an error message
 of its parser ("Extra content at the end of the document") and the XML
 namespace name "http://www.w3.org/XML/1998/namespace". The search finds all
 three in every DLL and in both halves of every macOS library, and none of
-them in any Linux library. No Linux library that links libxml2 has been
-inspected yet: when one has been, record here what was found in it.
+them in any Linux library.
+
+The six Linux libraries built with zig (see "How this file is maintained")
+all link libxml2, and libxml2 code is inside each of them, none of it
+exported. Their symbol tables name 22 source files of libxml2, among them
+xmlreader.c, xmlwriter.c, parser.c, dict.c and list.c, directly after the
+objects of libarchive and before those of libbz2.a, the next library on the
+link command. Each library defines about 1,290 names beginning with "xml" or
+"html", among them xmlTextReaderRead and xmlNewTextWriter, all of them local
+to the library, and none of its exported or imported symbols has such a
+name. Each contains the three strings of libxml2's code named above, and not
+the message of libarchive's XAR stubs.
 
 
 ==============================================================================
 8. Mbed TLS (libmbedcrypto)
 ==============================================================================
 
-Applies to:  Linux native binaries only (all three architectures, including
-             the copies shipped for the linux-musl-* RIDs)
+Applies to:  Linux native binaries only (all six)
 Source:      https://github.com/Mbed-TLS/mbedtls (release pinned in
              native/build-config.sh)
 Licence:     Apache License, Version 2.0 (SPDX identifier: Apache-2.0),
@@ -1098,6 +1151,15 @@ accelerated SHA-512 code is not in it. This was established from the symbol
 tables and the disassembly; the code was not compared with objects built by
 the build's own compilers.
 
+The six Linux libraries built with zig (see "How this file is maintained")
+contain the same parts of Mbed TLS, found the same way. In each of them the
+objects taken from libmbedcrypto.a are those of the same ten files, named
+directly after those of liblz4. Each defines 80 symbols whose names begin
+with "mbedtls_" and none whose names begin with "psa_", leaves no symbol with
+either prefix undefined, and exports none of them. No file or symbol name
+from "3rdparty" is in them, and the arm64 libraries contain no SHA-512
+instruction.
+
 Mbed TLS is not inside the macOS library or the three Windows DLLs. The macOS
 library keeps its symbol table: neither of its halves defines a symbol whose
 name begins with mbedtls_ or psa_, and it leaves its MD5, SHA-1 and SHA-2
@@ -1204,7 +1266,7 @@ runtime library such as libstdc++.a or libc++.a, none of which is in the
 binaries (see below). Each build compiles the two files with the headers of
 the C++ library of its own toolchain:
 
-    Linux               GNU libstdc++ of the Bootlin toolchain
+    Linux               LLVM libc++ of zig (lib/libcxx of the zig release)
     Windows x86, x64    GNU libstdc++ of the Ubuntu packages
                         g++-mingw-w64-i686-win32 and
                         g++-mingw-w64-x86-64-win32
@@ -1213,16 +1275,20 @@ the C++ library of its own toolchain:
 
 To find out which header code that is, the two files were compiled for this
 check, with the build's flags and with the headers of each of those
-toolchains (for Linux with x86-64, i686 and aarch64 compilers; for macOS
-with the headers of a newer SDK, see below), and the line tables of the
-resulting objects were read. They attribute code to these headers:
+toolchains apart from zig (see below for the Linux libraries that zig
+builds), and with the GNU libstdc++ headers of the Bootlin toolchains that
+built the earlier Linux libraries (see "How this file is maintained"), for
+x86-64, i686 and aarch64; for macOS with the headers of a newer SDK (see
+below). The line tables of the resulting objects were read. They attribute
+code to these headers:
 
-* libstdc++ (the headers of both toolchains): bits/stl_algobase.h (std::min,
-  std::fill, std::fill_n, std::mismatch and the helpers that std::copy_n
-  calls), bits/stl_algo.h (std::copy_n), bits/stl_pair.h (the std::pair that
-  std::mismatch returns) and bits/predefined_ops.h in the object of
-  lzokay.cpp; <new> (placement new) in that of lzo-shim.cpp, except for
-  aarch64; and, with the Bootlin headers, bits/range_access.h (std::end).
+* libstdc++ (the headers of the Ubuntu packages and of the Bootlin
+  toolchains): bits/stl_algobase.h (std::min, std::fill, std::fill_n,
+  std::mismatch and the helpers that std::copy_n calls), bits/stl_algo.h
+  (std::copy_n), bits/stl_pair.h (the std::pair that std::mismatch returns)
+  and bits/predefined_ops.h in the object of lzokay.cpp; <new> (placement
+  new) in that of lzo-shim.cpp, except for aarch64; and, with the Bootlin
+  headers, bits/range_access.h (std::end).
 * libc++ of LLVM-MinGW: __algorithm/mismatch.h, fill_n.h, comp.h and
   copy_move_common.h, and __string/constexpr_c_functions.h.
 * libc++ of the macOS SDK: the same headers and, for its std::mismatch,
@@ -1328,12 +1394,13 @@ copyright.
  */
 ----- END libstdc++: bits/stl_pair.h (notice) -----
 
-The libc++ headers of LLVM-MinGW and of the macOS SDK each say that they are
-"Part of the LLVM Project, under the Apache License v2.0 with LLVM
+The libc++ headers of zig, of LLVM-MinGW and of the macOS SDK each say that
+they are "Part of the LLVM Project, under the Apache License v2.0 with LLVM
 Exceptions". That licence and its exceptions are reproduced in section 13,
 as the first part of compiler-rt's licence file, and that part is identical
-to the same part of the LLVM licence file in the LLVM-MinGW release. The
-first of the exceptions allows portions of the software that compiling
+to the same part of the LLVM licence file in the LLVM-MinGW release, and of
+lib/libcxx/LICENSE.TXT, the licence file of zig's libc++, in the zig release.
+The first of the exceptions allows portions of the software that compiling
 embeds into an object form to be redistributed in that form without
 complying with sections 4(a), 4(b) and 4(d) of the Apache License.
 
@@ -1342,24 +1409,25 @@ lzokay and the interface code are inside every native binary, the three
 Linux libraries, both halves of the macOS library and the three DLLs, and
 none of their symbols is exported.
 
-* Linux (all three; the linux-musl-* files are identical copies): the symbol
-  tables name the objects lzo-shim.cpp and lzokay.cpp, one after the other,
-  between those of liblzma and libzstd, the libraries before and after
-  liblzo2.a on the link command. Each library defines lzokay::decompress,
-  lzokay::compress, lzokay::DictImpl::advance and the static function
-  encode_literal_run, which lzokay.cpp defines, and lzo_init, lzo_version,
-  lzo_version_string, lzo_adler32, lzo1x_decompress_safe, lzo1x_1_compress,
-  lzo1x_1_15_compress, lzo1x_999_compress_level, a function compress in an
-  anonymous namespace and a lookup table, which lzo-shim.cpp defines, as the
-  objects compiled for this check show. All of them are local to the
-  library: the only exported names that contain "lzo" are libarchive's own
-  archive_liblzo2_version, archive_read_support_filter_lzop and
-  archive_write_add_filter_lzop. For the x64 and arm64 libraries the
-  compilers used for this check make slightly different code for some of
-  these 13 functions: 9 and 6 of the 13 are identical to those of the
-  objects compiled for this check with the headers of the Bootlin
-  toolchain, apart from the bytes that the linker fills in. The arm library
-  was not compared, as no compiler for it was at hand.
+* Linux (the three earlier libraries; the linux-musl-* files are identical
+  copies of them): the symbol tables name the objects lzo-shim.cpp and
+  lzokay.cpp, one after the other, between those of liblzma and libzstd, the
+  libraries before and after liblzo2.a on the link command. Each library
+  defines lzokay::decompress, lzokay::compress, lzokay::DictImpl::advance and
+  the static function encode_literal_run, which lzokay.cpp defines, and
+  lzo_init, lzo_version, lzo_version_string, lzo_adler32,
+  lzo1x_decompress_safe, lzo1x_1_compress, lzo1x_1_15_compress,
+  lzo1x_999_compress_level, a function compress in an anonymous namespace
+  and a lookup table, which lzo-shim.cpp defines, as the objects compiled for
+  this check show. All of them are local to the library: the only exported
+  names that contain "lzo" are libarchive's own archive_liblzo2_version,
+  archive_read_support_filter_lzop and archive_write_add_filter_lzop. For
+  the x64 and arm64 libraries the compilers used for this check make
+  slightly different code for some of these 13 functions: 9 and 6 of the 13
+  are identical to those of the objects compiled for this check with the
+  headers of the Bootlin toolchain, apart from the bytes that the linker
+  fills in. The arm library was not compared, as no compiler for it was at
+  hand.
 * macOS (both halves): the same functions of lzokay.cpp, apart from the
   static one, and the eight functions with lzo names, none of them exported
   (nm describes each as "was a private external"); kEndOfStream, a constant
@@ -1406,6 +1474,28 @@ none of their symbols is exported.
   (libstdc++.a and libsupc++.a of the Ubuntu packages; libc++.a,
   libc++abi.a and libunwind.a of LLVM-MinGW).
 
+The six Linux libraries built with zig (see "How this file is maintained")
+contain lzokay and the interface code as well, none of it exported. Each of
+their symbol tables names the objects lzo-shim.cpp and lzokay.cpp between
+those of liblzma and libzstd, and defines lzokay::decompress,
+lzokay::compress and lzokay::DictImpl::advance, of lzokay.cpp, and lzo_init,
+lzo_version, lzo_version_string, lzo_adler32, lzo1x_decompress_safe,
+lzo1x_1_compress, lzo1x_1_15_compress, lzo1x_999_compress_level and the
+constant kEndOfStream, of lzo-shim.cpp, all of them local to the library.
+The only exported names that contain "lzo" are libarchive's own three. The
+x64 and arm64 libraries, glibc's and musl's alike, also define one function
+instantiated from zig's libc++ headers, std::__1::__mismatch_vectorized for
+unsigned char pointers, from __algorithm/mismatch.h, whose ABI tag records
+the version of those headers (see "How this file is maintained"); the arm
+libraries define none. Each library contains the string "lzokay-shim". None
+of the six contains liblzo2: none defines any of the names that only liblzo2
+defines, and none contains "Mar 01 2017". None of them defines or refers to
+a symbol of a C++ runtime library: no operator new or delete, no __cxa_ or
+_Unwind_ routine and no type information. The two files were not compiled
+again with zig's headers for this check, so which of those headers the rest
+of their code comes from, inlined into the functions above, was not
+established.
+
 Not verified: that the code of the Linux libraries, of the DLLs and of the
 macOS library is exactly what their own build compilers make of the two
 files and the headers named above. The SDK of the Xcode that built the macOS
@@ -1419,33 +1509,58 @@ checksum.
 10. musl libc
 ==============================================================================
 
-Applies to:  Linux native binaries only (all three architectures, including
-             the copies shipped for the linux-musl-* RIDs)
-Source:      https://musl.libc.org/
+Applies to:  Linux arm native binaries (linux-arm and linux-musl-arm), for
+             the code of zig's compiler-rt (section 14) that zig ported from
+             musl
+Source:      https://musl.libc.org/ (the code concerned is in the zig release
+             pinned by ZIG_VERSION in native/build-config.sh)
 Licence:     MIT licence for musl as a whole; some parts carry other
              permissive terms, as musl's own COPYRIGHT file sets out below.
 
-The Linux build scripts link the static C library (libc.a) of the Bootlin
-musl cross-toolchain into libarchive.so. The toolchain release is pinned by
-BOOTLIN_RELEASE in native/build-config.sh. Bootlin publishes a manifest for
-each toolchain (the "summaries" directory beside the toolchain download); it
-records the musl version, the licence "MIT" and the licence file "COPYRIGHT".
-The text below is the COPYRIGHT file of the musl source release of the
-version that manifest names. Check it again whenever BOOTLIN_RELEASE changes.
+No Linux library contains musl itself. The musl libraries (linux-musl-x64,
+linux-musl-arm64 and linux-musl-arm) are linked dynamically against musl's
+libc.so, which the system supplies and the package does not contain, and the
+glibc libraries are linked against glibc (section 15).
 
-Verified on the binaries inspected (see "How this file is maintained"): musl
-code is inside all three libarchive.so files. None of them names a C library,
-or any other library, as a run-time dependency (they have no DT_NEEDED
-entry), and each defines more than 400 of musl's global symbols. Several
-hundred code sections of the toolchain's libc.a were found unchanged inside
-each library, apart from the address fields that the linker fills in; the
-comparison used the libc.a of the Bootlin toolchain for each architecture,
-downloaded and checked against Bootlin's published checksums. The compiler
-identification recorded in each library agrees with the manifest. musl's
-start-up objects (crti.o, crtn.o, Scrt1.o) are not linked in. The text below
-was compared with the COPYRIGHT file of the musl release tarball of the
-version the manifest names, whose signature was checked against the key the
-musl project publishes, and is identical to it.
+zig's compiler-rt, which is inside the two arm libraries (section 14),
+contains code that zig ported from musl, most of it musl's math functions.
+Of the source files of the zig release whose code is in those libraries, 19
+say at their head that they are "Ported from musl, which is licensed under
+the MIT license" (or "which is MIT licensed"), and name musl's COPYRIGHT file
+and the musl sources that they port. They are cos.zig, exp.zig, exp2.zig,
+floor_ceil.zig, fma.zig, log.zig, log10.zig, log2.zig, rem_pio2.zig,
+rem_pio2_large.zig, rem_pio2f.zig, rem_pio2l.zig, round.zig, sin.zig,
+sqrt.zig, tan.zig, trig.zig and trunc.zig in lib/compiler_rt, and
+lib/std/math/ilogb.zig. One more, lib/compiler_rt/fmod.zig, says that the
+"Logic and flow" of two of its functions are "heavily inspired by MUSL
+fmodl". As musl's COPYRIGHT says, much of musl's math library is the work of
+others (Sun Microsystems among them), labelled as such in comments in musl's
+own source files; zig's ports do not carry those comments, and this file
+does not reproduce them.
+
+The headers of those files point to musl's COPYRIGHT file in musl's own
+repository. The text below is that file as a musl source release has it:
+the release whose tarball was checked when the earlier Linux libraries,
+which contained musl's libc.a, were inspected, and whose signature was
+checked against the key that the musl project publishes (see "How this file
+is maintained"). The zig release has an older copy of the file beside the
+musl sources that it bundles (lib/libc/musl/COPYRIGHT), which differs from
+the text below only in the name that it gives one contributor, the author of
+the smoothsort implementation.
+
+Verified on the binaries inspected (see "How this file is maintained"): no
+Linux library contains musl's own code. The objects that the symbol tables
+name are those of libarchive and of the libraries on the link command, and,
+as sections 14 and 15 say, zig's compiler-rt and linux-arm-stack-guard.c in
+the arm libraries and six objects of glibc's libc_nonshared.a in the x64
+and arm64 glibc ones: none is musl's. The musl libraries name musl's libc.so
+as their one run-time dependency (DT_NEEDED) and import from it the C
+library functions that their code calls. None of the six has the start-up
+code of musl or of glibc: no .init or .fini section, no _init or _fini
+function and no DT_INIT or DT_FINI entry, which crti.o and crtn.o would
+bring; their constructors run from .init_array. The two arm libraries
+contain the code of the 19 files named above, which the line tables of
+their compiler-rt debugging information named (section 14).
 
 ----- BEGIN musl: COPYRIGHT -----
 musl as a whole is licensed under the following standard MIT license:
@@ -1648,73 +1763,31 @@ obstacle to adoption, that text has been removed.
 11. GCC runtime library (libgcc)
 ==============================================================================
 
-Applies to:  Linux arm and arm64 native binaries, including the copies
-             shipped for the linux-musl-* RIDs (not the x64 one)
-             Windows x86 and x64 native binaries
+Applies to:  Windows x86 and x64 native binaries
+             (not the Linux ones; see below)
 Source:      https://gcc.gnu.org/
 Licence:     GNU General Public License version 3 with the GCC Runtime
              Library Exception version 3.1 (SPDX identifier of the exception:
              GCC-exception-3.1); some files carry other terms, as set out
              below.
 
-Linux: all three Linux scripts link libarchive.so with link_libarchive in
-native/build-linux-common.sh, which links with -nostdlib and names the
-toolchain's own libgcc.a on the link command, in one group with musl's
-libc.a, so that the helper routines that the compiled code and libc.a call
-are linked into the library. The Bootlin manifest described in section 10
-records the GCC target runtime libraries as licensed under
-"GPL-3.0-with-GCC-exception", with the licence file "COPYING.RUNTIME".
-
-Verified on the binaries inspected (see "How this file is maintained"):
-libgcc code is inside the arm and arm64 libarchive.so files, and not
-inside the x64 one. The libraries keep their symbol tables, which name the
-objects linked in and the functions that they define. The members of the
-toolchain's libgcc.a in each library were found from the functions that it
-defines. The code of each is identical to that of the member of the same
-name in the libgcc.a of the Bootlin toolchain for its architecture,
-downloaded and checked against Bootlin's published checksums, apart from
-the bytes that the linker fills in. These are the members, with the source
-files that their debugging information in libgcc.a names for all of their
-code:
-
-* arm: six members. _udivsi3 and _divsi3 (the 32-bit division routines,
-  under their own and their __aeabi_ names) and _dvmd_lnx (the handler for
-  division by zero, which calls musl's raise) are from
-  libgcc/config/arm/lib1funcs.S; _aeabi_ldivmod and _aeabi_uldivmod (the
-  64-bit division routines of the ARM run-time ABI) are from bpabi.S in the
-  same directory, which lib1funcs.S includes; and _udivmoddi4, which those
-  two call, is from libgcc/libgcc2.c.
-* arm64: sixteen members. Fifteen are 128-bit floating point routines, from
-  the files of the same names in libgcc/soft-fp: addtf3, subtf3, multf3,
-  divtf3, eqtf2, getf2, letf2, fixtfsi, fixunstfsi, floatsitf, floatunsitf,
-  extendsftf2, extenddftf2, trunctfsf2 and trunctfdf2. musl's long double
-  code calls them (its printf, scanf and strtod families, fmodl, frexpl and
-  scalbnl), as long double is a 128-bit type on arm64. The sixteenth,
-  sfp-exceptions, from libgcc/config/aarch64/sfp-exceptions.c, is what
-  thirteen of them call to raise floating point exceptions.
-* x64: none. Its symbol table defines no global symbol of libgcc.a, and no
-  code of libgcc.a was found in it.
-
-No other member of libgcc.a is inside any of the libraries. They define no
-other global symbol of it, and a search of each library for the code of
-every member of its libgcc.a found no other member: the only further
-matches, for 34 short fixed-point members of the arm libgcc.a (12 to 28
-bytes of code each), are inside three functions that the symbol table gives
-to LZ4 and to libarchive, of which those bytes are part. Members too short
-for that search would still be named in the symbol tables, and none of them
-is. The only undefined symbols left in the libraries are four weak
-references of zstd (ZSTD_trace_*), in the x64 and arm64 libraries, which
-resolve to null when nothing defines them. None of the three libraries
-contains GCC's start-up objects (crtbeginS.o, crtendS.o) or code from any
-other GCC library (libgcc_eh, libatomic, libstdc++ and others were checked).
+Linux: no Linux library contains libgcc. zig compiles and links them, and
+links its own compiler-rt (section 14), not libgcc, for the helper routines
+that compiled code calls. Verified on the six Linux libraries built with zig
+(see "How this file is maintained"): their symbol tables name no object or
+source file of libgcc or of GCC's start-up objects (crtbeginS.o, crtendS.o),
+and every compiler helper routine that the arm libraries define, such as
+__aeabi_uldivmod, is in the code of zig's compiler-rt.
 
 The exception grants additional permission to combine libgcc with
 independently written code, on the conditions that it sets out. It is
-reproduced here from the COPYING.RUNTIME file of the GCC source release of
-the version that manifest names. Check it again whenever BOOTLIN_RELEASE
-changes. The GNU General Public License version 3 that it modifies is the
-file COPYING3 of the GCC source release, and is published at
-https://www.gnu.org/licenses/gpl-3.0.txt
+reproduced here from the COPYING.RUNTIME file of a GCC source release, the
+one that the Bootlin manifest named in "How this file is maintained" names,
+and is identical to that file of the GCC release behind the Ubuntu
+compilers (see below). Check it again when the build image in
+.github/workflows/build.yml changes. The GNU General Public License version
+3 that it modifies is the file COPYING3 of the GCC source release, and is
+published at https://www.gnu.org/licenses/gpl-3.0.txt
 
 ----- BEGIN gcc: COPYING.RUNTIME -----
 GCC RUNTIME LIBRARY EXCEPTION
@@ -1816,62 +1889,12 @@ present and to find nothing from several GCC libraries that are not linked.
   cannot be ruled out. If present, they are libgcc code under the same terms.
 
 The source files of the members found carry the licence named at the head
-of this section, apart from the soft-fp files of the Linux arm64 library
-(see below): libgcc/libgcc2.c, libgcc/config/arm/lib1funcs.S and bpabi.S,
-libgcc/config/aarch64/sfp-exceptions.c, libgcc/config/i386/cygwin.S, and
-cygming-crtbegin.c and cygming-crtend.c in the same directory. So does
-libgcc/config/aarch64/sfp-machine.h, which soft-fp.h and sfp-exceptions.c
-include. The text above was compared with the COPYING.RUNTIME file at the
-release tag of each of the two GCC releases concerned (the one the Bootlin
-manifest names and the one behind the Ubuntu compilers) and is identical to
-both, and to the file in the release tarball of the first. Ubuntu's
-packaging does not change that file.
-
-The fifteen soft-fp members of the Linux arm64 library are compiled from
-files that carry other terms. Those files, and the headers of
-libgcc/soft-fp that they include (soft-fp.h, quad.h, single.h, double.h,
-op-common.h, op-1.h, op-2.h, op-4.h and op-8.h), come from the GNU C
-Library, as their notices say, and each of them carries the notice below:
-the GNU Lesser General Public License, version 2.1 or later, with unlimited
-permission to link the compiled file into combinations with other programs
-and to distribute those combinations, the permission that
-include/longlong.h also gives (see below). This file relies on that
-permission for the code of those files. The notice is copied from
-soft-fp.h in the GCC release that the Bootlin manifest names. In each of
-the other files it is word for word the same from its copyright line on,
-and differs only in the description of the file above that line. The GNU
-Lesser General Public License, version 2.1, is the file COPYING.LIB of the
-GCC source release, and is published at
-https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt
-
------ BEGIN gcc: libgcc/soft-fp/soft-fp.h (notice) -----
-/* Software floating-point emulation.
-   Copyright (C) 1997-2022 Free Software Foundation, Inc.
-   This file is part of the GNU C Library.
-
-   The GNU C Library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Lesser General Public
-   License as published by the Free Software Foundation; either
-   version 2.1 of the License, or (at your option) any later version.
-
-   In addition to the permissions in the GNU Lesser General Public
-   License, the Free Software Foundation gives you unlimited
-   permission to link the compiled version of this file into
-   combinations with other programs, and to distribute those
-   combinations without any restriction coming from the use of this
-   file.  (The Lesser General Public License restrictions do apply in
-   other respects; for example, they cover modification of the file,
-   and distribution when not linked into a combine executable.)
-
-   The GNU C Library is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Lesser General Public License for more details.
-
-   You should have received a copy of the GNU Lesser General Public
-   License along with the GNU C Library; if not, see
-   <https://www.gnu.org/licenses/>.  */
------ END gcc: libgcc/soft-fp/soft-fp.h (notice) -----
+of this section: libgcc/libgcc2.c, libgcc/config/i386/cygwin.S, and
+cygming-crtbegin.c and cygming-crtend.c in the same directory. The text
+above was compared with the COPYING.RUNTIME file at the release tag of each
+of two GCC releases (the one the Bootlin manifest names and the one behind
+the Ubuntu compilers) and is identical to both, and to the file in the
+release tarball of the first. Ubuntu's packaging does not change that file.
 
 Two further notices in the GCC sources bear on this code:
 
@@ -1886,12 +1909,8 @@ Two further notices in the GCC sources bear on this code:
   which carries the notice below: the GNU Lesser General Public License,
   version 2.1 or later, with unlimited permission to link the compiled file
   into combinations with other programs and to distribute those
-  combinations. soft-fp.h includes longlong.h as well, as the AArch64
-  sfp-machine.h does not define umul_ppmm itself, and the multiplication
-  and division code for the 128-bit format uses its umul_ppmm and
-  udiv_qrnnd macros. That concerns the libgcc2.c routines in the Linux arm
-  library and in the Windows x86 DLL, and the soft-fp routines in the Linux
-  arm64 library. How much of their code derives from those macros was not
+  combinations. That concerns the libgcc2.c routines in the Windows x86
+  DLL. How much of their code derives from those macros was not
   established. The notice is copied from the GCC release that the Bootlin
   manifest names; in the release behind the Ubuntu compilers it differs
   only in its second line, where the years are 1991-2023.
@@ -2308,6 +2327,9 @@ DEALINGS IN THE SOFTWARE.
 ==============================================================================
 
 Applies to:  Windows arm64 native binary
+             Linux arm native binaries (linux-arm and linux-musl-arm), for
+             the code of zig's compiler-rt (section 14) that zig ported from
+             LLVM's compiler-rt
              (not the macOS native binary; see the end of this section)
 Source:      https://llvm.org/
 Licence:     Apache License v2.0 with LLVM Exceptions (SPDX identifier:
@@ -2337,6 +2359,21 @@ searching it for the code of every member of the release's libraries, after
 confirming that the search finds members known to be present. The LLVM-MinGW
 download is not pinned by a checksum, in this repository or upstream; the
 comparison used the file at the address the workflow downloads from.
+
+Linux arm: zig's compiler-rt, which is inside the two arm libraries (section
+14), is not LLVM's, and no LLVM library is linked into any Linux library.
+But six of the source files of the zig release whose code is in those two
+libraries say that they are ported from LLVM's compiler-rt, and name the
+file of LLVM's sources that they port: lib/compiler_rt/addf3.zig
+(fp_add_impl.inc), mulf3.zig (fp_mul_impl.inc), divsf3.zig and divdf3.zig
+(divsf3.c and divdf3.c), powiXf2.zig (powisf2.c, from LLVM's release 8.0
+branch) and clear_cache.zig (which names a commit of llvm-project, and
+LLVM's clear_cache.c in a comment). They name no licence. This file takes
+the text below, the licence file of LLVM's compiler-rt, which holds its
+present licence and its older one, to apply to that code. Verified on the six
+Linux libraries built with zig (see "How this file is maintained"): the
+code of those six files is in the arm libraries, whose compiler-rt
+debugging information named them (section 14), and not in the others.
 
 The text below was compared with compiler-rt/LICENSE.TXT of the LLVM release
 that LLVM-MinGW is built from and is identical to it. That file holds both
@@ -2681,3 +2718,274 @@ looked into. To repeat the check, compare the output of
 "nm -arch <arch> -g -U libclang_rt.osx.a", and read
 "nm -arch <arch> -m -u libarchive.dylib" (what is left to system libraries).
 Check again if native/build-macos.sh or the macOS build image changes.
+
+
+==============================================================================
+14. zig's compiler-rt
+==============================================================================
+
+Applies to:  Linux arm native binaries (linux-arm and linux-musl-arm)
+             (not the Linux x64 and arm64 ones; see below)
+Source:      https://ziglang.org/ (the release pinned by ZIG_VERSION in
+             native/build-config.sh)
+Licence:     MIT licence (SPDX identifier: MIT), in the LICENSE file of the
+             zig release, reproduced below; parts are ported from musl
+             (section 10) and from LLVM's compiler-rt (section 13), and
+             one file names the Go project's math/tan.go among its sources
+             (section 16)
+
+native/build-linux.sh compiles and links the Linux libraries with zig ("zig
+cc" and "zig c++", through native/zig-cc.sh). In place of GCC's libgcc, zig
+links its own compiler support library, compiler-rt, into what it links. It
+builds compiler-rt for each target, from lib/compiler_rt.zig and the files
+of lib/compiler_rt in its release and from the parts of zig's standard
+library (lib/std) that they use. It is written in Zig and is not LLVM's
+compiler-rt, although some of its files are ported from LLVM's and others
+from musl. zig builds it as one object, which the linker takes into a
+library only if the library needs one of its symbols, and then whole, as
+link_libarchive in native/build-linux-common.sh does not have the linker
+discard code that nothing uses.
+
+Verified on the binaries inspected (see "How this file is maintained"):
+
+* linux-arm and linux-musl-arm: zig's compiler-rt is inside both, whole.
+  Their symbol tables name its object, "compiler_rt", after all the others,
+  and define 852 functions in its code in linux-musl-arm: 426 local to the
+  object, named after their source files (such as
+  compiler_rt.count0bits.__clzsi2_arm32), and 426 others, among them the
+  routines of the ARM run-time ABI, such as __aeabi_uldivmod (64-bit
+  unsigned division), which the code of libarchive, zlib and Zstandard in
+  the libraries calls. linux-arm defines the same names there but one,
+  __stack_chk_fail (see below), whose code it still holds under the other
+  name that compiler-rt gives that code, __chk_fail. Its code, about
+  180 KiB, comes last in each library, and is as long as the code of the
+  object in zig's cache from the build, apart from alignment. Each library
+  also held the debugging information of that object, and of nothing
+  else, which names zig as its producer (native/build-linux.sh now strips
+  it; see "How this file is maintained"). Its line tables give code to 82
+  source files of the zig release: lib/compiler_rt.zig, 67 files of
+  lib/compiler_rt and 14 of lib/std. The stack protector's guard of these
+  libraries is not compiler-rt's but that of native/linux-arm-stack-guard.c,
+  which is this project's own, and so is the __stack_chk_fail of linux-arm.
+  linux-musl-arm uses compiler-rt's __stack_chk_fail.
+* linux-x64, linux-arm64, linux-musl-x64 and linux-musl-arm64: none of it.
+  zig built compiler-rt for these links as well (the cache of each build
+  holds the object, with its debugging information), but none of the names
+  that the object defines (1,795 for x64 and 1,146 for arm64) is defined in
+  these libraries, their symbol tables name no compiler_rt object, and they
+  hold none of its debugging information.
+
+Where parts of it come from: of the 82 source files, 19 say that they are
+ported from musl (section 10 names them), one that the "Logic and flow" of
+two of its functions are "heavily inspired by MUSL fmodl"
+(lib/compiler_rt/fmod.zig), and six that they are ported from LLVM's
+compiler-rt (section 13 names them). Those sections reproduce the licences
+of musl and of LLVM's compiler-rt. One of the 19, lib/compiler_rt/tan.zig,
+also gives the address of the Go project's math/tan.go among its sources,
+without saying what it takes from it. The Go project's licence is not in
+the zig release, and section 16 reproduces it for that code. Three of the
+files name GCC for the interface that their code provides:
+lib/compiler_rt/ssp.zig calls itself a "Small Zig reimplementation of
+gcc's libssp", shift.zig gives its shift routines their libgcc names, for
+"symbol compatibility with libgcc", and arm.zig gives the address of a GCC
+patch that describes the Thumb-1 switch tables whose helpers,
+__gnu_thumb1_case_*, it defines. None of them says that it takes code from
+GCC, and four others name GCC only in notes that compare their results or
+behaviour with GCC's. Other comments name published methods that the code
+follows, such as Bit Twiddling Hacks, Hacker's Delight, Knuth's Algorithm
+D, Annex G of the C standard and papers by Ping Tak Peter Tang and by
+Dekker; they name no licence. None of the 82 files carries a licence
+statement or a copyright notice other than those notes, and zig's own
+licence is the LICENSE file of its release, reproduced here.
+
+----- BEGIN zig: LICENSE -----
+The MIT License (Expat)
+
+Copyright (c) Zig contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+----- END zig: LICENSE -----
+
+
+==============================================================================
+15. GNU C Library (glibc)
+==============================================================================
+
+Applies to:  Linux x64 and arm64 native binaries linked against glibc
+             (linux-x64 and linux-arm64; not linux-arm, and not the
+             linux-musl-* ones)
+Source:      https://www.gnu.org/software/libc/ (the copies of its sources
+             in the zig release pinned by ZIG_VERSION in
+             native/build-config.sh)
+Licence:     GNU Lesser General Public License, version 2.1 or later, with
+             unlimited permission to link the compiled files with other
+             programs and to distribute those programs, as the notice of
+             each file says (SPDX identifier of the licence:
+             LGPL-2.1-or-later)
+
+The glibc libraries are linked dynamically against glibc: libc.so.6 and the
+other glibc libraries that they need come from the system, not from the
+package. As glibc's own toolchain does, zig also links each of them against
+glibc's static libc_nonshared.a, which zig builds for the glibc version of
+the target from the copies of glibc's sources in lib/libc/glibc of its
+release. Before glibc 2.33, stat, fstat, lstat, fstatat and mknod, and their
+64-bit forms, were not functions of libc.so.6 but small functions of
+libc_nonshared.a, linked into the programs and libraries that call them:
+each passes its arguments on, with the version number of the interface, to
+a function of libc.so.6 (__xstat, __fxstat, __xmknod and the like).
+linux-x64 and linux-arm64 are built for glibc 2.28 (see
+native/build-linux.sh), so they contain those of these functions that they
+call. linux-arm is built for glibc 2.34, whose libc.so.6 has them all.
+
+Verified on the binaries inspected (see "How this file is maintained"):
+
+* linux-x64 and linux-arm64: six members of libc_nonshared.a are inside
+  each of them, compiled from the files io/stat-2.32.c, io/fstat-2.32.c,
+  io/lstat-2.32.c, io/stat64-2.32.c, io/fstatat-2.32.c and io/mknod-2.32.c
+  of lib/libc/glibc of the zig release, the files that zig compiles for a
+  glibc older than 2.33. Their symbol tables name those six files, after the
+  objects of every library on the link command, and define stat, fstat,
+  lstat, stat64, fstatat and mknod (with the aliases __stat, __fstat,
+  __lstat and __mknod), 16 to 52 bytes of code each and local to the
+  library; the libraries import from libc.so.6 the functions that these
+  call, __xstat, __fxstat, __lxstat, __xstat64, __fxstatat and __xmknod.
+  Each library also held the debugging information of these six objects,
+  and of nothing else, which names the same six files (now stripped, as
+  section 14 says). The other members of the libc_nonshared.a that zig
+  built for these links (atexit, at_quick_exit, pthread_atfork,
+  stack_chk_fail_local, fstat64, lstat64, fstatat64, mknodat and elf-init)
+  are not in them.
+* linux-arm: no glibc code. It imports these functions from libc.so.6, in
+  their forms with a 64-bit time_t (__stat64_time64 and the like) and
+  mknod under its own name, and contains none of the members of the
+  libc_nonshared.a that zig builds for its glibc version (atexit,
+  at_quick_exit, pthread_atfork and stack_chk_fail_local).
+* No Linux library contains glibc's start-up code: as section 10 says, none
+  has a .init or .fini section or an _init or _fini function, which glibc's
+  crti.o and crtn.o would bring.
+
+The notice below is copied from io/stat-2.32.c in lib/libc/glibc of the zig
+release. The other five files carry the same notice, word for word, apart
+from the years of the copyright line: 1996-2020 in fstat-2.32.c,
+lstat-2.32.c and stat64-2.32.c, as in stat-2.32.c, 2005-2020 in
+fstatat-2.32.c and 1995-2020 in mknod-2.32.c. The GNU Lesser General Public
+License, version 2.1, is published at
+https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt
+
+----- BEGIN zig: lib/libc/glibc/io/stat-2.32.c (notice) -----
+/* Copyright (C) 1996-2020 Free Software Foundation, Inc.
+   This file is part of the GNU C Library.
+
+   The GNU C Library is free software; you can redistribute it and/or
+   modify it under the terms of the GNU Lesser General Public
+   License as published by the Free Software Foundation; either
+   version 2.1 of the License, or (at your option) any later version.
+
+   In addition to the permissions in the GNU Lesser General Public
+   License, the Free Software Foundation gives you unlimited
+   permission to link the compiled version of this file with other
+   programs, and to distribute those programs without any restriction
+   coming from the use of this file. (The GNU Lesser General Public
+   License restrictions do apply in other respects; for example, they
+   cover modification of the file, and distribution when not linked
+   into another program.)
+
+   Note that people who make modified versions of this file are not
+   obligated to grant this special exception for their modified
+   versions; it is their choice whether to do so. The GNU Lesser
+   General Public License gives permission to release a modified
+   version without this exception; this exception also makes it
+   possible to release a modified version which carries forward this
+   exception.
+
+   The GNU C Library is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+   Lesser General Public License for more details.
+
+   You should have received a copy of the GNU Lesser General Public
+   License along with the GNU C Library; if not, see
+   <https://www.gnu.org/licenses/>.  */
+----- END zig: lib/libc/glibc/io/stat-2.32.c (notice) -----
+
+
+==============================================================================
+16. Go (math/tan.go)
+==============================================================================
+
+Applies to:  Linux arm native binaries (linux-arm and linux-musl-arm), for
+             the code of zig's compiler-rt (section 14) in
+             lib/compiler_rt/tan.zig, which names the Go project's
+             math/tan.go among its sources
+Source:      https://go.dev/ (the code concerned is in the zig release
+             pinned by ZIG_VERSION in native/build-config.sh)
+Licence:     BSD 3-Clause licence (SPDX identifier: BSD-3-Clause), in the
+             LICENSE file of the Go project, reproduced below
+
+lib/compiler_rt/tan.zig, one of the files of zig's compiler-rt, says that
+it is ported from musl (section 10), and below that gives the addresses of
+musl's tanf.c, tan.c and tanl.c and of the Go project's math/tan.go
+(https://golang.org/src/math/tan.go), without saying what it takes from
+each. This file takes the Go project's licence, below, to apply to
+whatever of its code comes from Go.
+
+Verified on the binaries inspected (see "How this file is maintained"): the
+code of tan.zig is in the two arm libraries, to which the line tables of
+their compiler-rt debugging information gave code (section 14), and which
+define its functions tan, tanf, tanl, __tanh and __tanx, local to each
+library. It is in no other library, as no other library contains
+compiler-rt.
+
+The zig release does not include the Go project's licence. The text below
+is the LICENSE file of the Go project's repository, as
+https://raw.githubusercontent.com/golang/go/master/LICENSE served it on 22
+November 2026 (SHA-256
+911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad). When
+ZIG_VERSION changes, check whether tan.zig still names Go, and whether its
+code is still in the arm libraries.
+
+----- BEGIN Go: LICENSE -----
+Copyright 2009 The Go Authors.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+   * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+   * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+   * Neither the name of Google LLC nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+----- END Go: LICENSE -----

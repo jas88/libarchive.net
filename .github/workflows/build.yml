@@ -137,18 +137,43 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # One library per Linux runtime, each linked against its own C library (glibc for
+          # linux-*, musl for linux-musl-*), built by native/build-linux.sh <target>, with
+          # loadtest-<target>, the load test program built for it, beside it
           - target: linux-x64
             kind: linux
-            script: build-linux.sh
             output: libarchive-linux-x64.so
           - target: linux-arm64
             kind: linux
-            script: build-linux-arm64.sh
             output: libarchive-linux-arm64.so
+            # test_load_glibc (native/build-linux-common.sh) runs the load test under QEMU,
+            # with the dynamic loader and libraries of this package's glibc
+            glibc-cross-runtime: libc6-arm64-cross
+            # GNU binutils for the target, which the build takes from binutils-dir, where
+            # this package puts them under their unprefixed names (BINUTILS_DIR; see
+            # setup_linux_tools in native/build-linux-common.sh). The runner's own binutils
+            # are built for x86 only, so the x64 rows use those.
+            binutils: binutils-aarch64-linux-gnu
+            binutils-dir: /usr/aarch64-linux-gnu/bin
           - target: linux-arm
             kind: linux
-            script: build-linux-arm.sh
             output: libarchive-linux-arm.so
+            glibc-cross-runtime: libc6-armhf-cross
+            binutils: binutils-arm-linux-gnueabihf
+            binutils-dir: /usr/arm-linux-gnueabihf/bin
+          - target: linux-musl-x64
+            kind: linux
+            output: libarchive-linux-musl-x64.so
+          - target: linux-musl-arm64
+            kind: linux
+            output: libarchive-linux-musl-arm64.so
+            binutils: binutils-aarch64-linux-gnu
+            binutils-dir: /usr/aarch64-linux-gnu/bin
+          - target: linux-musl-arm
+            kind: linux
+            output: libarchive-linux-musl-arm.so
+            binutils: binutils-arm-linux-gnueabihf
+            binutils-dir: /usr/arm-linux-gnueabihf/bin
           - target: win-x86
             kind: windows
             arch: x86
@@ -175,8 +200,9 @@ jobs:
           {
             echo "key=native-${{ matrix.target }}-${EXTRA}${NATIVE_CACHE_VERSION}-${{ hashFiles('native/**') }}"
             # Configure results are only valid for the toolchain that produced them, so
-            # their key carries the same toolchain parts as the binary's.
-            echo "config-key=config-cache-${{ matrix.target }}-${EXTRA}${NATIVE_CACHE_VERSION}-${{ hashFiles('native/build-*.sh') }}"
+            # their key carries the same toolchain parts as the binary's (for Linux, zig's
+            # version in build-config.sh and the compiler wrapper).
+            echo "config-key=config-cache-${{ matrix.target }}-${EXTRA}${NATIVE_CACHE_VERSION}-${{ hashFiles('native/build-*.sh', 'native/zig-cc.sh') }}"
           } >> "$GITHUB_OUTPUT"
       # Native binaries are reused while native/** is unchanged. Tag builds always
       # rebuild from source so release binaries never come from a cache.
@@ -185,7 +211,10 @@ jobs:
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/cache/restore@v6.1.0
         with:
-          path: native-out/${{ matrix.output }}
+          # A Linux library comes with its load test program (see the matrix)
+          path: |
+            native-out/${{ matrix.output }}
+            ${{ matrix.kind == 'linux' && format('native-out/loadtest-{0}', matrix.target) || '' }}
           key: ${{ steps.cache-key.outputs.key }}
       - name: Cache library downloads
         if: steps.native-cache.outputs.cache-hit != 'true'
@@ -195,7 +224,7 @@ jobs:
           # names another directory (the build log prints the one in use)
           path: ~/.cache/libarchive-net/downloads
           # One cache per job, because each job downloads different files (only the
-          # Linux jobs fetch a Bootlin toolchain and mbedTLS). With one key for all of
+          # Linux jobs fetch zig and mbedTLS). With one key for all of
           # them, only the first job to finish could save the cache, and runs that hit
           # the key never save it again, so the cache held that one job's downloads.
           key: library-downloads-${{ matrix.target }}-${{ hashFiles('native/build-config.sh') }}
@@ -210,6 +239,16 @@ jobs:
           # Exact match only: a configure cache from another toolchain or flag set makes
           # autoconf abort ("`CC' has changed since the previous run").
           key: ${{ steps.cache-key.outputs.config-key }}
+      # zig's own cache, of the C library stubs and compiler-rt that it builds for each
+      # target. The Linux builds have no sccache: it cannot sit in front of zig cc.
+      - name: Cache zig's builds of the C library and compiler-rt
+        if: steps.native-cache.outputs.cache-hit != 'true' && matrix.kind == 'linux'
+        uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/zig
+          key: zig-cache-${{ matrix.target }}-${{ hashFiles('native/build-config.sh', 'native/build-linux.sh', 'native/zig-cc.sh') }}
+          restore-keys: |
+            zig-cache-${{ matrix.target }}-
       - name: Install apt packages
         if: steps.native-cache.outputs.cache-hit != 'true'
         uses: awalsh128/cache-apt-pkgs-action@v1.6.3
@@ -219,13 +258,20 @@ jobs:
           packages: ${{ matrix.kind == 'windows' && 'mingw-w64 g++-mingw-w64-i686-win32 g++-mingw-w64-x86-64-win32 pkg-config' || 'pkg-config' }}
           version: 1.0
           execute_install_scripts: true
-      # The arm and arm64 builds load-test the library under QEMU user-mode emulation
-      # (test_load_musl in native/build-linux-common.sh), and fail if it is missing.
+      # The glibc arm and arm64 builds load-test the library under QEMU user-mode emulation,
+      # with the dynamic loader and libraries of Ubuntu's cross runtime of glibc
+      # (test_load_glibc in native/build-linux-common.sh), and fail if either is missing.
       - name: Install QEMU user-mode emulation
-        if: steps.native-cache.outputs.cache-hit != 'true' && (matrix.target == 'linux-arm' || matrix.target == 'linux-arm64')
+        if: steps.native-cache.outputs.cache-hit != 'true' && matrix.glibc-cross-runtime
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-user
+          sudo apt-get install -y --no-install-recommends qemu-user ${{ matrix.glibc-cross-runtime }}
+      # The arm and arm64 builds run GNU binutils for their target (see the matrix)
+      - name: Install GNU binutils for the target
+        if: steps.native-cache.outputs.cache-hit != 'true' && matrix.binutils
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ${{ matrix.binutils }}
       - name: Install LLVM-MinGW for ARM64
         if: steps.native-cache.outputs.cache-hit != 'true' && matrix.target == 'win-arm64'
         run: |
@@ -296,19 +342,20 @@ jobs:
           # Include system m4 files (for pkg.m4 etc)
           echo "ACLOCAL_PATH=/usr/share/aclocal:$HOME/.local/share/aclocal" >> "$GITHUB_ENV"
       - name: sccache
-        if: steps.native-cache.outputs.cache-hit != 'true'
+        if: steps.native-cache.outputs.cache-hit != 'true' && matrix.kind == 'windows'
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
           key: native-${{ matrix.target }}-v3
           variant: sccache
       - name: Build Linux library
         if: steps.native-cache.outputs.cache-hit != 'true' && matrix.kind == 'linux'
+        env:
+          # Empty for the x64 rows, for which the build takes binutils from PATH
+          BINUTILS_DIR: ${{ matrix.binutils-dir }}
         run: |
-          ./native/${{ matrix.script }}
+          ./native/build-linux.sh ${{ matrix.target }}
           mkdir -p native-out
-          cp "$HOME/libarchive-native/${{ matrix.output }}" native-out/
-          echo "=== sccache stats ==="
-          sccache --show-stats
+          cp "$HOME/libarchive-native/${{ matrix.output }}" "$HOME/libarchive-native/loadtest-${{ matrix.target }}" native-out/
       - name: Build Windows DLL
         if: steps.native-cache.outputs.cache-hit != 'true' && matrix.kind == 'windows'
         run: |
@@ -325,15 +372,179 @@ jobs:
         if: steps.native-cache.outputs.cache-hit != 'true' && !startsWith(github.ref, 'refs/tags/v')
         uses: actions/cache/save@v6.1.0
         with:
-          path: native-out/${{ matrix.output }}
+          path: |
+            native-out/${{ matrix.output }}
+            ${{ matrix.kind == 'linux' && format('native-out/loadtest-{0}', matrix.target) || '' }}
           key: ${{ steps.cache-key.outputs.key }}
       - name: Archive native library
         uses: actions/upload-artifact@v7.0.2
         with:
           name: native-${{ matrix.target }}
-          path: native-out/${{ matrix.output }}
+          path: |
+            native-out/${{ matrix.output }}
+            ${{ matrix.kind == 'linux' && format('native-out/loadtest-{0}', matrix.target) || '' }}
           if-no-files-found: error
           retention-days: 1
+
+  # Loads each Linux library in containers, with its load test program (loadtest-<rid>, which
+  # the native job builds for the same target and uploads with the library; see
+  # native/linux-loadtest.c): in the oldest distribution of its C library that can be tested,
+  # and in a current one. The arm64 and arm containers run under QEMU user-mode emulation. In
+  # one row the library must not load: the linux-arm library needs glibc 2.34, so the dynamic
+  # loader of Debian 11 (glibc 2.31) must refuse it.
+  linux-load-test:
+    name: Load test ${{ matrix.rid }} in ${{ matrix.distro }}${{ matrix.expect == 'refused' && ' (must be refused)' || '' }}
+    needs: [native]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # image is pinned by the digest of its index, which covers every platform, with the
+        # tag beside it; distro is that tag, for the job's name. expect is "loads", or
+        # "refused" for a C library older than the library's baseline (see
+        # native/build-linux.sh).
+        include:
+          # glibc 2.28 (RHEL 8), the baseline of linux-x64 and linux-arm64, and glibc 2.41
+          - rid: linux-x64
+            distro: almalinux:8
+            image: almalinux@sha256:768bedc30fe0a536adb0a65d2eddb7caad364e514fbddd0ae9e026975f590342  # almalinux:8
+            platform: linux/amd64
+            expect: loads
+          - rid: linux-x64
+            distro: debian:13
+            image: debian@sha256:9c6e381421d0f48d1b8133e573f33c185ee16cbf505eda9c4a8a4791b25ea8a6  # debian:13
+            platform: linux/amd64
+            expect: loads
+          # glibc 2.28 and 2.39
+          - rid: linux-arm64
+            distro: almalinux:8
+            image: almalinux@sha256:768bedc30fe0a536adb0a65d2eddb7caad364e514fbddd0ae9e026975f590342  # almalinux:8
+            platform: linux/arm64
+            expect: loads
+          - rid: linux-arm64
+            distro: ubuntu:24.04
+            image: ubuntu@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289  # ubuntu:24.04
+            platform: linux/arm64
+            expect: loads
+          # glibc 2.35, the oldest armhf glibc that can be tested (the library's baseline is
+          # 2.34), and glibc 2.41
+          - rid: linux-arm
+            distro: ubuntu:22.04
+            image: ubuntu@sha256:f64b2ffc2f10ab8f8505aa56b2664bd846cbb9df87c7e2532e30f7667021c0e6  # ubuntu:22.04
+            platform: linux/arm/v7
+            expect: loads
+          - rid: linux-arm
+            distro: debian:13
+            image: debian@sha256:9c6e381421d0f48d1b8133e573f33c185ee16cbf505eda9c4a8a4791b25ea8a6  # debian:13
+            platform: linux/arm/v7
+            expect: loads
+          # glibc 2.31, older than the library's baseline
+          - rid: linux-arm
+            distro: debian:11
+            image: debian@sha256:6f519a81440354a85eb592c5f32109ab80605f6b892455983a6f618bf87fabe9  # debian:11
+            platform: linux/arm/v7
+            expect: refused
+          # musl 1.2.5 (Alpine 3.21), the baseline of the musl libraries, and musl 1.2.6
+          - rid: linux-musl-x64
+            distro: alpine:3.21
+            image: alpine@sha256:bc21487101ae47172509130ee1092cc273a831968d64b617776d1f69c81e42ab  # alpine:3.21
+            platform: linux/amd64
+            expect: loads
+          - rid: linux-musl-x64
+            distro: alpine:3.24
+            image: alpine@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf  # alpine:3.24
+            platform: linux/amd64
+            expect: loads
+          - rid: linux-musl-arm64
+            distro: alpine:3.21
+            image: alpine@sha256:bc21487101ae47172509130ee1092cc273a831968d64b617776d1f69c81e42ab  # alpine:3.21
+            platform: linux/arm64
+            expect: loads
+          - rid: linux-musl-arm64
+            distro: alpine:3.24
+            image: alpine@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf  # alpine:3.24
+            platform: linux/arm64
+            expect: loads
+          - rid: linux-musl-arm
+            distro: alpine:3.21
+            image: alpine@sha256:bc21487101ae47172509130ee1092cc273a831968d64b617776d1f69c81e42ab  # alpine:3.21
+            platform: linux/arm/v7
+            expect: loads
+          - rid: linux-musl-arm
+            distro: alpine:3.24
+            image: alpine@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf  # alpine:3.24
+            platform: linux/arm/v7
+            expect: loads
+    env:
+      RID: ${{ matrix.rid }}
+      DISTRO: ${{ matrix.distro }}
+      IMAGE: ${{ matrix.image }}
+      PLATFORM: ${{ matrix.platform }}
+    steps:
+      - name: Retrieve the library and its load test program
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: native-${{ matrix.rid }}
+          path: work
+      # Artifacts do not keep file modes
+      - name: Make the load test program executable
+        run: chmod +x "work/loadtest-$RID"
+      # Registers QEMU's user-mode emulators with binfmt_misc, so that the arm64 and arm
+      # containers run on this x64 runner
+      - name: Set up QEMU
+        if: matrix.platform != 'linux/amd64'
+        uses: docker/setup-qemu-action@v4.4.0
+        with:
+          image: tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0  # tonistiigi/binfmt:latest (qemu-v10.2.3-68)
+          platforms: arm64,arm
+      # Pulled in a step of its own, so that the load test's output is the program's alone,
+      # and retried, as a pull can fail for a moment: up to 4 attempts, 5 seconds apart, as
+      # the native job's downloads make
+      - name: Pull ${{ matrix.distro }} for ${{ matrix.platform }}
+        run: |
+          for attempt in 1 2 3 4; do
+            if docker pull --platform "$PLATFORM" "$IMAGE"; then
+              exit 0
+            fi
+            echo "docker pull failed (attempt $attempt of 4)"
+            [ "$attempt" -eq 4 ] || sleep 5
+          done
+          exit 1
+      # The program exits non-zero unless the library loads, with every symbol bound at once,
+      # and passes every check. It runs as root, in /work, the artifact's directory, mounted
+      # read-write; it writes its own files in the container's /tmp.
+      - name: Run the load test
+        if: matrix.expect == 'loads'
+        run: |
+          docker run --rm --platform "$PLATFORM" --user 0:0 -v "$PWD/work:/work" -w /work "$IMAGE" \
+            "./loadtest-$RID" "./libarchive-$RID.so"
+      # The program, run as above, must fail, with the dynamic loader's refusal of the library
+      # for a glibc version that this glibc lacks. In Debian 11 armhf that is the line
+      # FAIL: dlopen ./libarchive-linux-arm.so: /lib/arm-linux-gnueabihf/libc.so.6: version `GLIBC_2.32' not found (required by ./libarchive-linux-arm.so)
+      # The program itself needs glibc 2.28 only, so that it starts, and the library is what
+      # is refused (see native/build-linux.sh).
+      - name: Check that the library is refused
+        if: matrix.expect == 'refused'
+        run: |
+          status=0
+          output=$(docker run --rm --platform "$PLATFORM" --user 0:0 -v "$PWD/work:/work" -w /work "$IMAGE" \
+            "./loadtest-$RID" "./libarchive-$RID.so" 2>&1) || status=$?
+          printf '%s\n' "$output"
+          echo "Exit status: $status"
+          if [ "$status" -eq 0 ]; then
+            echo "::error::The load test passed in $DISTRO, whose glibc is older than the library's baseline: the library must be refused"
+            exit 1
+          fi
+          # Whatever the glibc version and the C library's path: one line must name a glibc
+          # version as not found, and then the library as the file that needs it
+          if ! printf '%s\n' "$output" | awk -v lib="./libarchive-$RID.so" '
+              { v = index($0, "version `GLIBC_"); n = index($0, "not found (required by " lib ")") }
+              v > 0 && n > v { found = 1 }
+              END { exit !found }'; then
+            echo "::error::The load test failed in $DISTRO, but not because the dynamic loader refused the library for a glibc version (see the output above)"
+            exit 1
+          fi
+          echo "The dynamic loader of $DISTRO refused the library, as it must."
 
   package:
     name: Pack and test .NET package
@@ -366,8 +577,14 @@ jobs:
           pattern: native-*
           path: native-out
           merge-multiple: true
+      # The SDK that global.json names, which builds and tests, and .NET 8, whose runtime the
+      # net8.0 tests run on (see "Test package (.NET 8)"). The .NET 8 SDK goes unused, as
+      # global.json names the SDK.
       - name: Setup .NET Core
         uses: actions/setup-dotnet@v6.1.0
+        with:
+          global-json-file: global.json
+          dotnet-version: 8.0.x
       - name: Update Directory.Build.props for SDK version
         run: ./scripts/generate-build-props.sh
       - name: Initialize CodeQL
@@ -380,10 +597,9 @@ jobs:
           R=LibArchive.Net/runtimes
           mkdir -p "$R"/{osx-x64,osx-arm64,linux-x64,linux-musl-x64,linux-arm,linux-musl-arm,linux-arm64,linux-musl-arm64,win-x86,win-x64,win-arm64}/native
 
-          # Linux (musl-linked, so the same binary serves glibc and musl RIDs)
-          for arch in x64 arm64 arm; do
-            cp "native-out/libarchive-linux-$arch.so" "$R/linux-$arch/native/libarchive.so"
-            cp "native-out/libarchive-linux-$arch.so" "$R/linux-musl-$arch/native/libarchive.so"
+          # Linux: a library of its own for each runtime, linked against its C library
+          for rid in linux-x64 linux-arm64 linux-arm linux-musl-x64 linux-musl-arm64 linux-musl-arm; do
+            cp "native-out/libarchive-$rid.so" "$R/$rid/native/libarchive.so"
           done
 
           # macOS universal binary
@@ -396,6 +612,15 @@ jobs:
           done
 
           ls -lR "$R"
+      # Each Linux library must export libarchive's API alone, and every function that
+      # LibArchive.Net imports from it (native/verify-exports.sh)
+      - name: Check the exports of the Linux libraries
+        run: ./native/verify-exports.sh LibArchive.Net/runtimes/linux-*/native/libarchive.so
+      # Each Linux library must be in the folder of its own runtime: built for its architecture,
+      # and linked against its runtime's C library (native/verify-linux-runtimes.sh). The tests
+      # would not tell, as musl loads the glibc linux-x64 library too.
+      - name: Check the runtime of each Linux library
+        run: ./native/verify-linux-runtimes.sh LibArchive.Net/runtimes
       - name: Pack
         id: pack
         run: |
@@ -409,11 +634,15 @@ jobs:
       - name: Test package (modern .NET)
         env:
           PACKAGE_VERSION: ${{ steps.pack.outputs.PACKAGE_VERSION }}
+          # The runtime whose native library the tests must find loaded (see LoadedLibraryTests.cs)
+          LIBARCHIVE_NET_EXPECT_RID: linux-x64
         run: |
           # Restore against the package just packed: source mapping pins LibArchive.Net to
-          # this directory and an empty packages folder rules out any cached copy.
+          # this directory and an empty packages folder rules out any cached copy. The restore
+          # includes net8.0 (LibArchiveNetTestNet8), for the next step.
           ./scripts/write-package-test-nuget-config.sh . "$RUNNER_TEMP/nuget-test"
-          dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --configfile "$RUNNER_TEMP/nuget-test/nuget.config" -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION"
+          dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --configfile "$RUNNER_TEMP/nuget-test/nuget.config" \
+            -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION" -p:LibArchiveNetTestNet8=true
 
           # Determine the modern .NET test target from the project (generated by scripts/generate-build-props.sh)
           TEST_TFMS=$(dotnet msbuild Test.LibArchive.Net/Test.LibArchive.Net.csproj -getProperty:TargetFrameworks \
@@ -425,9 +654,27 @@ jobs:
           fi
           echo "Testing modern target framework: $TEST_TFM (from '$TEST_TFMS')"
 
-          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework "$TEST_TFM" --configuration Release --no-restore -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION"
+          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework "$TEST_TFM" --configuration Release --no-restore \
+            -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION" -p:LibArchiveNetTestNet8=true
           dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework "$TEST_TFM" --configuration Release --no-build --nologo \
-            -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION"
+            -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION" -p:LibArchiveNetTestNet8=true
+      # .NET 8, for which LibArchive.Net has no build of its own: there the tests run its .NET
+      # Standard 2.0 build, which finds and loads the native library itself (PreloadNativeLibrary,
+      # MuslDetection and NativeLibraryCopy). test-alpine runs them under musl as well.
+      - name: Test package (.NET 8)
+        env:
+          PACKAGE_VERSION: ${{ steps.pack.outputs.PACKAGE_VERSION }}
+          # The runtime whose native library the tests must find loaded (see LoadedLibraryTests.cs)
+          LIBARCHIVE_NET_EXPECT_RID: linux-x64
+        run: |
+          if ! dotnet --list-runtimes | awk '$1 == "Microsoft.NETCore.App" && $2 ~ /^8\./ {found = 1} END {exit !found}'; then
+            echo "::error::The .NET 8 runtime (Microsoft.NETCore.App 8.0), on which the net8.0 tests run, is not installed"
+            exit 1
+          fi
+          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net8.0 --configuration Release --no-restore \
+            -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION" -p:LibArchiveNetTestNet8=true
+          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net8.0 --configuration Release --no-build --nologo \
+            -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION" -p:LibArchiveNetTestNet8=true
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4.39.3
       - name: Archive production artifacts
@@ -493,13 +740,159 @@ jobs:
           dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework "$TEST_TFM" --configuration Release --no-restore --nologo \
             -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION"
 
+  # Tests the package in Alpine on x64, where .NET loads the linux-musl-x64 library, as the
+  # package job's tests on Ubuntu load linux-x64's. The tests run in a container that a step
+  # starts, not in a container job, because GitHub's JavaScript actions (checkout, artifacts)
+  # do not run in Alpine.
+  test-alpine:
+    name: Test package (.NET on Alpine x64)
+    needs: [package]
+    # Explicit condition: the implicit success() would skip this job whenever the
+    # (legitimately) skipped macos job is upstream.
+    if: ${{ !cancelled() && needs.package.result == 'success' }}
+    runs-on: ubuntu-24.04
+    env:
+      # Alpine 3.24.4, as the .NET SDK's image for it has it, pinned by the digest of its index,
+      # for the system libraries that .NET needs there (ICU, libstdc++, OpenSSL and so on). The
+      # image's own SDK, 11.0.100, goes unused: the test step mounts the SDK that global.json
+      # names over it (see the install step). It has no bash, so what runs in it is POSIX sh,
+      # for its BusyBox ash.
+      ALPINE_IMAGE: mcr.microsoft.com/dotnet/sdk@sha256:52556c0fb9d0f609ae9aeab9efeeba96f4acc2f7038f7696f2235ccbdbb8e290  # 11.0-alpine, also 11.0-alpine3.24
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.1
+      # The .NET SDK of the version that global.json names, built for musl, from dotnet-install,
+      # the script that setup-dotnet runs too. The image's SDK is pinned with the image, so once
+      # Dependabot moved global.json on to a newer SDK, the container would have none that
+      # global.json allows; this one follows global.json. dotnet-install is a bash script, so
+      # it runs here, where the SDK that it installs cannot run: that runs in the container.
+      # The .NET 8 runtime for musl goes into the same directory, for the net8.0 tests; it keeps
+      # the SDK's dotnet (--skip-non-versioned-files).
+      - name: Install the .NET SDK and the .NET 8 runtime for musl
+        id: sdk
+        run: |
+          if ! version=$(jq -er '.sdk.version' global.json); then
+            echo "::error::global.json names no .NET SDK version (sdk.version)"
+            exit 1
+          fi
+          dir="$RUNNER_TEMP/dotnet-musl"
+          if ! curl -fsSL --retry 4 --retry-delay 5 --retry-all-errors -o "$RUNNER_TEMP/dotnet-install.sh" https://dot.net/v1/dotnet-install.sh ||
+            ! bash "$RUNNER_TEMP/dotnet-install.sh" --jsonfile global.json --os linux-musl --architecture x64 --install-dir "$dir" --no-path; then
+            echo "::error::Could not install the .NET SDK $version for linux-musl-x64, the version that global.json names"
+            exit 1
+          fi
+          if [ ! -x "$dir/dotnet" ] || [ ! -d "$dir/sdk/$version" ]; then
+            echo "::error::dotnet-install did not install the .NET SDK $version for linux-musl-x64 in $dir"
+            exit 1
+          fi
+          if ! bash "$RUNNER_TEMP/dotnet-install.sh" --runtime dotnet --channel 8.0 --os linux-musl --architecture x64 --install-dir "$dir" --no-path --skip-non-versioned-files; then
+            echo "::error::Could not install the .NET 8 runtime for linux-musl-x64, on which the net8.0 tests run"
+            exit 1
+          fi
+          if ! compgen -G "$dir/shared/Microsoft.NETCore.App/8.*" > /dev/null; then
+            echo "::error::dotnet-install did not install the .NET 8 runtime for linux-musl-x64 in $dir"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+      - name: Retrieve package
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: dist
+          path: dist
+      # LibArchive.Net may only come from dist (not a cache or nuget.org); see the script. It is
+      # a bash script, so it runs here, not in the container, which sees the paths that it
+      # writes into nuget.config at the same paths (see the test step).
+      - name: Write the NuGet config for the package
+        run: ./scripts/write-package-test-nuget-config.sh dist "$RUNNER_TEMP/nuget-test"
+      # Retried as the load test job's pulls are: up to 4 attempts, 5 seconds apart
+      - name: Pull the Alpine image
+        run: |
+          for attempt in 1 2 3 4; do
+            if docker pull "$ALPINE_IMAGE"; then
+              exit 0
+            fi
+            echo "docker pull failed (attempt $attempt of 4)"
+            [ "$attempt" -eq 4 ] || sleep 5
+          done
+          exit 1
+      # The restore, build and test commands of the package job's "Test package (modern .NET)"
+      # and "Test package (.NET 8)" steps, in the Alpine image. The checkout (with dist) and the
+      # NuGet config's directory are mounted at their paths here, so that the paths in
+      # nuget.config hold in the container.
+      # The SDK of the install step is mounted, read-only, over the image's own in
+      # /usr/share/dotnet, which /usr/bin/dotnet links to, so that nothing in the container can
+      # run the image's; the script stops unless dotnet is that SDK.
+      # The container runs as the runner's user, not as root, so that every file it writes
+      # there (the restored packages, bin and obj) belongs to that user, as the other steps'
+      # files do; HOME, for the SDK's and NuGet's own files, is in the container's /tmp, which
+      # goes with the container.
+      - name: Test the package in Alpine
+        env:
+          PACKAGE_VERSION: ${{ needs.package.outputs.package-version }}
+          SDK_VERSION: ${{ steps.sdk.outputs.version }}
+          SDK_DIR: ${{ steps.sdk.outputs.dir }}
+        run: |
+          cat > "$RUNNER_TEMP/test-alpine.sh" <<'EOF'
+          # No pipefail, so that a TEST_TFM that is not found reaches its error message below
+          set -eu
+          mkdir -p "$HOME"
+          if ! sdk=$(dotnet --version); then
+            echo "::error::The .NET SDK $SDK_VERSION, which global.json names, does not run in the container"
+            exit 1
+          fi
+          if [ "$sdk" != "$SDK_VERSION" ]; then
+            echo "::error::The container runs the .NET SDK $sdk, not $SDK_VERSION, which global.json names"
+            exit 1
+          fi
+          dotnet --info
+          dotnet restore Test.LibArchive.Net/Test.LibArchive.Net.csproj --configfile "$TEST_NUGET_CONFIG" \
+            -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION" -p:LibArchiveNetTestNet8=true
+
+          # Determine the modern .NET test target from the project, as the package job does
+          TEST_TFMS=$(dotnet msbuild Test.LibArchive.Net/Test.LibArchive.Net.csproj -getProperty:TargetFrameworks \
+            -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION" | tail -n 1 | tr -d ' \r')
+          TEST_TFM=$(echo "$TEST_TFMS" | tr ';' '\n' | grep -E '^net[0-9]+\.[0-9]+$' | head -n 1)
+          if [ -z "$TEST_TFM" ]; then
+            echo "::error::No modern .NET target framework found in test project TargetFrameworks '$TEST_TFMS'"
+            exit 1
+          fi
+          echo "Testing modern target framework: $TEST_TFM (from '$TEST_TFMS')"
+
+          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework "$TEST_TFM" --configuration Release --no-restore \
+            -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION" -p:LibArchiveNetTestNet8=true
+          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework "$TEST_TFM" --configuration Release --no-build --nologo \
+            -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION" -p:LibArchiveNetTestNet8=true
+
+          # .NET 8, on which the tests run LibArchive.Net's .NET Standard 2.0 build (see the
+          # package job's "Test package (.NET 8)" step)
+          if ! dotnet --list-runtimes | awk '$1 == "Microsoft.NETCore.App" && $2 ~ /^8\./ {found = 1} END {exit !found}'; then
+            echo "::error::The .NET 8 runtime (Microsoft.NETCore.App 8.0), on which the net8.0 tests run, is not in the container"
+            exit 1
+          fi
+          dotnet build Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net8.0 --configuration Release --no-restore \
+            -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION" -p:LibArchiveNetTestNet8=true
+          dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net8.0 --configuration Release --no-build --nologo \
+            -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION" -p:LibArchiveNetTestNet8=true
+          EOF
+          # LIBARCHIVE_NET_EXPECT_RID: the runtime whose native library the tests must find loaded
+          # (see LoadedLibraryTests.cs)
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -e HOME=/tmp/home -e PACKAGE_VERSION -e SDK_VERSION -e TEST_NUGET_CONFIG="$RUNNER_TEMP/nuget-test/nuget.config" \
+            -e LIBARCHIVE_NET_EXPECT_RID=linux-musl-x64 -e CI -e GITHUB_ACTIONS \
+            -v "$SDK_DIR:/usr/share/dotnet:ro" \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -v "$RUNNER_TEMP/nuget-test:$RUNNER_TEMP/nuget-test" \
+            -v "$RUNNER_TEMP/test-alpine.sh:/test-alpine.sh:ro" -w "$GITHUB_WORKSPACE" \
+            "$ALPINE_IMAGE" sh /test-alpine.sh
+
   # Required status check: the branch protection for main requires a check with exactly this
   # name, so do not rename it without updating the rule. The one job that used to carry the
   # name is now split across native, package and test-net462; this reports their combined
-  # result (and macOS's), so the rule keeps gating everything it did before.
+  # result (and macOS's), so the rule keeps gating everything it did before, and the result
+  # of the jobs added since: linux-load-test and test-alpine.
   build-and-test:
     name: Build Windows DLLs, Linux library, and test
-    needs: [macos-cache, macos, native, package, test-net462]
+    needs: [macos-cache, macos, native, linux-load-test, package, test-net462, test-alpine]
     # always(): a skipped job counts as a passing required check, so this job must run and
     # fail explicitly when anything it depends on failed, was cancelled or was skipped.
     if: ${{ always() }}
@@ -511,12 +904,14 @@ jobs:
           MACOS_CACHE_HIT: ${{ needs.macos-cache.outputs.hit }}
           MACOS: ${{ needs.macos.result }}
           NATIVE: ${{ needs.native.result }}
+          LINUX_LOAD_TEST: ${{ needs.linux-load-test.result }}
           PACKAGE: ${{ needs.package.result }}
           TEST_NET462: ${{ needs.test-net462.result }}
+          TEST_ALPINE: ${{ needs.test-alpine.result }}
         run: |
-          echo "macos-cache=$MACOS_CACHE (hit=$MACOS_CACHE_HIT) macos=$MACOS native=$NATIVE package=$PACKAGE test-net462=$TEST_NET462"
+          echo "macos-cache=$MACOS_CACHE (hit=$MACOS_CACHE_HIT) macos=$MACOS native=$NATIVE linux-load-test=$LINUX_LOAD_TEST package=$PACKAGE test-net462=$TEST_NET462 test-alpine=$TEST_ALPINE"
           failed=0
-          for result in "$MACOS_CACHE" "$NATIVE" "$PACKAGE" "$TEST_NET462"; do
+          for result in "$MACOS_CACHE" "$NATIVE" "$LINUX_LOAD_TEST" "$PACKAGE" "$TEST_NET462" "$TEST_ALPINE"; do
             [ "$result" = "success" ] || failed=1
           done
           # The macOS build may only be skipped when its dylib came from the cache.
@@ -531,10 +926,11 @@ jobs:
 
   release:
     name: Publish release
-    needs: [package, test-net462]
+    needs: [package, test-net462, linux-load-test, test-alpine]
     if: >-
       ${{ startsWith(github.ref, 'refs/tags/v') && !cancelled() &&
-      needs.package.result == 'success' && needs.test-net462.result == 'success' }}
+      needs.package.result == 'success' && needs.test-net462.result == 'success' &&
+      needs.linux-load-test.result == 'success' && needs.test-alpine.result == 'success' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Retrieve package

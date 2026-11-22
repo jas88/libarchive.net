@@ -3,6 +3,7 @@ v0.3.2 - unreleased
 **Bug Fixes:**
 - Fix `DllNotFoundException: Unable to load DLL 'archive'` on Windows under .NET Framework (the .NET Standard 2.0 build). The package deploys `archive.dll` to `runtimes\win-{arch}\native\`, which .NET Framework does not probe, and the library only loaded it explicitly on Linux and macOS. It now does the same on Windows.
 - Fix the .NET Standard 2.0 build failing to initialise on Linux and macOS when running on .NET 10 or later. That happens when an app targeting a framework this package has no dedicated build for (such as `net6.0`) is rolled forward to a newer runtime. Since .NET 10, the assembly-wide `DllImportSearchPath.AssemblyDirectory` no longer falls back to the OS library search, so the `libdl` imports used to load the native library could not be resolved.
+- Fix the .NET Standard 2.0 build on Linux and macOS keeping a stale copy of the native library in the application's base directory, where it copies the library for Mono: a copy left there by an earlier version of the package, or made in a process of the other C library, was never replaced. A copy that differs from the library loaded is now replaced, with a new copy renamed over it, so that a process which has the old one loaded is not disturbed; as before, a copy that cannot be made is no error.
 - Fix incorrect Unix permission defaults in `LibArchiveWriter` — bare `0644`/`0755`/`0444` literals were being interpreted as decimal in C# (no octal literal syntax), producing nonsensical permission bits. Files now correctly default to `rw-r--r--` (and `r--r--r--` for read-only attributes), directories to `rwxr-xr-x`. Reported and initial fix contributed by @JuanCalle1606 in #220.
 
 **API Improvements:**
@@ -11,6 +12,15 @@ v0.3.2 - unreleased
 **Target Frameworks:**
 - Add a `net11.0` build. The package is now built with the .NET 11 SDK.
 - Drop the `net8.0` and `net9.0` builds, as .NET 8 and .NET 9 have reached end of support. The package now ships `netstandard2.0`, `net10.0` and `net11.0` builds, so apps targeting .NET 8 or .NET 9 get the .NET Standard 2.0 build. That build is not marked as trimming or Native AOT compatible: target .NET 10 or later for those.
+
+**Linux Native Libraries:**
+- Ship a native library of its own for each Linux runtime, linked dynamically against that runtime's C library, in place of one library per architecture with musl linked into it, which the glibc and musl runtimes shared. The libraries need:
+  - glibc 2.28 or later for `linux-x64` and `linux-arm64` (RHEL 8 and later);
+  - glibc 2.34 or later for `linux-arm`, which is built with a 64-bit `time_t` and `off_t`. On an older glibc the dynamic loader refuses to load it, where the previous library crashed or misbehaved;
+  - musl 1.2.5 or later (Alpine 3.21 and later) for `linux-musl-x64`, `linux-musl-arm64` and `linux-musl-arm`.
+- The .NET Standard 2.0 build loads the `linux-musl-<arch>` library in a musl process, which it recognises from an executable mapping of musl's dynamic linker in `/proc/self/maps`, or, when that cannot be read, from `dlsym` not finding glibc's `gnu_get_libc_version`. .NET 6 and later choose between the two libraries from the runtime identifier.
+- The Linux libraries export libarchive's API (`archive_*`) alone, and no longer the functions of the libraries linked into them, such as zlib's and zstd's, which other code in the process could bind to or take the place of.
+- The Linux libraries are built with zig. CI load-tests each of them in containers of old and current distributions, and runs the package's tests on .NET in Alpine x64 as well as on Ubuntu.
 
 v0.3.1 - April 7, 2026
 

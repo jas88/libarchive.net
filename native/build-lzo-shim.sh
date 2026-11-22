@@ -20,9 +20,9 @@
 
 # Compiler flags for lzokay and the shim, added after the platform's own flags.
 #
-# The Linux libraries are linked with -nostdlib against a static C library only, so
-# the objects must not need a C++ runtime: no exception tables or personality
-# routine, no RTTI, no guard variables for static locals. Hidden visibility keeps the
+# The Linux libraries are linked against their C library alone, with no C++ runtime,
+# so the objects must not need one: no exception tables or personality routine, no
+# RTTI, no guard variables for static locals. Hidden visibility keeps the
 # lzo_* and lzokay symbols out of the libraries' export tables: this is not liblzo2
 # (the work memory sizes differ), so nothing outside the library may ever bind to it.
 # lzokay reads its input through uint16_t pointers, hence -fno-strict-aliasing.
@@ -153,10 +153,12 @@ verify_lzo_support() (
     echo "lzo1x_decompress_safe is defined: lzop data is decompressed in-process"
 )
 
-# Verify that a library linked with -nostdlib resolves everything the lzop shim needs,
-# failing the build otherwise. Only for the Linux builds (GNU nm, ELF): such a library
-# links even with symbols left undefined, and has no dependencies to supply them, so
-# it would then fail to load. The Windows and macOS links fail by themselves instead.
+# Verify that a Linux library resolves everything the lzop shim needs, failing the build
+# otherwise: each symbol that the shim imports is defined in the library or imported from
+# the C library, and none is a symbol of a C++ runtime, which the library is not linked
+# with. Only for the Linux builds (GNU nm, ELF). Their link's -z defs already refuses a
+# strong unresolved symbol, as the Windows and macOS links do by themselves; this names
+# the shim's symbols.
 # Usage: verify_lzo_shim_resolved <library>
 # Uses PREFIX and AR.
 verify_lzo_shim_resolved() (
@@ -184,21 +186,26 @@ verify_lzo_shim_resolved() (
     fi
 
     # Every symbol the shim's object files import ("U"; weak references may stay
-    # unresolved) must be defined in the library, whatever its name. The global
-    # offset table is the one exception: the linker supplies it without always
-    # leaving a symbol behind. One awk reads both lists, the defined names (the last
-    # field of each line) up to a line "--", and nm's list of the shim's imports
-    # after it: a "grep -q" per symbol closed the pipe of the defined list at a match,
-    # and printf then failed with "write error: Broken pipe" where SIGPIPE is ignored.
-    missing=$( { printf '%s\n' "$defined"; echo --; printf '%s\n' "$needed"; } |
-        awk '!imports && $0 == "--" { imports = 1; next }
-            !imports { if (NF) defined[$NF] = 1; next }
-            $1 == "U" && $2 != "_GLOBAL_OFFSET_TABLE_" && !($2 in defined) { print $2 }' |
+    # unresolved) must be resolved in the library, whatever its name: defined in it, or
+    # imported from the C library ("U" in the library's dynamic symbols, without the
+    # "@<version>" that nm adds to a glibc symbol), which the link's -z defs checked that
+    # the C library has. The global offset table is the one exception: the linker
+    # supplies it without always leaving a symbol behind. One awk reads all three lists,
+    # the library's defined names (the last field of each line) up to a line "--", its
+    # imports up to the next one, and nm's list of the shim's imports after that: a
+    # "grep -q" per symbol closed the pipe of the defined list at a match, and printf then
+    # failed with "write error: Broken pipe" where SIGPIPE is ignored.
+    missing=$( { printf '%s\n' "$defined"; echo --; printf '%s\n' "$undefined"; echo --
+            printf '%s\n' "$needed"; } |
+        awk '$0 == "--" { list++; next }
+            list == 0 { if (NF) resolved[$NF] = 1; next }
+            list == 1 { if ($1 == "U") { name = $2; sub(/@.*/, "", name); resolved[name] = 1 }; next }
+            $1 == "U" && $2 != "_GLOBAL_OFFSET_TABLE_" && !($2 in resolved) { print $2 }' |
         sort -u)
     if [ -n "$missing" ]; then
         printf '%s\n' "$missing"
-        echo "ERROR: ${lib} does not define the symbols listed above, which the lzop shim needs, and would fail to load."
+        echo "ERROR: ${lib} neither defines nor imports the symbols listed above, which the lzop shim needs, and would fail to load."
         exit 1
     fi
-    echo "No unresolved C++ runtime symbols, and every symbol the lzop shim needs is defined"
+    echo "No unresolved C++ runtime symbols, and every symbol the lzop shim needs is defined or imported"
 )

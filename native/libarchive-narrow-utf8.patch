@@ -14,12 +14,11 @@ converts names between that and the character set of an archive.
 
 On macOS and Linux it asks nl_langinfo(CODESET), and converts between narrow and wide
 strings with mbrtowc() and wcrtomb(). A .NET process never calls setlocale(), so that
-locale is "C", whose character set is ASCII ("US-ASCII" on macOS; the Linux library
-has its own copy of musl, which no one ever calls setlocale() in, and which says
-"ASCII"). Non-ASCII names then fail to convert: the pax, 7-Zip, ISO 9660 (Joliet) and
-xar writers warn and store them wrongly or not at all, the 7-Zip, xar, zip (UTF-8
-flag) and Joliet readers return no name, the pax reader warns, the zip writer leaves
-out the UTF-8 flag, and wide strings are garbled.
+locale is "C", whose character set is ASCII ("US-ASCII" on macOS, "ANSI_X3.4-1968" in
+glibc and "ASCII" in musl). Non-ASCII names then fail to convert: the pax, 7-Zip,
+ISO 9660 (Joliet) and xar writers warn and store them wrongly or not at all, the 7-Zip,
+xar, zip (UTF-8 flag) and Joliet readers return no name, the pax reader warns, the zip
+writer leaves out the UTF-8 flag, and wide strings are garbled.
 
 On Windows it takes a code page from the C runtime's locale, and in the "C" locale
 it makes a narrow string one byte per character, which holds U+0000-U+00FF only. A

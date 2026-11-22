@@ -1,10 +1,90 @@
 #!/bin/bash
-# Shared helpers for the Linux native library builds (build-linux*.sh)
-# Source this file in those scripts, after build-config.sh
+# Shared helpers for the Linux native library builds (build-linux.sh)
+# Source this file in that script, after build-config.sh
 #
 # These live here rather than in build-config.sh because that file is also sourced
 # by build-windows.sh under plain sh, and the functions below need bash (here-strings,
 # indirect expansion, arrays).
+
+# Make the tool directory of a Linux build afresh: zig-cc.sh (in this directory) as
+# <host>-gcc and <host>-g++, and GNU binutils' ar, ranlib, nm, readelf, objdump and strip
+# as <host>-ar and so on, where <host> is the triplet that configure is given as --host.
+# For a cross build, configure looks for each tool under its prefixed name, and only if it
+# finds none takes the build machine's unprefixed one, warning "using cross tools not
+# prefixed with host triplet". The build and its checks run binutils through these links
+# alone (as ${AR%ar}nm and so on), so that every tool comes from the same place.
+# zig has no nm, readelf or objdump of its own. The tools come from BINUTILS_DIR, under
+# their unprefixed names, if that is set, otherwise from PATH on Linux and from Homebrew's
+# binutils (in /opt/homebrew/opt/binutils/bin or /usr/local/opt/binutils/bin) on macOS,
+# whose own tools are Apple's. readelf reads the ELF files of every target, but the other
+# tools read and write only those of the targets that their binutils were built for:
+# Homebrew's are built for every target, and a Linux distribution's own binutils for its
+# own architecture, such as the x86 ones of CI's Ubuntu runners. A build for another
+# architecture there takes that architecture's binutils from BINUTILS_DIR: CI sets it to
+# /usr/aarch64-linux-gnu/bin or /usr/arm-linux-gnueabihf/bin, where Ubuntu's packages
+# binutils-aarch64-linux-gnu and binutils-arm-linux-gnueabihf put them.
+# Usage: setup_linux_tools <tool directory> <host triplet>
+# Uses SCRIPT_DIR.
+setup_linux_tools() {
+    local dir="${1:-}" host="${2:-}"
+    if [ -z "$dir" ] || [ -z "$host" ]; then
+        echo "ERROR: setup_linux_tools needs the tool directory and the host triplet as its arguments"
+        return 1
+    fi
+    if [ -z "${SCRIPT_DIR:-}" ]; then
+        echo "ERROR: setup_linux_tools needs SCRIPT_DIR to be set"
+        return 1
+    fi
+
+    local bindir="${BINUTILS_DIR:-}" source candidate tool path
+    if [ -n "$bindir" ]; then
+        source="BINUTILS_DIR (${bindir})"
+        # ln -s resolves a relative target from the tool directory, so the links take the
+        # absolute path of the directory
+        if ! bindir=$(CDPATH='' cd -- "$bindir" 2>/dev/null && pwd); then
+            echo "ERROR: BINUTILS_DIR (${BINUTILS_DIR}) is not a directory that can be entered."
+            return 1
+        fi
+    elif [ "$(uname -s)" = Linux ]; then
+        source="PATH"
+    else
+        source="Homebrew's binutils (/opt/homebrew/opt/binutils/bin or /usr/local/opt/binutils/bin)"
+        for candidate in /opt/homebrew/opt/binutils/bin /usr/local/opt/binutils/bin; do
+            if [ -x "${candidate}/readelf" ]; then
+                bindir="$candidate"
+                break
+            fi
+        done
+    fi
+
+    rm -rf "$dir" || return
+    mkdir -p "$dir" || return
+    for tool in ar ranlib nm readelf objdump strip; do
+        if [ -n "$bindir" ]; then
+            path="${bindir}/${tool}"
+        else
+            path=$(command -v "$tool") || path=""
+        fi
+        if [ -z "$path" ] || [ ! -x "$path" ]; then
+            echo "ERROR: GNU ${tool} was not found in ${source}."
+        # awk reads all of the version text, so that the tool never writes to a closed pipe
+        elif ! "$path" --version 2>/dev/null | awk 'NR == 1 && /GNU/ {found = 1} END {exit !found}'; then
+            echo "ERROR: ${path}, from ${source}, is not the ${tool} of GNU binutils."
+            path=""
+        fi
+        if [ -z "$path" ] || [ ! -x "$path" ]; then
+            echo "The Linux builds need GNU binutils' ar, ranlib, nm, readelf, objdump and strip, for the target."
+            echo "Install binutils (Debian/Ubuntu: apt-get install binutils; macOS: brew install binutils),"
+            echo "or set BINUTILS_DIR to the directory that holds them under their unprefixed names."
+            return 1
+        fi
+        ln -s "$path" "${dir}/${host}-${tool}" || return
+    done
+    # zig-cc.sh runs zig c++ when it is called by a name that ends in "++"
+    ln -s "${SCRIPT_DIR}/zig-cc.sh" "${dir}/${host}-gcc" || return
+    ln -s "${SCRIPT_DIR}/zig-cc.sh" "${dir}/${host}-g++" || return
+    echo "Tools for ${host} in ${dir}: zig-cc.sh, and GNU binutils from ${bindir:-PATH}"
+}
 
 # Download, build and install the static mbedTLS crypto library.
 # Unpacks into the current directory, which must be the build directory, and
@@ -96,57 +176,46 @@ build_libxml2() {
     cd .. || return
 }
 
-# Link the final libarchive.so: all of libarchive.a, then the other static libraries,
-# the toolchain's own libgcc.a and musl's static libc.a, and nothing else (-nostdlib).
-# The result needs no other library at run time (it has no DT_NEEDED entry), so the
-# same file loads in glibc and musl processes.
+# Link the final libarchive.so: all of libarchive.a, then the other static libraries, as a
+# shared library of the target's own C library, which zig links it against with the rest
+# of what the target needs (its compiler-rt, and the C library's stubs). The C library is
+# then the one thing that the library needs at run time: glibc (libc.so.6, its dynamic
+# loader for a symbol or two, and before glibc 2.34 the libraries split from libc.so.6,
+# such as libpthread.so.0) or musl (libc.so).
 #
-# The archives after libarchive.a are linked as one group (--start-group ...
-# --end-group), which makes ld scan them repeatedly until no more symbols resolve.
-# A single left-to-right pass cannot be relied on: musl's libc.a calls libgcc's helper
-# routines (integer division on arm, 128-bit floating point on arm64), and libgcc.a
-# calls back into libc.a (on arm, its division-by-zero handler calls raise).
+# The archives after libarchive.a are linked as one group (--start-group ... --end-group),
+# so that their order does not matter: libxml2.a, for one, uses libz.a.
 #
-# -z defs makes the link fail on any strong (non-weak) unresolved symbol. Without it ld
-# leaves the symbol to be found when the library is loaded, and since the toolchain
-# links with -z now (BIND_NOW) and the library names no other library, the library then
-# fails to load in any process that does not happen to define that symbol itself. Weak
-# references, such as zstd's optional ZSTD_trace_* hooks, are still allowed: they
-# resolve to null when nothing defines them.
+# -z defs makes the link fail on any strong (non-weak) unresolved symbol, such as a
+# function that the target's C library lacks in the oldest version the target names.
+# Weak references, such as zstd's optional ZSTD_trace_* hooks, are still allowed: they
+# resolve to null when nothing defines them. -z relro and -z now give full RELRO: the
+# dynamic loader binds every symbol when it loads the library, and then makes the data it
+# relocated read-only.
 #
-# linux-pthread-init.c is linked in too, with -Wl,--wrap=pthread_mutex_init and
-# -Wl,--wrap=pthread_cond_init, so that every call of either in the library goes to it
-# (see that file). The link also writes a map with a cross reference table,
-# <library>.map, from which verify_libc_imports finds the C library symbols that the
-# library's code uses.
+# The version script linux-exports.map (in this directory) exports libarchive's API, the
+# archive_* functions, and nothing else (see that file).
+#
+# Any C sources named after the library are compiled for the target too, and linked in ahead
+# of the archives: linux-arm-stack-guard.c, for the 32-bit ARM libraries.
 #
 # To link another static library, add it to the archive list below.
-# Usage: link_libarchive <library>
-# Uses CC, PREFIX, SCRIPT_DIR and TOOLCHAIN_SYSROOT.
+# Usage: link_libarchive <library> [<C source>...]
+# Uses CC, PREFIX and SCRIPT_DIR.
 link_libarchive() {
     local lib="${1:-}"
     if [ -z "$lib" ]; then
         echo "ERROR: link_libarchive needs the library to create as its argument"
         return 1
     fi
+    shift
     local var
-    for var in CC PREFIX SCRIPT_DIR TOOLCHAIN_SYSROOT; do
+    for var in CC PREFIX SCRIPT_DIR; do
         if [ -z "${!var:-}" ]; then
             echo "ERROR: link_libarchive needs ${var} to be set"
             return 1
         fi
     done
-
-    # CC can start with a compiler launcher ("sccache .../x86_64-linux-gcc")
-    local -a cc
-    read -r -a cc <<< "$CC"
-    local libgcc
-    libgcc=$("${cc[@]}" -print-libgcc-file-name) || return
-    # gcc prints just "libgcc.a" when it cannot find the file
-    if [ ! -f "$libgcc" ]; then
-        echo "ERROR: ${CC} -print-libgcc-file-name gave \"${libgcc}\", which is not a file"
-        return 1
-    fi
 
     local -a archives=(
         # The libraries libarchive.a uses. Its XAR reader and writer use libxml2.a, which
@@ -159,23 +228,94 @@ link_libarchive() {
         "$PREFIX/lib/libzstd.a"
         "$PREFIX/lib/liblz4.a"
         "$PREFIX/lib/libmbedcrypto.a"
-        # Compiler support routines and the C library, used by all of the above
-        "$libgcc"
-        "$TOOLCHAIN_SYSROOT/lib/libc.a"
     )
-    local pthread_init=linux-pthread-init.o
-    "${cc[@]}" -c -O2 -fPIC -Wall -Wextra -o "$pthread_init" "${SCRIPT_DIR}/linux-pthread-init.c" || return
+    local -a objects=()
+    local source object
+    for source in "$@"; do
+        object="${source##*/}"
+        object="${object%.c}.o"
+        "$CC" -c -O2 -fPIC -Wall -Wextra -o "$object" "$source" || return
+        objects+=("$object")
+    done
     local -a link=(
-        "${cc[@]}" -shared -nostdlib -o "$lib" "-Wl,-z,defs"
-        "-Wl,--wrap=pthread_mutex_init" "-Wl,--wrap=pthread_cond_init"
-        "-Wl,-Map=${lib}.map" "-Wl,--cref"
-        "$pthread_init"
+        "$CC" -shared -o "$lib" "-Wl,-z,defs" "-Wl,-z,relro" "-Wl,-z,now"
+        "-Wl,--version-script=${SCRIPT_DIR}/linux-exports.map"
+        "${objects[@]}"
         "-Wl,--whole-archive" "$PREFIX/lib/libarchive.a" "-Wl,--no-whole-archive"
         "-Wl,--start-group" "${archives[@]}" "-Wl,--end-group"
     )
     echo "Linking ${lib}:"
     echo "${link[*]}"
     "${link[@]}"
+}
+
+# Strip the debugging information from a linked library. zig-cc.sh compiles the code here
+# with -g0, but zig builds its compiler-rt, and for glibc the members of libc_nonshared.a,
+# with DWARF debugging information, which a library holds wherever it takes code from them:
+# about 776 KB in each 32-bit ARM library, which takes compiler-rt whole, naming the
+# directory that zig built it in, and about 10 KB in linux-x64 and linux-arm64, which take
+# a few members of libc_nonshared.a (linux-musl-x64 and linux-musl-arm64 hold none).
+# GNU strip --strip-debug removes the .debug_* sections. It would also remove the symbols
+# that name the objects linked in (STT_FILE), as debugging symbols, which
+# --keep-file-symbols keeps, for verify_stack_chk_fail. The rest of the symbol table
+# (.symtab) stays: the checks after this and the stack protector checks of the 32-bit ARM
+# load test read it. zig's own
+# -Wl,--strip-debug is not used, as zig makes it a full strip, which removes .symtab too.
+# Run it right after link_libarchive, before every check.
+# Usage: strip_debug_info <library>
+# Uses AR to find the toolchain's strip.
+strip_debug_info() {
+    local lib="${1:-}"
+    if [ -z "$lib" ]; then
+        echo "ERROR: strip_debug_info needs the library to strip as its argument"
+        return 1
+    fi
+    if [ -z "${AR:-}" ]; then
+        echo "ERROR: strip_debug_info needs AR to be set"
+        return 1
+    fi
+
+    # Only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
+    local strip="${AR%ar}strip"
+    echo "Stripping the debugging information from ${lib} with ${strip}"
+    if ! "$strip" --strip-debug --keep-file-symbols "$lib"; then
+        echo "ERROR: could not strip the debugging information from ${lib} with ${strip}"
+        return 1
+    fi
+}
+
+# Fail the build if a library has any debugging section (.debug_*) left, which
+# strip_debug_info removes.
+# Usage: verify_no_debug_info <library>
+# Uses AR to find readelf.
+verify_no_debug_info() {
+    local lib="${1:-}"
+    if [ -z "$lib" ]; then
+        echo "ERROR: verify_no_debug_info needs the library to check as its argument"
+        return 1
+    fi
+    if [ -z "${AR:-}" ]; then
+        echo "ERROR: verify_no_debug_info needs AR to be set"
+        return 1
+    fi
+
+    echo "=== Verifying that ${lib} has no debugging information ==="
+    # Only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
+    local readelf="${AR%ar}readelf"
+    local sections left
+    if ! sections=$("$readelf" -W -S "$lib"); then
+        echo "ERROR: could not read the sections of ${lib} with ${readelf}"
+        return 1
+    fi
+    # The name of each section that begins ".debug_", which readelf can print as the second
+    # or the third field of the line ("[ 9]" or "[19]")
+    left=$(awk '/^ *\[/ { for (i = 1; i <= NF; i++) if (index($i, ".debug_") == 1) { print "  " $i; next } }' <<< "$sections")
+    if [ -n "$left" ]; then
+        echo "ERROR: ${lib} still has these debugging sections:"
+        echo "$left"
+        return 1
+    fi
+    echo "No .debug_* section left"
 }
 
 # Verify that a linked library has the mbedTLS crypto backend, failing the build otherwise.
@@ -219,11 +359,11 @@ verify_crypto_backend() {
 
 # Fail the build unless libarchive's configure enabled its XAR reader and writer. They need
 # an XML library that can both read and write (libxml2), zlib, and MD5 and SHA-1 (from
-# mbedTLS here, as musl has neither). If any of them is missing, libarchive compiles both
-# as stubs that fail with "Xar not supported on this platform" (the #if at the top of
-# archive_read_support_format_xar.c and archive_write_set_format_xar.c), and configure does
-# not fail: given --with-xml2, it still goes on without libxml2 if pkg-config does not find
-# it. Run it after libarchive's configure, before make.
+# mbedTLS here, as neither glibc nor musl has them). If any of them is missing, libarchive
+# compiles both as stubs that fail with "Xar not supported on this platform" (the #if at the
+# top of archive_read_support_format_xar.c and archive_write_set_format_xar.c), and
+# configure does not fail: given --with-xml2, it still goes on without libxml2 if pkg-config
+# does not find it. Run it after libarchive's configure, before make.
 # Usage: verify_xar_configured <libarchive's config.h>
 verify_xar_configured() {
     local config="${1:-}"
@@ -262,7 +402,7 @@ verify_xar_configured() {
 # Fail the build unless a linked library has libarchive's XAR reader and writer, and the
 # libxml2 code that they call, none of it left undefined.
 # Usage: verify_xar_support <library>
-# Uses AR to find the toolchain's nm and strings.
+# Uses AR to find the toolchain's nm.
 verify_xar_support() {
     local lib="${1:-}"
     if [ -z "$lib" ]; then
@@ -276,14 +416,19 @@ verify_xar_support() {
 
     echo "=== Verifying XAR support ==="
     # Only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
-    local nm="${AR%ar}nm" strings="${AR%ar}strings"
+    local nm="${AR%ar}nm"
     local symbols undefined text
     if ! symbols=$("$nm" "$lib") || ! undefined=$("$nm" -D --undefined-only "$lib"); then
         echo "ERROR: could not read the symbols of ${lib} with ${nm}"
         return 1
     fi
-    if ! text=$("$strings" -a "$lib"); then
-        echo "ERROR: could not read the strings of ${lib} with ${strings}"
+    # The runs of printable characters in the whole file, one to a line, as strings -a
+    # prints them. tr does it in place of binutils' strings, which the target's binutils
+    # may lack under its unprefixed name (Ubuntu's cross binutils have it only as
+    # /usr/bin/<triplet>-strings; see setup_linux_tools). The C locale makes tr read the
+    # file as bytes.
+    if ! text=$(LC_ALL=C tr -cs '[:print:]' '\n' < "$lib"); then
+        echo "ERROR: could not read the text of ${lib} with tr"
         return 1
     fi
 
@@ -315,804 +460,494 @@ verify_xar_support() {
     echo "XAR reader and writer present, with libxml2 linked in and none of it undefined"
 }
 
-# Fail the build unless the code linked into a library uses only the C library symbols that
-# linux-libc-imports.txt (in this directory) names, and calls the C library's
-# pthread_mutex_init and pthread_cond_init only from linux-pthread-init.c. In a glibc process
-# those calls go to glibc's functions, which must agree with musl's headers on what they read
-# and write (see linux-libc-imports.txt), so a new one fails the build until it has been
-# checked and listed.
-# The symbols come from the cross reference table of the map that link_libarchive writes,
-# <library>.map: each symbol that musl's libc.a defines and that an object other than the
-# members of libc.a and libgcc.a refers to.
-# Usage: verify_libc_imports <library>
-# Uses AR to find the toolchain's nm, and SCRIPT_DIR.
-verify_libc_imports() {
-    local lib="${1:-}"
-    if [ -z "$lib" ]; then
-        echo "ERROR: verify_libc_imports needs the library to check as its argument"
+# Fail the build unless a library linked against glibc loads with every glibc from the
+# version <baseline> on (2.28 for x64 and arm64, 2.34 for arm). The dynamic loader refuses a
+# library that needs a symbol version that the process's glibc lacks, and any import that
+# it cannot bind (the library is linked with -z now), so:
+# - every symbol version that the library needs must be GLIBC_x.y, with x.y no later than
+#   the baseline, compared as version numbers (GLIBC_PRIVATE, glibc's internal interface,
+#   fails);
+# - every symbol that it imports must have a version, apart from weak references, which
+#   resolve to null when nothing defines them: glibc gives each of its symbols a version,
+#   so an unversioned one would have to come from something else in the process;
+# - it must need no library (DT_NEEDED) but glibc's own: libc.so.6, the libraries split
+#   from it before glibc 2.34 (libpthread.so.0, libm.so.6, libdl.so.2 and librt.so.1), and
+#   its dynamic loader, ld-linux-*.so.*, which defines a few of glibc's symbols itself, such
+#   as the stack protector's __stack_chk_guard on arm64;
+# - on 32-bit ARM, it must import none of glibc's functions with a 32-bit time_t or off_t,
+#   which glibc-32bit-names.txt (in this directory) lists: a library compiled with
+#   -D_TIME_BITS=64 -D_FILE_OFFSET_BITS=64 calls their 64-bit counterparts only. The list
+#   must hold the 157 names that it was made with, so that one that lost them cannot pass.
+# readelf reads every target's files alike, so it lists the symbols and versions here.
+# Usage: verify_glibc_imports <library> <baseline>
+# Uses AR to find readelf, and SCRIPT_DIR.
+verify_glibc_imports() {
+    local lib="${1:-}" baseline="${2:-}"
+    if [ -z "$lib" ] || [ -z "$baseline" ]; then
+        echo "ERROR: verify_glibc_imports needs the library to check and the oldest glibc version as its arguments"
         return 1
     fi
     local var
     for var in AR SCRIPT_DIR; do
         if [ -z "${!var:-}" ]; then
-            echo "ERROR: verify_libc_imports needs ${var} to be set"
+            echo "ERROR: verify_glibc_imports needs ${var} to be set"
             return 1
         fi
     done
-    local map="${lib}.map" list="${SCRIPT_DIR}/linux-libc-imports.txt"
-    if [ ! -f "$map" ]; then
-        echo "ERROR: ${map} does not exist: link ${lib} with link_libarchive, which writes it"
-        return 1
-    fi
-    if [ ! -f "$list" ]; then
-        echo "ERROR: ${list} does not exist"
-        return 1
-    fi
 
-    echo "=== Verifying the C library symbols that ${lib} uses ==="
+    echo "=== Verifying that ${lib} loads with glibc ${baseline} and later ==="
     # Only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
-    local nm="${AR%ar}nm" undefined imports unlisted direct
-    if ! undefined=$("$nm" -D --undefined-only "$lib"); then
-        echo "ERROR: could not read the dynamic symbols of ${lib} with ${nm}"
-        return 1
-    fi
-    # One line per symbol: the symbol, a tab, then the objects that refer to it. In the
-    # table, each entry is the symbol at the start of a line, then the files that define it
-    # and those that refer to it, one per line from column 51 (from 2 columns after the
-    # symbol on its own line, when the symbol is longer than 49 characters). The library's
-    # undefined (weak) symbols are left out: nothing defines them, so their entries list
-    # references only.
-    imports=$(awk -v undefined=" $(awk 'NF >= 2 {printf "%s ", $NF}' <<< "$undefined")" '
-        function in_archive(file, name) { return index(file, name ".a(") == 1 || index(file, "/" name ".a(") > 0 }
-        function flush() {
-            if (sym != "" && in_archive(def, "libc") && refs != "" && index(undefined, " " sym " ") == 0)
-                print sym "\t" refs
-            sym = ""; def = ""; refs = ""
-        }
-        /^Cross Reference Table/ { table = 1; next }
-        !table || /^Symbol / || /^$/ { next }
-        /^[^ ]/ {
-            flush()
-            sym = $1
-            def = (length(sym) < 50) ? substr($0, 51) : substr($0, length(sym) + 2)
-            next
-        }
-        {
-            file = substr($0, 51)
-            if (!in_archive(file, "libc") && !in_archive(file, "libgcc")) {
-                sub(/^.*\//, "", file)
-                refs = refs (refs == "" ? "" : " ") file
-            }
-        }
-        END { flush() }' "$map")
-    if [ -z "$imports" ]; then
-        echo "ERROR: the cross reference table of ${map} names no C library symbol that ${lib} uses"
-        return 1
-    fi
-
-    local failed=0
-    unlisted=$(awk 'NR == FNR { sub(/#.*/, ""); if (NF) listed[$1] = 1; next }
-        !($1 in listed) { print "  " $1 ", used by " substr($0, index($0, "\t") + 1) }' "$list" - <<< "$imports")
-    if [ -n "$unlisted" ]; then
-        echo "ERROR: ${lib} uses these C library symbols, which ${list##*/} does not list:"
-        echo "$unlisted"
-        echo "In a glibc process glibc's functions run in their place. Check, for x64, arm64 and arm,"
-        echo "that glibc's read and write what musl's headers lay out, then add them to the list."
-        failed=1
-    fi
-    direct=$(awk '$1 == "pthread_mutex_init" || $1 == "pthread_cond_init" {
-        n = split(substr($0, index($0, "\t") + 1), refs, " ")
-        for (i = 1; i <= n; i++) if (refs[i] != "linux-pthread-init.o") print "  " $1 ", used by " refs[i] }' <<< "$imports")
-    if [ -n "$direct" ]; then
-        echo "ERROR: ${lib} calls the C library's pthread_mutex_init or pthread_cond_init other than from"
-        echo "linux-pthread-init.c, so that link_libarchive's -Wl,--wrap did not take effect:"
-        echo "$direct"
-        failed=1
-    fi
-    if [ "$failed" -ne 0 ]; then
-        return 1
-    fi
-    echo "$(wc -l <<< "$imports" | tr -d ' ') C library symbols used, all of them listed; pthread_mutex_init and pthread_cond_init only through linux-pthread-init.c"
-}
-
-# Fail the build unless a linked library is self-contained: no DT_NEEDED entry (no other
-# library it needs at run time) and no strong undefined dynamic symbol (one that the
-# process loading it would have to supply). Weak undefined symbols are allowed, and
-# listed: they resolve to null when nothing defines them.
-# link_libarchive's -z defs already stops a link that leaves a symbol unresolved; this
-# checks the file that is shipped, however it was produced.
-# Usage: verify_self_contained <library>
-# Uses AR to find the toolchain's nm and readelf.
-verify_self_contained() {
-    local lib="${1:-}"
-    if [ -z "$lib" ]; then
-        echo "ERROR: verify_self_contained needs the library to check as its argument"
-        return 1
-    fi
-    if [ -z "${AR:-}" ]; then
-        echo "ERROR: verify_self_contained needs AR to be set"
-        return 1
-    fi
-
-    echo "=== Verifying that ${lib} is self-contained ==="
-    # Only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
-    local nm="${AR%ar}nm" readelf="${AR%ar}readelf"
-    local dynamic undefined
-    if ! dynamic=$("$readelf" -d "$lib"); then
-        echo "ERROR: could not read the dynamic section of ${lib} with ${readelf}"
-        return 1
-    fi
-    if ! undefined=$("$nm" -D --undefined-only "$lib"); then
-        echo "ERROR: could not read the dynamic symbols of ${lib} with ${nm}"
+    local readelf="${AR%ar}readelf"
+    local header dynamic versions symbols
+    if ! header=$("$readelf" -W -h "$lib") || ! dynamic=$("$readelf" -W -d "$lib") ||
+        ! versions=$("$readelf" -W -V "$lib") || ! symbols=$("$readelf" -W --dyn-syms "$lib"); then
+        echo "ERROR: could not read ${lib} with ${readelf}"
         return 1
     fi
 
     # Each list holds one indented entry per line, ready to print
-    local needed strong weak failed=0
-    needed=$(awk '/\(NEEDED\)/ {print "  " $NF}' <<< "$dynamic")
-    # nm prints each undefined symbol as "<type> <name>": w and v are weak references,
-    # U (or anything else) a strong one
-    strong=$(awk 'NF >= 2 && $(NF-1) != "w" && $(NF-1) != "v" {print "  " $NF}' <<< "$undefined")
-    weak=$(awk 'NF >= 2 && ($(NF-1) == "w" || $(NF-1) == "v") {print "  " $NF}' <<< "$undefined")
-    if [ -n "$needed" ]; then
-        echo "ERROR: ${lib} needs these other libraries at run time (DT_NEEDED):"
-        echo "$needed"
+    local needed bad_needed bad_versions imports strong weak newest failed=0
+    needed=$(awk '/\(NEEDED\)/ {name = $NF; gsub(/^\[|\]$/, "", name); print name}' <<< "$dynamic")
+    bad_needed=$(awk '!/^(libc\.so\.6|libpthread\.so\.0|libm\.so\.6|libdl\.so\.2|librt\.so\.1|ld-linux[-a-z0-9_]*\.so\.[0-9]+)$/ {print "  " $0}' <<< "$needed")
+    # The version needs section lists, for each library needed, the versions needed of it:
+    # a "File: <library>" line, then a "Name: <version>" line for each version
+    bad_versions=$(awk -v baseline="$baseline" '
+        # 1 if the dotted version a is no later than b, compared number by number
+        function not_later(a, b,    x, y, n, i) {
+            n = split(a, x, ".")
+            if (split(b, y, ".") > n)
+                n = length(y)
+            for (i = 1; i <= n; i++) {
+                if (x[i] + 0 < y[i] + 0) return 1
+                if (x[i] + 0 > y[i] + 0) return 0
+            }
+            return 1
+        }
+        /^Version needs section/ { needs = 1; next }
+        /^Version (symbols|definition) section/ { needs = 0 }
+        needs && match($0, /File: [^ ]+/) { file = substr($0, RSTART + 6, RLENGTH - 6) }
+        needs && match($0, /Name: [^ ]+/) {
+            version = substr($0, RSTART + 6, RLENGTH - 6)
+            if (version !~ /^GLIBC_[0-9]+(\.[0-9]+)*$/ || !not_later(substr(version, 7), baseline))
+                print "  " version ", of " file
+        }' <<< "$versions")
+    # Each undefined dynamic symbol as "<binding> <name>[@<version>]". The name is the last
+    # field, or the one before it when readelf ends the line with the version's index, "(2)".
+    imports=$(awk '$1 ~ /^[0-9]+:$/ {
+            name = $NF; ndx = $(NF - 1)
+            if (name ~ /^\([0-9]+\)$/) { name = $(NF - 1); ndx = $(NF - 2) }
+            if (ndx == "UND") print $5, name
+        }' <<< "$symbols")
+    strong=$(awk '$1 != "WEAK" && index($2, "@") == 0 {print "  " $2}' <<< "$imports")
+    weak=$(awk '$1 == "WEAK" && index($2, "@") == 0 {print "  " $2}' <<< "$imports")
+    if [ -n "$bad_needed" ]; then
+        echo "ERROR: ${lib} needs these libraries (DT_NEEDED), which are not glibc's:"
+        echo "$bad_needed"
+        failed=1
+    fi
+    if [ -n "$bad_versions" ]; then
+        echo "ERROR: ${lib} needs these symbol versions, which glibc ${baseline} does not have:"
+        echo "$bad_versions"
         failed=1
     fi
     if [ -n "$strong" ]; then
-        echo "ERROR: ${lib} leaves these symbols undefined, so it fails to load in any process that does not define them:"
+        echo "ERROR: ${lib} imports these symbols without a version, which no glibc defines:"
         echo "$strong"
+        failed=1
+    fi
+    if awk '$1 == "Machine:" && $2 == "ARM" {found = 1} END {exit !found}' <<< "$header"; then
+        local list="${SCRIPT_DIR}/glibc-32bit-names.txt" expected=157 names old
+        if [ ! -f "$list" ]; then
+            echo "ERROR: ${list} does not exist"
+            return 1
+        fi
+        # The list must hold the names that it was made with (see its head), each once. With
+        # fewer, imports of the names lost would pass, and with none, the awk below would take
+        # the imports for the list and pass them all. Change the number when the list is made
+        # again.
+        names=$(awk '$0 !~ /^#/ && NF == 2 && !($1 in counterpart) { counterpart[$1] = $2; n++ } END { print n + 0 }' "$list")
+        if [ "$names" -ne "$expected" ]; then
+            echo "ERROR: ${list} holds ${names} names of glibc's functions with a 32-bit time_t or off_t, not the ${expected}"
+            echo "that it was made with. Restore it, or if it was made again (see its head), change that number in verify_glibc_imports."
+            return 1
+        fi
+        old=$(awk 'NR == FNR { if ($0 !~ /^#/ && NF == 2) counterpart[$1] = $2; next }
+            { name = $2; sub(/@.*/, "", name); if (name in counterpart) print "  " name ", in place of " counterpart[name] }' \
+            "$list" - <<< "$imports")
+        if [ -n "$old" ]; then
+            echo "ERROR: ${lib} imports these functions of glibc's with a 32-bit time_t or off_t:"
+            echo "$old"
+            echo "It must be compiled with -D_TIME_BITS=64 -D_FILE_OFFSET_BITS=64, as build-linux.sh compiles it."
+            failed=1
+        fi
+    fi
+    if [ "$failed" -ne 0 ]; then
+        return 1
+    fi
+    newest=$(awk '/^Version needs section/ { needs = 1; next } /^Version (symbols|definition) section/ { needs = 0 }
+        needs && match($0, /Name: GLIBC_[0-9.]+/) { print substr($0, RSTART + 12, RLENGTH - 12) }' <<< "$versions" |
+        sort -t . -k 1,1n -k 2,2n -k 3,3n | tail -n 1)
+    echo "Needs $(tr '\n' ' ' <<< "$needed")only, and glibc ${newest:-(no version)} at the latest, for its $(awk 'index($2, "@") {n++} END {print n + 0}' <<< "$imports") versioned imports"
+    if awk '$1 == "Machine:" && $2 == "ARM" {found = 1} END {exit !found}' <<< "$header"; then
+        echo "None of the ${names} functions of glibc's with a 32-bit time_t or off_t (glibc-32bit-names.txt)"
+    fi
+    if [ -n "$weak" ]; then
+        echo "Weak unversioned imports (allowed, null when nothing defines them):"
+        echo "$weak"
+    fi
+}
+
+# Fail the build unless a 32-bit ARM library checks its stack protector against a guard that
+# is seeded from the process's random bytes (see linux-arm-stack-guard.c, in this directory):
+# its __stack_chk_guard must be the one of that file, which is uninitialised data (.bss)
+# until its constructor seeds it, not the initialised one (.data) of zig's compiler-rt, which
+# holds a constant, and that constructor must be in .init_array, where the dynamic loader
+# finds what to run when it loads the library.
+# Usage: verify_stack_guard <library>
+# Uses AR to find nm and readelf.
+verify_stack_guard() {
+    local lib="${1:-}"
+    if [ -z "$lib" ]; then
+        echo "ERROR: verify_stack_guard needs the library to check as its argument"
+        return 1
+    fi
+    if [ -z "${AR:-}" ]; then
+        echo "ERROR: verify_stack_guard needs AR to be set"
+        return 1
+    fi
+
+    echo "=== Verifying the stack protector guard of ${lib} ==="
+    # Only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
+    local nm="${AR%ar}nm" readelf="${AR%ar}readelf"
+    local symbols sections guard seed section entries position
+    if ! symbols=$("$nm" "$lib") || ! sections=$("$readelf" -W -S "$lib"); then
+        echo "ERROR: could not read ${lib} with ${nm} and ${readelf}"
+        return 1
+    fi
+    guard=$(awk '$3 == "__stack_chk_guard" {print $2}' <<< "$symbols")
+    if [ "$guard" != b ] && [ "$guard" != B ]; then
+        echo "ERROR: ${lib}'s __stack_chk_guard (nm type: ${guard:-none}) is not the uninitialised one of"
+        echo "linux-arm-stack-guard.c, so the library's stack protector would check its frames against zig's constant."
+        return 1
+    fi
+    seed=$(awk '$3 == "libarchive_net_seed_stack_guard" {print $1}' <<< "$symbols")
+    # .init_array's file offset and size: the third and fourth fields after its name, which
+    # readelf can print as the second or the third field of the line ("[ 9]" or "[19]")
+    section=$(awk '{ for (i = 1; i < NF; i++) if ($i == ".init_array") { print $(i + 3), $(i + 4); exit } }' <<< "$sections")
+    if [ -z "$seed" ] || [ -z "$section" ]; then
+        echo "ERROR: ${lib} has no constructor libarchive_net_seed_stack_guard (${seed:-missing}) or no .init_array (${section:-missing})"
+        return 1
+    fi
+    # The section's entries, 32-bit addresses: od prints them in the build machine's byte
+    # order, which is little-endian, as 32-bit ARM's is, and with -v prints every line
+    # shellcheck disable=SC2086  # the offset and size, split on purpose
+    set -- $section
+    if ! entries=$(od -v -A n -t x4 -j "$((16#$1))" -N "$((16#$2))" "$lib"); then
+        echo "ERROR: could not read the .init_array of ${lib}"
+        return 1
+    fi
+    # Compared as strings: awk would take an address such as 0024e510 for a number
+    position=$(awk -v seed="$seed" '{ for (i = 1; i <= NF; i++) { n++; if (($i "") == (seed "")) { print n; exit } } }' <<< "$entries")
+    if [ -z "$position" ]; then
+        echo "ERROR: the constructor that seeds the guard (at ${seed}) is not in ${lib}'s .init_array: ${entries}"
+        return 1
+    fi
+    echo "__stack_chk_guard is linux-arm-stack-guard.c's (nm: ${guard}), seeded by the constructor at ${seed}, entry ${position} of .init_array"
+}
+
+# Fail the build unless a 32-bit ARM library's stack protector ends the process, when a frame
+# fails its check, as the library's C library ends it (see linux-arm-stack-guard.c, in this
+# directory). Its __stack_chk_fail must be hidden, and defined by linux-arm-stack-guard.c for
+# glibc, which then writes glibc's message and aborts, and by zig's compiler-rt for musl,
+# which then stops the process at an undefined instruction, as musl's own does. The symbol
+# table (.symtab) names the object that defines each local symbol, hidden ones included: the
+# linker puts an object's local symbols after the STT_FILE symbol that names it, "compiler_rt"
+# for compiler-rt, and strip_debug_info keeps those (--keep-file-symbols).
+# Usage: verify_stack_chk_fail <library> <glibc|musl>
+# Uses AR to find readelf.
+verify_stack_chk_fail() {
+    local lib="${1:-}" libc="${2:-}" object
+    if [ -z "$lib" ] || [ -z "$libc" ]; then
+        echo "ERROR: verify_stack_chk_fail needs the library to check and its C library, glibc or musl, as its arguments"
+        return 1
+    fi
+    case "$libc" in
+        glibc) object=linux-arm-stack-guard.c ;;
+        musl)  object=compiler_rt ;;
+        *)
+            echo "ERROR: verify_stack_chk_fail: unknown C library \"${libc}\" (glibc or musl)"
+            return 1
+            ;;
+    esac
+    if [ -z "${AR:-}" ]; then
+        echo "ERROR: verify_stack_chk_fail needs AR to be set"
+        return 1
+    fi
+
+    echo "=== Verifying the stack protector's __stack_chk_fail of ${lib} ==="
+    # Only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
+    local readelf="${AR%ar}readelf" symbols found
+    if ! symbols=$("$readelf" -W -s "$lib"); then
+        echo "ERROR: could not read ${lib} with ${readelf}"
+        return 1
+    fi
+    # Each __stack_chk_fail that .symtab defines, indented, as "<type> <binding> <visibility>
+    # <object>", where <object> is the name of the STT_FILE symbol before it
+    found=$(awk '/^Symbol table / { symtab = index($0, ".symtab") > 0; file = "(none)"; next }
+        symtab && $4 == "FILE" { file = $8; next }
+        symtab && $8 == "__stack_chk_fail" && $7 != "UND" { print "  " $4, $5, $6, file }' <<< "$symbols")
+    if [ "$found" != "  FUNC LOCAL HIDDEN ${object}" ]; then
+        echo "ERROR: ${lib}'s __stack_chk_fail is not the hidden one of ${object}, which ends the process"
+        echo "as ${libc}'s own __stack_chk_fail does. .symtab defines (type, binding, visibility, object):"
+        echo "${found:-  no __stack_chk_fail}"
+        return 1
+    fi
+    echo "__stack_chk_fail is the hidden one of ${object}, which ends the process as ${libc}'s does"
+}
+
+# Fail the build unless a library that does not link linux-arm-stack-guard.c (every library
+# but the 32-bit ARM ones) leaves its stack protector to its C library and contains none of
+# zig's compiler-rt. Today linux-x64 and linux-musl-x64 keep the guard in thread-local
+# storage, and linux-arm64 and linux-musl-arm64 import __stack_chk_guard from the C library;
+# none of the four contains compiler-rt. If a change of zig or of the flags pulled compiler-rt
+# into one of them (for outline atomics or 128-bit floats, say), its weak, constant guard
+# would silently take the place of the C library's, as it did on 32-bit ARM, and its
+# __stack_chk_fail that of the C library's handler. So neither .symtab nor .dynsym may define
+# __stack_chk_guard or __stack_chk_fail, and no symbol may name compiler-rt's object
+# ("compiler_rt", its STT_FILE symbol) or its local symbols ("compiler_rt.<file>.<name>").
+# So that a missing, empty or stripped table cannot pass, both tables must be there and
+# define archive_version_string, and .symtab must have STT_FILE symbols, which
+# strip_debug_info keeps.
+# Usage: verify_libc_stack_guard <library>
+# Uses AR to find readelf.
+verify_libc_stack_guard() {
+    local lib="${1:-}"
+    if [ -z "$lib" ]; then
+        echo "ERROR: verify_libc_stack_guard needs the library to check as its argument"
+        return 1
+    fi
+    if [ -z "${AR:-}" ]; then
+        echo "ERROR: verify_libc_stack_guard needs AR to be set"
+        return 1
+    fi
+
+    echo "=== Verifying that ${lib} leaves its stack protector to the C library ==="
+    # Only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
+    local readelf="${AR%ar}readelf" symbols report
+    if ! symbols=$("$readelf" -W -s "$lib"); then
+        echo "ERROR: could not read ${lib} with ${readelf}"
+        return 1
+    fi
+    # One line for each finding, as "<kind> <detail>": "table <name>" for each table that
+    # defines archive_version_string, "files <count>" for .symtab's STT_FILE symbols,
+    # "defined <symbol> <table>" for each stack protector symbol defined, "imported <symbol>"
+    # for each one imported, and "compiler_rt <count> <example>", the example being the first
+    # compiler_rt.* name, if any
+    report=$(awk '
+        /^Symbol table / { table = index($0, ".symtab") ? ".symtab" : (index($0, ".dynsym") ? ".dynsym" : "other"); next }
+        $1 !~ /^[0-9]+:$/ { next }
+        { name = $8; sub(/@.*/, "", name) }
+        table == ".symtab" && $4 == "FILE" { files++ }
+        name == "archive_version_string" && $7 != "UND" { anchor[table] = 1 }
+        name == "__stack_chk_guard" || name == "__stack_chk_fail" {
+            if ($7 != "UND") print "defined", name, table
+            else imported[name] = 1
+        }
+        name == "compiler_rt" || index(name, "compiler_rt.") == 1 {
+            cr++
+            if (example == "" || (example == "compiler_rt" && name != "compiler_rt")) example = name
+        }
+        END {
+            for (t in anchor) print "table", t
+            print "files", files + 0
+            for (s in imported) print "imported", s
+            if (cr) print "compiler_rt", cr, example
+        }' <<< "$symbols")
+
+    local failed=0 tables defined imported
+    tables=$(awk '$1 == "table" {print $2}' <<< "$report" | sort | paste -sd ' ' -)
+    if [ "$tables" != ".dynsym .symtab" ]; then
+        echo "ERROR: ${lib} lacks a .symtab or a .dynsym that defines archive_version_string, so nothing here can be"
+        echo "checked. Tables that define it: ${tables:-none}"
+        return 1
+    fi
+    if ! awk '$1 == "files" && $2 > 0 {found = 1} END {exit !found}' <<< "$report"; then
+        echo "ERROR: ${lib}'s .symtab has no STT_FILE symbols, which name the objects linked in (see strip_debug_info)"
+        return 1
+    fi
+    defined=$(awk '$1 == "defined" {print "  " $2 ", in " $3}' <<< "$report")
+    if [ -n "$defined" ]; then
+        echo "ERROR: ${lib} defines a stack protector symbol of its own, in place of its C library's:"
+        echo "$defined"
+        failed=1
+    fi
+    if awk '$1 == "compiler_rt" {found = 1} END {exit !found}' <<< "$report"; then
+        echo "ERROR: ${lib} contains zig's compiler-rt: $(awk '$1 == "compiler_rt" {print $2 " symbols name it, such as " $3}' <<< "$report")."
+        echo "Its constant __stack_chk_guard and its __stack_chk_fail would take the place of the C library's,"
+        echo "as they did on 32-bit ARM (see linux-arm-stack-guard.c), and the notices say that only the arm libraries contain it."
         failed=1
     fi
     if [ "$failed" -ne 0 ]; then
         return 1
     fi
-    echo "No DT_NEEDED entries and no strong undefined dynamic symbols"
-    if [ -n "$weak" ]; then
-        echo "Weak undefined dynamic symbols (allowed, null when nothing defines them):"
-        echo "$weak"
-    fi
+    imported=$(awk '$1 == "imported" {print $2}' <<< "$report" | sort | paste -sd ' ' -)
+    echo "Defines no __stack_chk_guard or __stack_chk_fail (imports: ${imported:-neither}), and has no compiler-rt symbol"
 }
 
-# Write the C source of the load test program run by test_load_musl and test_load_host.
-# Besides loading the library and reading an empty archive, it fails unless names are
-# UTF-8 in the "C" locale, which it never leaves, as a .NET process never does:
-# libarchive-narrow-utf8.patch is in the library (see "The libarchive patches" in
-# BUILD.md). It also writes a XAR archive and reads it back, which only the real XAR
-# reader and writer can do, using libxml2, zlib and mbedTLS's SHA-1. The XAR writer
-# keeps entry data in a temporary file ($TMPDIR, or /tmp) until the archive is closed.
-# Last, it fails unless a zip entry of 128 KiB that it compresses with Zstandard into
-# memory reads back in full from there: libarchive-zip-zstd-end-of-entry.patch is in
-# the library.
-# Usage: write_load_test_source <file>
-write_load_test_source() {
-    if [ -z "${1:-}" ]; then
-        echo "ERROR: write_load_test_source needs the file to write as its argument"
-        return 1
-    fi
-    cat > "$1" <<'EOF'
-/*
- * Load test for a freshly linked libarchive.so, from build-linux-common.sh.
- * Usage: loadtest <path to libarchive.so>
- * Exits non-zero unless the library loads with every symbol bound at once
- * (RTLD_NOW), a little of its API works, names are UTF-8 in the "C" locale, a XAR
- * archive written in memory reads back, and a Zstandard zip entry of 128 KiB reads
- * back in full.
- */
-#include <dlfcn.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/types.h>
-#include <wchar.h>
-
-struct archive;
-struct archive_entry;
-
-#define ARCHIVE_OK 0
-#define ARCHIVE_EOF 1
-#define AE_IFREG 0100000
-
-static void *library;
-
-/* Store the address of the named function in *function, or say why it is missing */
-static int find(const char *name, void *function, size_t size)
-{
-    void *address;
-
-    dlerror();
-    address = dlsym(library, name);
-    if (address == NULL) {
-        const char *error = dlerror();
-        fprintf(stderr, "FAIL: %s: %s\n", name, error != NULL ? error : "null address");
-        return 0;
-    }
-    /* POSIX guarantees that a data pointer can hold the address of a function */
-    memcpy(function, &address, size);
-    return 1;
-}
-
-#define FIND(name, function) find(name, &(function), sizeof (function))
-
-/* "Größe.txt", composed (NFC), as UTF-8 and as Unicode code points */
-static const char name_utf8[] = "Gr\xc3\xb6\xc3\x9f" "e.txt";
-static const wchar_t name_wcs[] = { 'G', 'r', 0xF6, 0xDF, 'e', '.', 't', 'x', 't', 0 };
-
-/*
- * Fail unless narrow strings are UTF-8: narrow to wide and back, and a zip entry
- * that keeps the name's UTF-8 bytes, with the UTF-8 flag (general purpose bit 11),
- * and reads back unchanged.
- */
-static int check_utf8_names(void)
-{
-    struct archive_entry *(*entry_new)(void);
-    void (*entry_free)(struct archive_entry *);
-    void (*set_pathname)(struct archive_entry *, const char *);
-    const char *(*pathname)(struct archive_entry *);
-    const wchar_t *(*pathname_w)(struct archive_entry *);
-    void (*copy_pathname_w)(struct archive_entry *, const wchar_t *);
-    void (*set_filetype)(struct archive_entry *, unsigned int);
-    void (*set_perm)(struct archive_entry *, mode_t);
-    void (*set_size)(struct archive_entry *, int64_t);
-    struct archive *(*write_new)(void);
-    int (*set_format_zip)(struct archive *);
-    int (*write_open_memory)(struct archive *, void *, size_t, size_t *);
-    int (*write_header)(struct archive *, struct archive_entry *);
-    int (*write_close)(struct archive *);
-    int (*write_free)(struct archive *);
-    struct archive *(*read_new)(void);
-    int (*support_format_zip)(struct archive *);
-    int (*open_memory)(struct archive *, const void *, size_t);
-    int (*next_header)(struct archive *, struct archive_entry **);
-    const char *(*error_string)(struct archive *);
-    int (*read_free)(struct archive *);
-    static unsigned char buf[65536];
-    size_t used = 0, len = sizeof name_utf8 - 1;
-    struct archive *a;
-    struct archive_entry *entry;
-    const wchar_t *w;
-    const char *p;
-    int ok = 1;
-
-    if (!FIND("archive_entry_new", entry_new) || !FIND("archive_entry_free", entry_free)
-        || !FIND("archive_entry_set_pathname", set_pathname)
-        || !FIND("archive_entry_pathname", pathname)
-        || !FIND("archive_entry_pathname_w", pathname_w)
-        || !FIND("archive_entry_copy_pathname_w", copy_pathname_w)
-        || !FIND("archive_entry_set_filetype", set_filetype)
-        || !FIND("archive_entry_set_perm", set_perm) || !FIND("archive_entry_set_size", set_size)
-        || !FIND("archive_write_new", write_new)
-        || !FIND("archive_write_set_format_zip", set_format_zip)
-        || !FIND("archive_write_open_memory", write_open_memory)
-        || !FIND("archive_write_header", write_header) || !FIND("archive_write_close", write_close)
-        || !FIND("archive_write_free", write_free) || !FIND("archive_read_new", read_new)
-        || !FIND("archive_read_support_format_zip", support_format_zip)
-        || !FIND("archive_read_open_memory", open_memory)
-        || !FIND("archive_read_next_header", next_header)
-        || !FIND("archive_error_string", error_string) || !FIND("archive_read_free", read_free))
-        return 0;
-
-    entry = entry_new();
-    if (entry == NULL) {
-        fprintf(stderr, "FAIL: archive_entry_new returned NULL\n");
-        return 0;
-    }
-    set_pathname(entry, name_utf8);
-    w = pathname_w(entry);
-    if (w == NULL || wcscmp(w, name_wcs) != 0) {
-        fprintf(stderr, "FAIL: archive_entry_pathname_w does not decode the UTF-8 name\n");
-        ok = 0;
-    }
-    copy_pathname_w(entry, name_wcs);
-    p = pathname(entry);
-    if (p == NULL || strcmp(p, name_utf8) != 0) {
-        fprintf(stderr, "FAIL: archive_entry_pathname does not encode the wide name as UTF-8\n");
-        ok = 0;
-    }
-
-    set_pathname(entry, name_utf8);
-    set_filetype(entry, AE_IFREG);
-    set_perm(entry, 0644);
-    set_size(entry, 0);
-    a = write_new();
-    if (a == NULL) {
-        fprintf(stderr, "FAIL: archive_write_new returned NULL\n");
-        ok = 0;
-    } else if (set_format_zip(a) != ARCHIVE_OK
-        || write_open_memory(a, buf, sizeof buf, &used) != ARCHIVE_OK
-        || write_header(a, entry) != ARCHIVE_OK || write_close(a) != ARCHIVE_OK) {
-        p = error_string(a);
-        fprintf(stderr, "FAIL: writing a zip entry: %s\n", p != NULL ? p : "(no error string)");
-        ok = 0;
-    }
-    if (a != NULL)
-        write_free(a);
-    entry_free(entry);
-    if (!ok)
-        return 0;
-    /* Local file header: flags at 6 (bit 11 is UTF-8), name length at 26, name at 30 */
-    if (used < 30 + len || memcmp(buf, "PK\3\4", 4) != 0 || (buf[7] & 0x08) == 0
-        || (size_t)buf[26] != len || buf[27] != 0 || memcmp(buf + 30, name_utf8, len) != 0) {
-        fprintf(stderr, "FAIL: the zip local file header lacks the UTF-8 flag or the UTF-8 name\n");
-        return 0;
-    }
-    a = read_new();
-    if (a == NULL) {
-        fprintf(stderr, "FAIL: archive_read_new returned NULL\n");
-        ok = 0;
-    } else if (support_format_zip(a) != ARCHIVE_OK || open_memory(a, buf, used) != ARCHIVE_OK
-        || next_header(a, &entry) != ARCHIVE_OK) {
-        p = error_string(a);
-        fprintf(stderr, "FAIL: reading the zip entry: %s\n", p != NULL ? p : "(no error string)");
-        ok = 0;
-    } else if ((p = pathname(entry)) == NULL || strcmp(p, name_utf8) != 0) {
-        fprintf(stderr, "FAIL: the zip entry's name does not read back as the same UTF-8\n");
-        ok = 0;
-    }
-    if (a != NULL)
-        read_free(a);
-    if (ok)
-        printf("OK: names are UTF-8 in the \"C\" locale\n");
-    return ok;
-}
-
-/* The one entry of the XAR test archive */
-static const char xar_name[] = "xar-test.txt";
-static const char xar_data[] = "XAR load test\n";
-
-/*
- * Fail unless a XAR archive written to memory reads back: one entry, its name and its
- * data. libarchive built without libxml2 (or zlib, MD5 and SHA-1) has stubs in place of
- * its XAR reader and writer, which return ARCHIVE_WARN with the message "Xar not
- * supported on this platform".
- */
-static int check_xar(void)
-{
-    struct archive_entry *(*entry_new)(void);
-    void (*entry_free)(struct archive_entry *);
-    void (*set_pathname)(struct archive_entry *, const char *);
-    const char *(*pathname)(struct archive_entry *);
-    void (*set_filetype)(struct archive_entry *, unsigned int);
-    void (*set_perm)(struct archive_entry *, mode_t);
-    void (*set_size)(struct archive_entry *, int64_t);
-    struct archive *(*write_new)(void);
-    int (*set_format_xar)(struct archive *);
-    int (*write_open_memory)(struct archive *, void *, size_t, size_t *);
-    int (*write_header)(struct archive *, struct archive_entry *);
-    ssize_t (*write_data)(struct archive *, const void *, size_t);
-    int (*write_close)(struct archive *);
-    int (*write_free)(struct archive *);
-    struct archive *(*read_new)(void);
-    int (*support_format_xar)(struct archive *);
-    int (*open_memory)(struct archive *, const void *, size_t);
-    int (*next_header)(struct archive *, struct archive_entry **);
-    ssize_t (*read_data)(struct archive *, void *, size_t);
-    const char *(*error_string)(struct archive *);
-    int (*read_free)(struct archive *);
-    static unsigned char buf[65536];
-    char data[64];
-    size_t used = 0, len = sizeof xar_data - 1, got = 0;
-    struct archive *a;
-    struct archive_entry *entry;
-    const char *p;
-    ssize_t n;
-    int result, ok = 1;
-
-    if (!FIND("archive_entry_new", entry_new) || !FIND("archive_entry_free", entry_free)
-        || !FIND("archive_entry_set_pathname", set_pathname)
-        || !FIND("archive_entry_pathname", pathname)
-        || !FIND("archive_entry_set_filetype", set_filetype)
-        || !FIND("archive_entry_set_perm", set_perm) || !FIND("archive_entry_set_size", set_size)
-        || !FIND("archive_write_new", write_new)
-        || !FIND("archive_write_set_format_xar", set_format_xar)
-        || !FIND("archive_write_open_memory", write_open_memory)
-        || !FIND("archive_write_header", write_header) || !FIND("archive_write_data", write_data)
-        || !FIND("archive_write_close", write_close) || !FIND("archive_write_free", write_free)
-        || !FIND("archive_read_new", read_new)
-        || !FIND("archive_read_support_format_xar", support_format_xar)
-        || !FIND("archive_read_open_memory", open_memory)
-        || !FIND("archive_read_next_header", next_header) || !FIND("archive_read_data", read_data)
-        || !FIND("archive_error_string", error_string) || !FIND("archive_read_free", read_free))
-        return 0;
-
-    entry = entry_new();
-    if (entry == NULL) {
-        fprintf(stderr, "FAIL: archive_entry_new returned NULL\n");
-        return 0;
-    }
-    set_pathname(entry, xar_name);
-    set_filetype(entry, AE_IFREG);
-    set_perm(entry, 0644);
-    set_size(entry, (int64_t)len);
-    a = write_new();
-    if (a == NULL) {
-        fprintf(stderr, "FAIL: archive_write_new returned NULL\n");
-        ok = 0;
-    } else if ((result = set_format_xar(a)) != ARCHIVE_OK) {
-        p = error_string(a);
-        fprintf(stderr, "FAIL: archive_write_set_format_xar returned %d: %s\n", result,
-            p != NULL ? p : "(no error string)");
-        ok = 0;
-    } else if (write_open_memory(a, buf, sizeof buf, &used) != ARCHIVE_OK
-        || write_header(a, entry) != ARCHIVE_OK || write_data(a, xar_data, len) != (ssize_t)len
-        || write_close(a) != ARCHIVE_OK) {
-        p = error_string(a);
-        fprintf(stderr, "FAIL: writing a XAR entry: %s\n", p != NULL ? p : "(no error string)");
-        ok = 0;
-    }
-    if (a != NULL)
-        write_free(a);
-    entry_free(entry);
-    if (!ok)
-        return 0;
-    if (used < 4 || memcmp(buf, "xar!", 4) != 0) {
-        fprintf(stderr, "FAIL: the XAR archive does not start with the XAR magic number\n");
-        return 0;
-    }
-
-    a = read_new();
-    if (a == NULL) {
-        fprintf(stderr, "FAIL: archive_read_new returned NULL\n");
-        return 0;
-    }
-    if ((result = support_format_xar(a)) != ARCHIVE_OK) {
-        p = error_string(a);
-        fprintf(stderr, "FAIL: archive_read_support_format_xar returned %d: %s\n", result,
-            p != NULL ? p : "(no error string)");
-        ok = 0;
-    } else if (open_memory(a, buf, used) != ARCHIVE_OK || next_header(a, &entry) != ARCHIVE_OK) {
-        p = error_string(a);
-        fprintf(stderr, "FAIL: reading the XAR entry: %s\n", p != NULL ? p : "(no error string)");
-        ok = 0;
-    } else if ((p = pathname(entry)) == NULL || strcmp(p, xar_name) != 0) {
-        fprintf(stderr, "FAIL: the XAR entry's name does not read back\n");
-        ok = 0;
-    } else {
-        n = 0;
-        while (got < sizeof data && (n = read_data(a, data + got, sizeof data - got)) > 0)
-            got += (size_t)n;
-        if (n < 0) {
-            p = error_string(a);
-            fprintf(stderr, "FAIL: reading the XAR entry's data: %s\n", p != NULL ? p : "(no error string)");
-            ok = 0;
-        } else if (got != len || memcmp(data, xar_data, len) != 0) {
-            fprintf(stderr, "FAIL: the XAR entry's data does not read back\n");
-            ok = 0;
-        } else if ((result = next_header(a, &entry)) != ARCHIVE_EOF) {
-            p = error_string(a);
-            fprintf(stderr, "FAIL: archive_read_next_header after the XAR entry returned %d, not ARCHIVE_EOF: %s\n",
-                result, p != NULL ? p : "(no error string)");
-            ok = 0;
-        }
-    }
-    read_free(a);
-    if (ok)
-        printf("OK: a XAR archive written to memory reads back\n");
-    return ok;
-}
-
-/*
- * Fail unless a zip entry of 128 KiB, compressed with Zstandard, reads back in full from
- * memory, which libarchive reads as a seekable source: its data ends just as the zip
- * reader's buffer, of ZSTD_DStreamOutSize() bytes, fills.
- */
-static int check_zip_zstd_end(void)
-{
-    struct archive_entry *(*entry_new)(void);
-    void (*entry_free)(struct archive_entry *);
-    void (*set_pathname)(struct archive_entry *, const char *);
-    void (*set_filetype)(struct archive_entry *, unsigned int);
-    void (*set_perm)(struct archive_entry *, mode_t);
-    void (*set_size)(struct archive_entry *, int64_t);
-    struct archive *(*write_new)(void);
-    int (*set_format_zip)(struct archive *);
-    int (*set_options)(struct archive *, const char *);
-    int (*write_open_memory)(struct archive *, void *, size_t, size_t *);
-    int (*write_header)(struct archive *, struct archive_entry *);
-    ssize_t (*write_data)(struct archive *, const void *, size_t);
-    int (*write_close)(struct archive *);
-    int (*write_free)(struct archive *);
-    struct archive *(*read_new)(void);
-    int (*support_format_zip)(struct archive *);
-    int (*open_memory)(struct archive *, const void *, size_t);
-    int (*next_header)(struct archive *, struct archive_entry **);
-    ssize_t (*read_data)(struct archive *, void *, size_t);
-    const char *(*error_string)(struct archive *);
-    int (*read_free)(struct archive *);
-    static unsigned char data[131072], buf[65536], got[4096];
-    size_t used = 0, total = 0, i;
-    struct archive *a;
-    struct archive_entry *entry;
-    const char *p;
-    ssize_t n = 0;
-    int ok = 1;
-
-    if (!FIND("archive_entry_new", entry_new) || !FIND("archive_entry_free", entry_free)
-        || !FIND("archive_entry_set_pathname", set_pathname)
-        || !FIND("archive_entry_set_filetype", set_filetype)
-        || !FIND("archive_entry_set_perm", set_perm) || !FIND("archive_entry_set_size", set_size)
-        || !FIND("archive_write_new", write_new)
-        || !FIND("archive_write_set_format_zip", set_format_zip)
-        || !FIND("archive_write_set_options", set_options)
-        || !FIND("archive_write_open_memory", write_open_memory)
-        || !FIND("archive_write_header", write_header) || !FIND("archive_write_data", write_data)
-        || !FIND("archive_write_close", write_close) || !FIND("archive_write_free", write_free)
-        || !FIND("archive_read_new", read_new)
-        || !FIND("archive_read_support_format_zip", support_format_zip)
-        || !FIND("archive_read_open_memory", open_memory)
-        || !FIND("archive_read_next_header", next_header) || !FIND("archive_read_data", read_data)
-        || !FIND("archive_error_string", error_string) || !FIND("archive_read_free", read_free))
-        return 0;
-
-    for (i = 0; i < sizeof data; i++)
-        data[i] = (unsigned char)"Zstandard zip entry\n"[i % 20];
-    entry = entry_new();
-    if (entry == NULL) {
-        fprintf(stderr, "FAIL: archive_entry_new returned NULL\n");
-        return 0;
-    }
-    set_pathname(entry, "zstd.txt");
-    set_filetype(entry, AE_IFREG);
-    set_perm(entry, 0644);
-    set_size(entry, (int64_t)sizeof data);
-    a = write_new();
-    if (a == NULL) {
-        fprintf(stderr, "FAIL: archive_write_new returned NULL\n");
-        ok = 0;
-    } else if (set_format_zip(a) != ARCHIVE_OK || set_options(a, "zip:compression=zstd") != ARCHIVE_OK
-        || write_open_memory(a, buf, sizeof buf, &used) != ARCHIVE_OK
-        || write_header(a, entry) != ARCHIVE_OK
-        || write_data(a, data, sizeof data) != (ssize_t)sizeof data || write_close(a) != ARCHIVE_OK) {
-        p = error_string(a);
-        fprintf(stderr, "FAIL: writing the Zstandard zip entry: %s\n", p != NULL ? p : "(no error string)");
-        ok = 0;
-    }
-    if (a != NULL)
-        write_free(a);
-    entry_free(entry);
-    if (!ok)
-        return 0;
-    /* Local file header: compression method at 8, 93 for Zstandard */
-    if (used < 30 || memcmp(buf, "PK\3\4", 4) != 0 || buf[8] != 93 || buf[9] != 0) {
-        fprintf(stderr, "FAIL: the zip entry is not compressed with Zstandard\n");
-        return 0;
-    }
-    a = read_new();
-    if (a == NULL) {
-        fprintf(stderr, "FAIL: archive_read_new returned NULL\n");
-        ok = 0;
-    } else if (support_format_zip(a) != ARCHIVE_OK || open_memory(a, buf, used) != ARCHIVE_OK
-        || next_header(a, &entry) != ARCHIVE_OK) {
-        p = error_string(a);
-        fprintf(stderr, "FAIL: reading the Zstandard zip entry: %s\n", p != NULL ? p : "(no error string)");
-        ok = 0;
-    } else {
-        while (ok && (n = read_data(a, got, sizeof got)) > 0) {
-            if ((size_t)n > sizeof data - total || memcmp(got, data + total, (size_t)n) != 0) {
-                fprintf(stderr, "FAIL: the Zstandard zip entry's data differs at or after byte %zu\n", total);
-                ok = 0;
-            }
-            total += (size_t)n;
-        }
-        if (ok && n < 0) {
-            p = error_string(a);
-            fprintf(stderr, "FAIL: reading the Zstandard zip entry after %zu of %zu bytes: %s\n", total,
-                sizeof data, p != NULL ? p : "(no error string)");
-            ok = 0;
-        } else if (ok && total != sizeof data) {
-            fprintf(stderr, "FAIL: the Zstandard zip entry read back as %zu bytes, not %zu\n", total,
-                sizeof data);
-            ok = 0;
-        }
-    }
-    if (a != NULL)
-        read_free(a);
-    if (ok)
-        printf("OK: a Zstandard zip entry of 128 KiB reads back from memory\n");
-    return ok;
-}
-
-int main(int argc, char **argv)
-{
-    const char *(*version_string)(void);
-    const char *(*version_details)(void);
-    struct archive *(*read_new)(void);
-    int (*support_filter_all)(struct archive *);
-    int (*support_format_all)(struct archive *);
-    int (*open_memory)(struct archive *, const void *, size_t);
-    int (*next_header)(struct archive *, struct archive_entry **);
-    const char *(*error_string)(struct archive *);
-    int (*read_free)(struct archive *);
-    struct archive *reader;
-    struct archive_entry *entry;
-    const char *text;
-    int result, failed = 0;
-
-    if (argc != 2) {
-        fprintf(stderr, "usage: %s <path to libarchive.so>\n", argv[0]);
-        return 2;
-    }
-    library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
-    if (library == NULL) {
-        fprintf(stderr, "FAIL: dlopen %s: %s\n", argv[1], dlerror());
-        return 1;
-    }
-    if (!find("archive_version_string", &version_string, sizeof version_string)
-        || !find("archive_version_details", &version_details, sizeof version_details)
-        || !find("archive_read_new", &read_new, sizeof read_new)
-        || !find("archive_read_support_filter_all", &support_filter_all, sizeof support_filter_all)
-        || !find("archive_read_support_format_all", &support_format_all, sizeof support_format_all)
-        || !find("archive_read_open_memory", &open_memory, sizeof open_memory)
-        || !find("archive_read_next_header", &next_header, sizeof next_header)
-        || !find("archive_error_string", &error_string, sizeof error_string)
-        || !find("archive_read_free", &read_free, sizeof read_free))
-        return 1;
-
-    text = version_string();
-    if (text == NULL || strncmp(text, "libarchive ", 11) != 0) {
-        fprintf(stderr, "FAIL: archive_version_string returned %s\n", text != NULL ? text : "NULL");
-        return 1;
-    }
-    printf("archive_version_string: %s\n", text);
-    text = version_details();
-    if (text == NULL) {
-        fprintf(stderr, "FAIL: archive_version_details returned NULL\n");
-        return 1;
-    }
-    printf("archive_version_details: %s\n", text);
-
-    /* Read an empty input with every filter and format enabled: each of them bids on
-       it, and the "empty" format must win and report the end of the archive. */
-    reader = read_new();
-    if (reader == NULL) {
-        fprintf(stderr, "FAIL: archive_read_new returned NULL\n");
-        return 1;
-    }
-    if ((result = support_filter_all(reader)) != ARCHIVE_OK) {
-        fprintf(stderr, "FAIL: archive_read_support_filter_all returned %d\n", result);
-        failed = 1;
-    }
-    if ((result = support_format_all(reader)) != ARCHIVE_OK) {
-        fprintf(stderr, "FAIL: archive_read_support_format_all returned %d\n", result);
-        failed = 1;
-    }
-    if (!failed && (result = open_memory(reader, "", 0)) != ARCHIVE_OK) {
-        text = error_string(reader);
-        fprintf(stderr, "FAIL: archive_read_open_memory returned %d: %s\n", result,
-            text != NULL ? text : "(no error string)");
-        failed = 1;
-    }
-    if (!failed && (result = next_header(reader, &entry)) != ARCHIVE_EOF) {
-        text = error_string(reader);
-        fprintf(stderr, "FAIL: archive_read_next_header on an empty input returned %d, not ARCHIVE_EOF: %s\n",
-            result, text != NULL ? text : "(no error string)");
-        failed = 1;
-    }
-    if ((result = read_free(reader)) != ARCHIVE_OK) {
-        fprintf(stderr, "FAIL: archive_read_free returned %d\n", result);
-        failed = 1;
-    }
-    if (!check_utf8_names())
-        failed = 1;
-    if (!check_xar())
-        failed = 1;
-    if (!check_zip_zstd_end())
-        failed = 1;
-    if (failed)
-        return 1;
-    printf("OK: %s loaded with RTLD_NOW and read an empty archive\n", argv[1]);
-    return 0;
-}
-EOF
-}
-
-# Load a freshly linked library in a process that contains nothing but musl: a small
-# program built with the target toolchain as a dynamically linked musl executable, run
-# by the musl dynamic loader from the toolchain's sysroot. No glibc and no libgcc_s is
-# present, so nothing else can supply a symbol the library lacks, and it then fails to
-# load. Runs natively (x64), or under the named QEMU user-mode emulator for another
-# architecture. If that emulator is not installed, the test fails the build under
-# GitHub Actions and is skipped with a warning elsewhere.
-# Usage: test_load_musl <library> [qemu-binary]
-# Uses CC, and AR to find the toolchain's readelf.
-test_load_musl() {
-    local lib="${1:-}" qemu="${2:-}"
+# Fail the build unless a library linked against musl needs musl's libc.so and nothing else
+# (DT_NEEDED), and no symbol versions, which musl does not have. Anything more would make
+# the library fail to load in a musl process, or bind to something other than musl.
+# Usage: verify_musl_imports <library>
+# Uses AR to find readelf.
+verify_musl_imports() {
+    local lib="${1:-}"
     if [ -z "$lib" ]; then
-        echo "ERROR: test_load_musl needs the library to load as its argument"
+        echo "ERROR: verify_musl_imports needs the library to check as its argument"
         return 1
     fi
-    local var
-    for var in CC AR; do
-        if [ -z "${!var:-}" ]; then
-            echo "ERROR: test_load_musl needs ${var} to be set"
-            return 1
-        fi
-    done
-
-    echo "=== Load test: ${lib} in a process that contains only musl ==="
-    local -a run=()
-    if [ -n "$qemu" ]; then
-        local emulator
-        if ! emulator=$(command -v "$qemu" || command -v "${qemu}-static"); then
-            if [ "${GITHUB_ACTIONS:-}" = true ]; then
-                echo "ERROR: ${qemu} (QEMU user-mode emulation) is not installed, so ${lib} cannot be load tested."
-                return 1
-            fi
-            echo "WARNING: ${qemu} (QEMU user-mode emulation) is not installed: SKIPPING the load test of ${lib}."
-            echo "WARNING: nothing has shown that ${lib} loads. Install QEMU user-mode emulation (Debian/Ubuntu: qemu-user) to run the test."
-            return 0
-        fi
-        run=("$emulator")
+    if [ -z "${AR:-}" ]; then
+        echo "ERROR: verify_musl_imports needs AR to be set"
+        return 1
     fi
 
-    # CC can start with a compiler launcher ("sccache .../arm-linux-gcc")
-    local -a cc
-    read -r -a cc <<< "$CC"
+    echo "=== Verifying that ${lib} needs musl alone ==="
+    # Only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
     local readelf="${AR%ar}readelf"
-    local sysroot dynamic headers needed interp loader
-    sysroot=$("${cc[@]}" -print-sysroot) || return
-    if [ -z "$sysroot" ] || [ ! -d "$sysroot" ]; then
-        echo "ERROR: ${CC} -print-sysroot gave \"${sysroot}\", which is not a directory"
-        return 1
-    fi
-
-    write_load_test_source loadtest.c || return
-    # -static-libgcc: the program must not depend on libgcc_s, which could supply a
-    # helper routine that the library lacks
-    "${cc[@]}" -O2 -Wall -Wextra -static-libgcc -o loadtest-musl loadtest.c || return
-    if ! dynamic=$("$readelf" -d loadtest-musl) || ! headers=$("$readelf" -l loadtest-musl); then
-        echo "ERROR: could not read the load test program with ${readelf}"
+    local dynamic versions needed failed=0
+    if ! dynamic=$("$readelf" -W -d "$lib") || ! versions=$("$readelf" -W -V "$lib"); then
+        echo "ERROR: could not read ${lib} with ${readelf}"
         return 1
     fi
     needed=$(awk '/\(NEEDED\)/ {print $NF}' <<< "$dynamic")
     if [ "$needed" != "[libc.so]" ]; then
-        echo "ERROR: the load test program must need musl's libc.so alone, but it needs:"
+        echo "ERROR: ${lib} must need musl's libc.so alone (DT_NEEDED), but it needs:"
         echo "${needed:-(nothing)}"
+        failed=1
+    fi
+    if awk '/^Version needs section/ {found = 1} END {exit !found}' <<< "$versions"; then
+        echo "ERROR: ${lib} needs symbol versions, which musl does not have:"
+        echo "$versions"
+        failed=1
+    fi
+    if [ "$failed" -ne 0 ]; then
         return 1
     fi
-    # musl's dynamic loader, as named in the program (PT_INTERP), inside the sysroot
+    echo "Needs libc.so only, with no symbol versions"
+}
+
+# Build the load test program (linux-loadtest*.c, in this directory) for a library, with CC,
+# as a dynamically linked program of the library's C library. The zig target and its flags
+# are ZIG_TARGET and ZIG_TARGET_FLAGS unless others are given.
+# - A glibc program is linked with -rdynamic, which exports its stand-ins for glibc's
+#   32-bit file functions (see linux-loadtest-lfs32.c), and -ldl, as dlopen is in libdl
+#   before glibc 2.34.
+# - A musl program is linked with -dynamic, without which zig links it statically, with no
+#   dynamic loader to load the library. It must then need musl's libc.so alone, so that
+#   nothing else in its process can supply a symbol that the library lacks.
+# Usage: build_load_test <program> <glibc|musl> [<zig target> <zig target flags>]
+# Uses CC, ZIG_TARGET, ZIG_TARGET_FLAGS, AR to find readelf, and SCRIPT_DIR.
+build_load_test() {
+    local program="${1:-}" libc="${2:-}"
+    local target="${3:-${ZIG_TARGET:-}}" flags="${4-${ZIG_TARGET_FLAGS:-}}"
+    if [ -z "$program" ] || [ -z "$libc" ]; then
+        echo "ERROR: build_load_test needs the program to build and the C library, glibc or musl, as its arguments"
+        return 1
+    fi
+    local var
+    for var in CC AR SCRIPT_DIR target; do
+        if [ -z "${!var:-}" ]; then
+            echo "ERROR: build_load_test needs ${var} to be set"
+            return 1
+        fi
+    done
+    local -a before=() after=()
+    case "$libc" in
+        glibc) before=(-rdynamic); after=(-ldl) ;;
+        musl)  before=(-dynamic) ;;
+        *)
+            echo "ERROR: build_load_test: unknown C library \"${libc}\" (glibc or musl)"
+            return 1
+            ;;
+    esac
+
+    echo "=== Building the load test program ${program} for ${target} ==="
+    ZIG_TARGET="$target" ZIG_TARGET_FLAGS="$flags" "$CC" -O2 -Wall -Wextra "${before[@]}" \
+        -o "$program" "${SCRIPT_DIR}"/linux-loadtest*.c "${after[@]}" || return
+    # Only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
+    local readelf="${AR%ar}readelf" headers dynamic interp needed
+    if ! headers=$("$readelf" -W -l "$program") || ! dynamic=$("$readelf" -W -d "$program"); then
+        echo "ERROR: could not read ${program} with ${readelf}"
+        return 1
+    fi
     interp=$(awk '/Requesting program interpreter:/ {sub(/.*interpreter: /, ""); sub(/\]$/, ""); print}' <<< "$headers")
-    loader="${sysroot}${interp}"
-    if [ -z "$interp" ] || [ ! -f "$loader" ]; then
-        echo "ERROR: musl's dynamic loader was not found: the program names \"${interp}\", and ${loader} does not exist"
+    needed=$(awk '/\(NEEDED\)/ {name = $NF; gsub(/^\[|\]$/, "", name); printf "%s%s", sep, name; sep = " "}' <<< "$dynamic")
+    if [ -z "$interp" ]; then
+        echo "ERROR: ${program} is not dynamically linked: it names no dynamic loader (PT_INTERP)"
         return 1
     fi
-    if [ ${#run[@]} -gt 0 ]; then
-        run+=(-L "$sysroot")
+    if [ "$libc" = musl ] && [ "$needed" != libc.so ]; then
+        echo "ERROR: ${program} must need musl's libc.so alone, but it needs: ${needed:-(nothing)}"
+        return 1
     fi
+    echo "${program}: dynamic loader ${interp}, needs ${needed}"
+}
+
+# Run the load test program (see build_load_test) with a library linked against glibc, in a
+# glibc process: natively for x64, and for arm64 and arm under QEMU user-mode emulation
+# (qemu-aarch64, qemu-arm), with the dynamic loader and libraries of Ubuntu's cross runtime
+# of glibc for the architecture (the packages libc6-arm64-cross and libc6-armhf-cross, which
+# install /usr/aarch64-linux-gnu/lib/ld-linux-aarch64.so.1 and
+# /usr/arm-linux-gnueabihf/lib/ld-linux-armhf.so.3). That needs an x86_64 Linux build
+# machine. On macOS the test is skipped with a warning. Elsewhere, and where the emulator
+# or the cross runtime is missing, it fails the build under GitHub Actions and is skipped
+# with a warning otherwise.
+# Usage: test_load_glibc <library> <program> [<qemu program> <glibc's dynamic loader>]
+test_load_glibc() {
+    local lib="${1:-}" program="${2:-}" qemu="${3:-}" loader="${4:-}"
+    if [ -z "$lib" ] || [ -z "$program" ] || { [ -n "$qemu" ] && [ -z "$loader" ]; }; then
+        echo "ERROR: test_load_glibc needs the library and the load test program as its arguments, and the QEMU program and glibc's dynamic loader to run them under emulation"
+        return 1
+    fi
+
+    echo "=== Load test: ${lib} in a glibc process${qemu:+, under ${qemu}} ==="
+    local machine absent=""
+    machine="$(uname -s) $(uname -m)"
+    if [ "$machine" != "Linux x86_64" ]; then
+        absent="an x86_64 Linux build machine (this one is ${machine})"
+    elif [ -n "$qemu" ]; then
+        local emulator
+        if ! emulator=$(command -v "$qemu" || command -v "${qemu}-static"); then
+            absent="${qemu} (QEMU user-mode emulation; Debian/Ubuntu: qemu-user)"
+        fi
+        if [ ! -f "$loader" ]; then
+            absent="${absent:+${absent} and }${loader} (from Ubuntu's cross runtime of glibc: libc6-arm64-cross or libc6-armhf-cross)"
+        fi
+    fi
+    if [ -n "$absent" ]; then
+        if [ "${GITHUB_ACTIONS:-}" = true ] && [ "$(uname -s)" != Darwin ]; then
+            echo "ERROR: ${lib} cannot be load tested without ${absent}."
+            return 1
+        fi
+        echo "WARNING: SKIPPING the load test of ${lib}, which needs ${absent}."
+        echo "WARNING: nothing here has shown that ${lib} loads in a glibc process: run ${program} with it on Linux."
+        return 0
+    fi
+
+    local -a run=()
+    if [ -n "$qemu" ]; then
+        run=("$emulator" "$loader" --library-path "${loader%/*}")
+    fi
+    case "$program" in
+        */*) run+=("$program") ;;
+        *)   run+=("./$program") ;;
+    esac
     case "$lib" in
-        */*) run+=("$loader" ./loadtest-musl "$lib") ;;
-        *)   run+=("$loader" ./loadtest-musl "./$lib") ;;
+        */*) run+=("$lib") ;;
+        *)   run+=("./$lib") ;;
     esac
     echo "${run[*]}"
     if ! "${run[@]}"; then
-        echo "ERROR: ${lib} failed to load or work in a process that contains only musl (see above)."
-        return 1
-    fi
-}
-
-# Load a freshly linked library in a program built with the host's own gcc and C library
-# (glibc on the CI runners), as a .NET process on a typical Linux distribution would.
-# Only possible for a library built for the host's architecture (x64).
-# Usage: test_load_host <library>
-test_load_host() {
-    local lib="${1:-}"
-    if [ -z "$lib" ]; then
-        echo "ERROR: test_load_host needs the library to load as its argument"
-        return 1
-    fi
-
-    echo "=== Load test: ${lib} in a program built with the host's gcc ==="
-    write_load_test_source loadtest.c || return
-    # -ldl for glibc before 2.34, where dlopen is not in libc itself
-    gcc -O2 -Wall -Wextra -o loadtest-host loadtest.c -ldl || return
-    local path="$lib"
-    case "$lib" in
-        */*) ;;
-        *) path="./$lib" ;;
-    esac
-    if ! ./loadtest-host "$path"; then
-        echo "ERROR: ${lib} failed to load or work in a program built with the host's gcc (see above)."
+        echo "ERROR: ${lib} failed to load or work in a glibc process (see above)."
         return 1
     fi
 }

@@ -4,9 +4,9 @@
 //
 // This file and lzokay are built by build_lzo_shim in ../build-lzo-shim.sh into a
 // liblzo2.a that the native libraries link statically. The Linux libraries are
-// linked with -nostdlib and no C++ runtime, so nothing here may need one: no
-// exceptions, no RTTI, no allocation, no static objects, and only header-only parts
-// of the C++ standard library. The build verifies the result.
+// linked against their C library alone, with no C++ runtime, so nothing here may need
+// one: no exceptions, no RTTI, no allocation, no static objects, and only header-only
+// parts of the C++ standard library. The build verifies the result.
 
 #include <lzo/lzo1x.h>
 

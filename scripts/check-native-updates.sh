@@ -430,6 +430,48 @@ check_dependency() {
     fi
 }
 
+# zig, which builds the Linux libraries, is reported, not updated: build-config.sh pins its
+# release (ZIG_VERSION) with the SHA256 of its tarball for each of the four build machines
+# (ZIG_SHA256_*) and has no ZIG_URL, so update_version cannot update it. A newer release is
+# reported with the lines that build-config.sh needs for it, with the SHA256s that zig's own
+# index of its releases gives, which download_zig checks each download against. ZIG_UPDATE
+# is set to that release. Usage: check_zig <current version>
+ZIG_INDEX_URL="https://ziglang.org/download/index.json"
+ZIG_UPDATE=""
+check_zig() {
+    local current=$1 index="" latest="" host sha lines
+    printf "Checking %-12s (current: %-7s)... " "zig" "$current"
+
+    # The index's keys are zig's releases, and "master", its development build
+    index=$(fetch_url "$ZIG_INDEX_URL") &&
+        latest=$(jq -r 'keys[] | select(test("^[0-9]+(\\.[0-9]+)*$"))' <<< "$index" | sort -V | tail -1)
+    if [ -z "$latest" ] || ! valid_version "$latest"; then
+        echo -e "${RED}ERROR${NC}"
+        record_failure "zig" "could not read a release version from ${ZIG_INDEX_URL} (got $(log_quote "$latest"))"
+        return 1
+    fi
+    printf "latest: %-7s" "$latest"
+    if ! version_gt "$latest" "$current"; then
+        echo -e " ${GREEN}✓${NC}"
+        return 0
+    fi
+
+    # The lines are printed only once the index has given all four SHA256s
+    lines="  ZIG_VERSION=\"${latest}\""
+    for host in x86_64-linux aarch64-linux x86_64-macos aarch64-macos; do
+        sha=$(jq -r --arg v "$latest" --arg h "$host" '.[$v][$h].shasum // empty' <<< "$index")
+        if [[ ! "$sha" =~ ^[0-9a-f]{64}$ ]]; then
+            echo -e " ${RED}ERROR${NC}"
+            record_failure "zig" "no SHA256 for ${host} ${latest} in ${ZIG_INDEX_URL}"
+            return 1
+        fi
+        lines+=$'\n'"  ZIG_SHA256_$(tr '[:lower:]-' '[:upper:]_' <<< "$host")=\"${sha}\""
+    done
+    echo -e " ${YELLOW}⚠️  UPDATE AVAILABLE${NC}, to make by hand in native/build-config.sh:"
+    printf '%s\n' "$lines"
+    ZIG_UPDATE=$latest
+}
+
 # Check for existing PRs first (skip if any are open)
 check_existing_prs
 case $? in
@@ -463,6 +505,7 @@ CURRENT_ZLIB=$(read_current_version "ZLIB_VERSION")
 CURRENT_LIBXML2=$(read_current_version "LIBXML2_VERSION")
 CURRENT_BZIP2=$(read_current_version "BZIP2_VERSION")
 CURRENT_MBEDTLS=$(read_current_version "MBEDTLS_VERSION")
+CURRENT_ZIG=$(read_current_version "ZIG_VERSION")
 
 # libarchive
 check_dependency "libarchive" "$CURRENT_LIBARCHIVE" "github" "libarchive/libarchive" || true
@@ -498,13 +541,9 @@ check_dependency "mbedtls" "$CURRENT_MBEDTLS" "web" \
     "https://api.github.com/repos/Mbed-TLS/mbedtls/releases?per_page=100" \
     'releases/download/mbedtls-(3\.6\.[0-9]+)/mbedtls-3\.6\.[0-9]+\.tar\.bz2' || true
 
-# The Linux toolchains are not checked here: they are Bootlin prebuilt releases,
-# selected by BOOTLIN_RELEASE in build-config.sh, which Renovate is configured to
-# keep current (.github/renovate.json)
-echo ""
-echo "ℹ️  Note: the Linux toolchains (BOOTLIN_RELEASE in build-config.sh) are not checked here"
-echo "   Renovate is configured to keep BOOTLIN_RELEASE current (.github/renovate.json)"
-echo "   Bootlin releases: https://toolchains.bootlin.com/"
+# zig (Linux builds only): reported with the lines to change by hand, never updated here
+# (see check_zig)
+check_zig "$CURRENT_ZIG" || true
 
 echo ""
 
@@ -518,6 +557,9 @@ if [ ! -s "$UPDATES_FILE" ]; then
     if [ -s "$FAILED_CHECKS" ]; then
         echo -e "${RED}No updates found, but some checks failed${NC}"
         exit 1
+    elif [ -n "$ZIG_UPDATE" ]; then
+        echo -e "${YELLOW}No library updates found; zig ${ZIG_UPDATE} is to be updated by hand (see above)${NC}"
+        exit 0
     else
         echo -e "${GREEN}All dependencies are up to date ✓${NC}"
         exit 0
