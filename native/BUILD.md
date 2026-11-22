@@ -434,8 +434,10 @@ fails the build:
     `__stack_chk_guard` on arm64;
   - on 32-bit ARM, it imports none of glibc's functions with a 32-bit `time_t` or `off_t`, which
     `glibc-32bit-names.txt` lists, each beside the function with a 64-bit one that is called in its
-    place. The head of that file says how it was made; make it again the same way when glibc adds
-    such functions.
+    place. The check fails unless the list holds the 157 names that it was made with, so that a
+    list that lost its names cannot pass every import. The head of that file says how it was made;
+    make it again the same way when glibc adds such functions, and change that number in
+    `verify_glibc_imports`.
 - For a musl library, `verify_musl_imports <library>`: it needs musl's `libc.so` alone
   (DT_NEEDED), and no symbol versions, which musl does not have.
 - `verify-exports.sh <library>` (a script of its own): every symbol that the library defines for

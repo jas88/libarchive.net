@@ -470,7 +470,8 @@ verify_xar_support() {
 #   as the stack protector's __stack_chk_guard on arm64;
 # - on 32-bit ARM, it must import none of glibc's functions with a 32-bit time_t or off_t,
 #   which glibc-32bit-names.txt (in this directory) lists: a library compiled with
-#   -D_TIME_BITS=64 -D_FILE_OFFSET_BITS=64 calls their 64-bit counterparts only.
+#   -D_TIME_BITS=64 -D_FILE_OFFSET_BITS=64 calls their 64-bit counterparts only. The list
+#   must hold the 157 names that it was made with, so that one that lost them cannot pass.
 # readelf reads every target's files alike, so it lists the symbols and versions here.
 # Usage: verify_glibc_imports <library> <baseline>
 # Uses AR to find readelf, and SCRIPT_DIR.
@@ -549,9 +550,19 @@ verify_glibc_imports() {
         failed=1
     fi
     if awk '$1 == "Machine:" && $2 == "ARM" {found = 1} END {exit !found}' <<< "$header"; then
-        local list="${SCRIPT_DIR}/glibc-32bit-names.txt" old
+        local list="${SCRIPT_DIR}/glibc-32bit-names.txt" expected=157 names old
         if [ ! -f "$list" ]; then
             echo "ERROR: ${list} does not exist"
+            return 1
+        fi
+        # The list must hold the names that it was made with (see its head), each once. With
+        # fewer, imports of the names lost would pass, and with none, the awk below would take
+        # the imports for the list and pass them all. Change the number when the list is made
+        # again.
+        names=$(awk '$0 !~ /^#/ && NF == 2 && !($1 in counterpart) { counterpart[$1] = $2; n++ } END { print n + 0 }' "$list")
+        if [ "$names" -ne "$expected" ]; then
+            echo "ERROR: ${list} holds ${names} names of glibc's functions with a 32-bit time_t or off_t, not the ${expected}"
+            echo "that it was made with. Restore it, or if it was made again (see its head), change that number in verify_glibc_imports."
             return 1
         fi
         old=$(awk 'NR == FNR { if ($0 !~ /^#/ && NF == 2) counterpart[$1] = $2; next }
@@ -572,7 +583,7 @@ verify_glibc_imports() {
         sort -t . -k 1,1n -k 2,2n -k 3,3n | tail -n 1)
     echo "Needs $(tr '\n' ' ' <<< "$needed")only, and glibc ${newest:-(no version)} at the latest, for its $(awk 'index($2, "@") {n++} END {print n + 0}' <<< "$imports") versioned imports"
     if awk '$1 == "Machine:" && $2 == "ARM" {found = 1} END {exit !found}' <<< "$header"; then
-        echo "None of glibc's functions with a 32-bit time_t or off_t (glibc-32bit-names.txt)"
+        echo "None of the ${names} functions of glibc's with a 32-bit time_t or off_t (glibc-32bit-names.txt)"
     fi
     if [ -n "$weak" ]; then
         echo "Weak unversioned imports (allowed, null when nothing defines them):"

@@ -1,13 +1,15 @@
 # glibc's functions with a 32-bit time_t or off_t on 32-bit ARM, each beside the function
 # with a 64-bit one that a program compiled with -D_TIME_BITS=64 -D_FILE_OFFSET_BITS=64
 # calls in its place. verify_glibc_imports (build-linux-common.sh) fails the build of the
-# linux-arm library if it imports any of the names on the left.
+# linux-arm library if it imports any of the names on the left, or if this list does not
+# hold the 157 names that it was made with.
 #
 # Made from the glibc headers of zig 0.17.1 for arm-linux-gnueabihf.2.34: 153 of glibc's
 # public headers, from aio.h to sys/xattr.h, preprocessed with _GNU_SOURCE once without and
 # once with -D_TIME_BITS=64 -D_FILE_OFFSET_BITS=64. Only the second declares each function
 # on the left under another symbol name (with __asm__), the one on the right. Make the list
-# again the same way when glibc adds such functions.
+# again the same way when glibc adds such functions, and change the number of names that
+# verify_glibc_imports expects to match.
 adjtime                      __adjtime64
 adjtimex                     ___adjtimex64
 aio_cancel                   aio_cancel64
