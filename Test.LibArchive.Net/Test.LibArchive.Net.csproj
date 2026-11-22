@@ -29,11 +29,12 @@
     </ItemGroup>
 
     <ItemGroup>
-        <!-- MuslDetection is internal to LibArchive.Net, which grants no InternalsVisibleTo: the
-             tests use its public API alone, and CI runs them against the package. So they compile
-             its source in, as a copy of their own, and test it on every target framework (see
-             MuslDetectionTests.cs). -->
+        <!-- MuslDetection and NativeLibraryCopy are internal to LibArchive.Net, which grants no
+             InternalsVisibleTo: the tests use its public API alone, and CI runs them against the
+             package. So they compile their sources in, as copies of their own, and test them on
+             every target framework (see MuslDetectionTests.cs and NativeLibraryCopyTests.cs). -->
         <Compile Include="..\LibArchive.Net\MuslDetection.cs" Link="MuslDetection.cs" />
+        <Compile Include="..\LibArchive.Net\NativeLibraryCopy.cs" Link="NativeLibraryCopy.cs" />
     </ItemGroup>
 
     <ItemGroup>

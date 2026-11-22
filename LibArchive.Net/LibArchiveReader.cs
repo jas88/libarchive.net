@@ -1101,25 +1101,17 @@ public partial class LibArchiveReader : SafeHandleZeroOrMinusOneIsInvalid
         var baseDir = AppDomain.CurrentDomain.BaseDirectory;
         var destPath = Path.Combine(baseDir, Path.GetFileName(libraryPath));
 
-        // Copy library to base directory if not already there
-        if (!File.Exists(destPath))
+        // Copy the library to the base directory, or replace a copy there that differs from it, as one
+        // left by an earlier version of the package or made under the other C library does: the P/Invoke
+        // calls that bind to the copy must find the same library as the one that dlopen loads below,
+        // from libraryPath. A copy that cannot be made is not an error (see NativeLibraryCopy).
+        var outcome = NativeLibraryCopy.Refresh(libraryPath, destPath, out var copyError);
+        if (Environment.GetEnvironmentVariable("LIBARCHIVE_NET_DEBUG") == "1")
         {
-            try
-            {
-                File.Copy(libraryPath, destPath, overwrite: false);
-
-                if (Environment.GetEnvironmentVariable("LIBARCHIVE_NET_DEBUG") == "1")
-                {
-                    Console.Error.WriteLine($"[LibArchive.Net] Copied {libraryPath} to {destPath}");
-                }
-            }
-            catch (Exception ex)
-            {
-                if (Environment.GetEnvironmentVariable("LIBARCHIVE_NET_DEBUG") == "1")
-                {
-                    Console.Error.WriteLine($"[LibArchive.Net] Warning: Failed to copy library to base directory: {ex.Message}");
-                }
-            }
+            if (outcome == NativeLibraryCopy.Outcome.Copied)
+                Console.Error.WriteLine($"[LibArchive.Net] Copied {libraryPath} to {destPath}");
+            else if (outcome == NativeLibraryCopy.Outcome.Failed)
+                Console.Error.WriteLine($"[LibArchive.Net] Warning: Failed to copy library to base directory: {copyError?.Message}");
         }
 
         // Load the library with RTLD_GLOBAL so symbols are available
