@@ -154,7 +154,7 @@ This file is written and updated by hand. Nothing generates it.
   code that zig ported from musl, and section 11 the Windows DLLs alone.
 
 * The six Linux libraries are now built with zig (native/build-linux.sh, one
-  library for each Linux RID). What sections 5, 7 to 11 and 13 to 15 say of
+  library for each Linux RID). What sections 5, 7 to 11 and 13 to 16 say of
   them was checked against six libraries that native/build-linux.sh built on
   macOS (Apple silicon), not by the workflow, with the sources and patches
   pinned in native/build-config.sh and zig 0.17.1, from its aarch64-macos
@@ -168,7 +168,7 @@ This file is written and updated by hand. Nothing generates it.
   strings). native/build-linux.sh now strips the debugging information of
   each library right after the link, with GNU strip --strip-debug
   --keep-file-symbols (see native/BUILD.md). The six libraries checked were
-  built before it did, and what sections 10 and 13 to 15 say of their
+  built before it did, and what sections 10 and 13 to 16 say of their
   debugging information is of them. Built again on that machine with the
   strip, four of the six are, byte for byte, the libraries checked after the
   same strip, and linux-arm and linux-musl-arm differ from those only in the
@@ -177,7 +177,9 @@ This file is written and updated by hand. Nothing generates it.
   a number), which differed between the two builds. The strip keeps the
   symbol tables, with the symbols that name the objects linked in. The texts
   copied in sections 14 and 15, and the files of the zig release that
-  sections 9, 10 and 13 to 15 name, were read in that tarball.
+  sections 9, 10 and 13 to 16 name, were read in that tarball. The text
+  copied in section 16 is from the Go project's repository (see that
+  section).
   The COPYRIGHT text in section 10 is still that of musl 1.2.6, the musl of
   the Bootlin release named above (see that section). When ZIG_VERSION, the
   targets in native/build-linux.sh or link_libarchive in
@@ -208,6 +210,7 @@ Summary
   14  zig's compiler-rt       MIT; parts as noted               Linux arm
   15  GNU C Library (glibc)   LGPL 2.1 or later, with           linux-x64,
                               unlimited permission to link      linux-arm64
+  16  Go (math/tan.go)        BSD 3-Clause                      Linux arm
 
 
 ==============================================================================
@@ -2722,7 +2725,9 @@ Source:      https://ziglang.org/ (the release pinned by ZIG_VERSION in
              native/build-config.sh)
 Licence:     MIT licence (SPDX identifier: MIT), in the LICENSE file of the
              zig release, reproduced below; parts are ported from musl
-             (section 10) and from LLVM's compiler-rt (section 13)
+             (section 10) and from LLVM's compiler-rt (section 13), and
+             one file names the Go project's math/tan.go among its sources
+             (section 16)
 
 native/build-linux.sh compiles and links the Linux libraries with zig ("zig
 cc" and "zig c++", through native/zig-cc.sh). In place of GCC's libgcc, zig
@@ -2770,13 +2775,20 @@ compiler-rt (section 13 names them). Those sections reproduce the licences
 of musl and of LLVM's compiler-rt. One of the 19, lib/compiler_rt/tan.zig,
 also gives the address of the Go project's math/tan.go among its sources,
 without saying what it takes from it. The Go project's licence is not in
-the zig release, and this file records the point without resolving it.
-Other comments name published methods that the code follows, such as Bit
-Twiddling Hacks, Hacker's Delight, Knuth's Algorithm D, Annex G of the C
-standard and papers by Ping Tak Peter Tang; they name no licence. None of
-the 82 files carries a licence statement or a copyright notice other than
-those notes, and zig's own licence is the LICENSE file of its release,
-reproduced here.
+the zig release, and section 16 reproduces it for that code. Three of the
+files name GCC for the interface that their code provides:
+lib/compiler_rt/ssp.zig calls itself a "Small Zig reimplementation of
+gcc's libssp", shift.zig gives its shift routines their libgcc names, for
+"symbol compatibility with libgcc", and arm.zig gives the address of a GCC
+patch that describes the Thumb-1 switch tables whose helpers,
+__gnu_thumb1_case_*, it defines. None of them says that it takes code from
+GCC, and four others name GCC only in notes that compare their results or
+behaviour with GCC's. Other comments name published methods that the code
+follows, such as Bit Twiddling Hacks, Hacker's Delight, Knuth's Algorithm
+D, Annex G of the C standard and papers by Ping Tak Peter Tang and by
+Dekker; they name no licence. None of the 82 files carries a licence
+statement or a copyright notice other than those notes, and zig's own
+licence is the LICENSE file of its release, reproduced here.
 
 ----- BEGIN zig: LICENSE -----
 The MIT License (Expat)
@@ -2903,3 +2915,69 @@ https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt
    License along with the GNU C Library; if not, see
    <https://www.gnu.org/licenses/>.  */
 ----- END zig: lib/libc/glibc/io/stat-2.32.c (notice) -----
+
+
+==============================================================================
+16. Go (math/tan.go)
+==============================================================================
+
+Applies to:  Linux arm native binaries (linux-arm and linux-musl-arm), for
+             the code of zig's compiler-rt (section 14) in
+             lib/compiler_rt/tan.zig, which names the Go project's
+             math/tan.go among its sources
+Source:      https://go.dev/ (the code concerned is in the zig release
+             pinned by ZIG_VERSION in native/build-config.sh)
+Licence:     BSD 3-Clause licence (SPDX identifier: BSD-3-Clause), in the
+             LICENSE file of the Go project, reproduced below
+
+lib/compiler_rt/tan.zig, one of the files of zig's compiler-rt, says that
+it is ported from musl (section 10), and below that gives the addresses of
+musl's tanf.c, tan.c and tanl.c and of the Go project's math/tan.go
+(https://golang.org/src/math/tan.go), without saying what it takes from
+each. This file takes the Go project's licence, below, to apply to
+whatever of its code comes from Go.
+
+Verified on the binaries inspected (see "How this file is maintained"): the
+code of tan.zig is in the two arm libraries, to which the line tables of
+their compiler-rt debugging information gave code (section 14), and which
+define its functions tan, tanf, tanl, __tanh and __tanx, local to each
+library. It is in no other library, as no other library contains
+compiler-rt.
+
+The zig release does not include the Go project's licence. The text below
+is the LICENSE file of the Go project's repository, as
+https://raw.githubusercontent.com/golang/go/master/LICENSE served it on 22
+November 2026 (SHA-256
+911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad). When
+ZIG_VERSION changes, check whether tan.zig still names Go, and whether its
+code is still in the arm libraries.
+
+----- BEGIN Go: LICENSE -----
+Copyright 2009 The Go Authors.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+   * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+   * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+   * Neither the name of Google LLC nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+----- END Go: LICENSE -----
