@@ -243,6 +243,74 @@ link_libarchive() {
     "${link[@]}"
 }
 
+# Strip the debugging information from a linked library. zig-cc.sh compiles the code here
+# with -g0, but zig builds its compiler-rt, and for glibc the members of libc_nonshared.a,
+# with DWARF debugging information, which a library holds wherever it takes code from them:
+# about 776 KB in each 32-bit ARM library, which takes compiler-rt whole, naming the
+# directory that zig built it in, and about 10 KB in linux-x64 and linux-arm64, which take
+# a few members of libc_nonshared.a (linux-musl-x64 and linux-musl-arm64 hold none).
+# GNU strip --strip-debug removes the .debug_* sections. It would also remove the symbols
+# that name the objects linked in (STT_FILE), as debugging symbols, which
+# --keep-file-symbols keeps. The rest of the symbol table (.symtab) stays: the checks after
+# this and the guard check of the 32-bit ARM load test read it. zig's own
+# -Wl,--strip-debug is not used, as zig makes it a full strip, which removes .symtab too.
+# Run it right after link_libarchive, before every check.
+# Usage: strip_debug_info <library>
+# Uses AR to find the toolchain's strip.
+strip_debug_info() {
+    local lib="${1:-}"
+    if [ -z "$lib" ]; then
+        echo "ERROR: strip_debug_info needs the library to strip as its argument"
+        return 1
+    fi
+    if [ -z "${AR:-}" ]; then
+        echo "ERROR: strip_debug_info needs AR to be set"
+        return 1
+    fi
+
+    # Only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
+    local strip="${AR%ar}strip"
+    echo "Stripping the debugging information from ${lib} with ${strip}"
+    if ! "$strip" --strip-debug --keep-file-symbols "$lib"; then
+        echo "ERROR: could not strip the debugging information from ${lib} with ${strip}"
+        return 1
+    fi
+}
+
+# Fail the build if a library has any debugging section (.debug_*) left, which
+# strip_debug_info removes.
+# Usage: verify_no_debug_info <library>
+# Uses AR to find readelf.
+verify_no_debug_info() {
+    local lib="${1:-}"
+    if [ -z "$lib" ]; then
+        echo "ERROR: verify_no_debug_info needs the library to check as its argument"
+        return 1
+    fi
+    if [ -z "${AR:-}" ]; then
+        echo "ERROR: verify_no_debug_info needs AR to be set"
+        return 1
+    fi
+
+    echo "=== Verifying that ${lib} has no debugging information ==="
+    # Only the trailing "ar" of the tool name is replaced (see verify_crypto_backend)
+    local readelf="${AR%ar}readelf"
+    local sections left
+    if ! sections=$("$readelf" -W -S "$lib"); then
+        echo "ERROR: could not read the sections of ${lib} with ${readelf}"
+        return 1
+    fi
+    # The name of each section that begins ".debug_", which readelf can print as the second
+    # or the third field of the line ("[ 9]" or "[19]")
+    left=$(awk '/^ *\[/ { for (i = 1; i <= NF; i++) if (index($i, ".debug_") == 1) { print "  " $i; next } }' <<< "$sections")
+    if [ -n "$left" ]; then
+        echo "ERROR: ${lib} still has these debugging sections:"
+        echo "$left"
+        return 1
+    fi
+    echo "No .debug_* section left"
+}
+
 # Verify that a linked library has the mbedTLS crypto backend, failing the build otherwise.
 # Usage: verify_crypto_backend <library>
 # Uses AR to find the toolchain's nm.

@@ -370,7 +370,7 @@ for glibc, glibc's `libc_nonshared.a`, from which the linker takes only what the
 glibc 2.28 `stat` and the like, which glibc had in `libc_nonshared.a` before 2.33.
 [THIRD-PARTY-NOTICES.txt](../THIRD-PARTY-NOTICES.txt) says what of them each library contains.
 zig builds both with debugging information, which `-g0` does not remove, so the libraries that
-contain them hold that too. The link has:
+contain them hold that too until it is stripped (see below). The link has:
 - `-Wl,-z,defs`, which fails the link on any strong (non-weak) unresolved symbol, such as a
   function that the C library lacks in the oldest version that the target names. Weak references,
   such as zstd's optional `ZSTD_trace_*` hooks, are still allowed: they resolve to null when
@@ -390,6 +390,17 @@ contain them hold that too. The link has:
   cleared, as glibc clears it. compiler-rt's `__stack_chk_fail` stays, which stops the process at
   once.
 
+Right after the link, before every check, `strip_debug_info` (in `build-linux-common.sh`) strips
+that debugging information from the library with GNU `strip --strip-debug --keep-file-symbols`,
+the `strip` of the tool directory. It is about 776 KB in each 32-bit ARM library, which takes
+compiler-rt whole, and names the directory that zig built compiler-rt in, and about 10 KB in
+`linux-x64` and `linux-arm64`, from `libc_nonshared.a`; `linux-musl-x64` and `linux-musl-arm64`
+hold none. `--strip-debug` removes the `.debug_*` sections and keeps the symbol table (`.symtab`),
+which the checks and the guard check of the 32-bit ARM load test read, and
+`--keep-file-symbols` keeps in it the symbols that name the objects linked in (`STT_FILE`), which
+`--strip-debug` would remove too. zig's own `-Wl,--strip-debug` is not used, as zig makes it a
+full strip, which removes `.symtab`.
+
 #### The checks
 
 `build-linux.sh` runs these on the library that it links, in this order, and a check that fails
@@ -398,6 +409,8 @@ fails the build:
   (with pkg-config, in the `.pc` files under `$PREFIX`) with the headers of its reader and writer,
   zlib, and mbedTLS's MD5 and SHA-1, which its `config.h` records. configure does not fail without
   them, even given `--with-xml2`: libarchive then builds its XAR stubs.
+- `verify_no_debug_info`, after `strip_debug_info`: no section of the library (`readelf -S`) is a
+  `.debug_*` one.
 - `verify_crypto_backend`: the library defines `mbedtls_pkcs5_pbkdf2_hmac`, so ZIP AES encryption
   works, and leaves no `mbedtls_` or `psa_` symbol undefined.
 - `verify_xar_support`: the library defines libxml2's `xmlReaderForIO` and

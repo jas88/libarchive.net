@@ -240,6 +240,12 @@ echo "Creating final shared library..."
 # build-linux-common.sh)
 link_libarchive libarchive.so ${STACK_GUARD:+"${SCRIPT_DIR}/${STACK_GUARD}"}
 
+# Strip the debugging information that zig builds into its compiler-rt and glibc's
+# libc_nonshared.a, before any check reads the library, keeping its symbol table, and fail
+# the build if any debugging section is left (see build-linux-common.sh)
+strip_debug_info libarchive.so
+verify_no_debug_info libarchive.so
+
 # Fail the build unless the mbedTLS crypto backend was linked in (see build-linux-common.sh)
 verify_crypto_backend libarchive.so
 

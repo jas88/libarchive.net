@@ -165,8 +165,19 @@ This file is written and updated by hand. Nothing generates it.
   The libraries keep their symbol tables, which name the objects linked in,
   in the order of the link command, and the functions and data that each of
   them defines; they were read with GNU binutils (readelf, nm, objdump and
-  strings). The texts copied in sections 14 and 15, and the files of the zig
-  release that sections 9, 10 and 13 to 15 name, were read in that tarball.
+  strings). native/build-linux.sh now strips the debugging information of
+  each library right after the link, with GNU strip --strip-debug
+  --keep-file-symbols (see native/BUILD.md). The six libraries checked were
+  built before it did, and what sections 10 and 13 to 15 say of their
+  debugging information is of them. Built again on that machine with the
+  strip, four of the six are, byte for byte, the libraries checked after the
+  same strip, and linux-arm and linux-musl-arm differ from those only in the
+  names of some local symbols in their string tables: the numbers in the
+  names that zig gives to anonymous constants of compiler-rt ("__anon_" and
+  a number), which differed between the two builds. The strip keeps the
+  symbol tables, with the symbols that name the objects linked in. The texts
+  copied in sections 14 and 15, and the files of the zig release that
+  sections 9, 10 and 13 to 15 name, were read in that tarball.
   The COPYRIGHT text in section 10 is still that of musl 1.2.6, the musl of
   the Bootlin release named above (see that section). When ZIG_VERSION, the
   targets in native/build-linux.sh or link_libarchive in
@@ -1541,7 +1552,7 @@ code of musl or of glibc: no .init or .fini section, no _init or _fini
 function and no DT_INIT or DT_FINI entry, which crti.o and crtn.o would
 bring; their constructors run from .init_array. The two arm libraries
 contain the code of the 19 files named above, which the line tables of
-their compiler-rt debugging information name (section 14).
+their compiler-rt debugging information named (section 14).
 
 ----- BEGIN musl: COPYRIGHT -----
 musl as a whole is licensed under the following standard MIT license:
@@ -2354,7 +2365,7 @@ the text below, the licence file of LLVM's compiler-rt, which holds its
 present licence and its older one, to apply to that code. Verified on the six
 Linux libraries built with zig (see "How this file is maintained"): the
 code of those six files is in the arm libraries, whose compiler-rt
-debugging information names them (section 14), and not in the others.
+debugging information named them (section 14), and not in the others.
 
 The text below was compared with compiler-rt/LICENSE.TXT of the LLVM release
 that LLVM-MinGW is built from and is identical to it. That file holds both
@@ -2736,8 +2747,9 @@ Verified on the binaries inspected (see "How this file is maintained"):
   libarchive, zlib and Zstandard in the libraries calls. Its code, about
   180 KiB, comes last in each library, and is as long as the code of the
   object in zig's cache from the build, apart from alignment. Each library
-  also holds the debugging information of that object, and of nothing
-  else, which names zig as its producer. Its line tables give code to 82
+  also held the debugging information of that object, and of nothing
+  else, which names zig as its producer (native/build-linux.sh now strips
+  it; see "How this file is maintained"). Its line tables give code to 82
   source files of the zig release: lib/compiler_rt.zig, 67 files of
   lib/compiler_rt and 14 of lib/std. The stack protector's guard of these
   libraries is not compiler-rt's but that of native/linux-arm-stack-guard.c,
@@ -2833,11 +2845,12 @@ Verified on the binaries inspected (see "How this file is maintained"):
   __lstat and __mknod), 16 to 52 bytes of code each and local to the
   library; the libraries import from libc.so.6 the functions that these
   call, __xstat, __fxstat, __lxstat, __xstat64, __fxstatat and __xmknod.
-  Each library also holds the debugging information of these six objects,
-  and of nothing else, which names the same six files. The other members of
-  the libc_nonshared.a that zig built for these links (atexit,
-  at_quick_exit, pthread_atfork, stack_chk_fail_local, fstat64, lstat64,
-  fstatat64, mknodat and elf-init) are not in them.
+  Each library also held the debugging information of these six objects,
+  and of nothing else, which names the same six files (now stripped, as
+  section 14 says). The other members of the libc_nonshared.a that zig
+  built for these links (atexit, at_quick_exit, pthread_atfork,
+  stack_chk_fail_local, fstat64, lstat64, fstatat64, mknodat and elf-init)
+  are not in them.
 * linux-arm: no glibc code. It imports these functions from libc.so.6, in
   their forms with a 64-bit time_t (__stat64_time64 and the like) and
   mknod under its own name, and contains none of the members of the
