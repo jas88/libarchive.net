@@ -399,19 +399,32 @@ internal static class ArchiveLayout
 
     /// <summary>
     /// The table of contents without the time it records the archive was written at
-    /// (archive_write_set_format_xar.c:1660), the one part of an archive that depends on when it is written.
+    /// (archive_write_set_format_xar.c:1660), the one thing in an archive that depends on when it is written.
+    /// The compressed table of contents changes with it, and so do its checksum and the bytes that follow the
+    /// data of the files (see <see cref="XarFileData"/>).
     /// </summary>
     internal static string XarTableOfContentsWithoutCreationTime(byte[] xar) =>
         Regex.Replace(NameEncodingTests.XarTableOfContents(xar), "<creation-time>[^<]*</creation-time>", "<creation-time/>");
 
     /// <summary>
-    /// The heap after the checksum of the table of contents, which starts it: the data of the files.
+    /// The data of the files: the heap from the end of the checksum of the table of contents, which starts it,
+    /// to the end of the last file's data.
     /// </summary>
+    /// <remarks>
+    /// The archive goes on after that: libarchive ends it with a copy of the first bytes of the compressed table
+    /// of contents, as many as the checksum has, and they change with the creation time. It keeps the heap in a
+    /// temporary file, after room for the checksum (archive_write_set_format_xar.c:657-665), and make_toc adds
+    /// the compressed table of contents to that file after the heap (1803). xar_close then copies the heap out
+    /// from the end of that room, but takes as many bytes as the room and the heap together (1920, 1964).
+    /// </remarks>
     internal static byte[] XarFileData(byte[] xar)
     {
-        var checksum = XDocument.Parse(NameEncodingTests.XarTableOfContents(xar)).Root!.Element("toc")!.Element("checksum")!;
+        var toc = XDocument.Parse(NameEncodingTests.XarTableOfContents(xar)).Root!.Element("toc")!;
+        var checksum = toc.Element("checksum")!;
         Assert.That((long)checksum.Element("offset")!, Is.Zero, "checksum offset");
-        return xar.Skip(XarHeapOffset(xar) + (int)(long)checksum.Element("size")!).ToArray();
+        var start = (int)(long)checksum.Element("size")!;
+        var end = toc.Descendants("data").Max(data => (int)((long)data.Element("offset")! + (long)data.Element("length")!));
+        return xar.Skip(XarHeapOffset(xar) + start).Take(end - start).ToArray();
     }
 
     // The heap follows the header and the compressed table of contents, whose size the header gives
