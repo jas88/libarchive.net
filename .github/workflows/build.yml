@@ -94,7 +94,7 @@ jobs:
           # autoconf abort ("`CC' has changed since the previous run").
           key: config-cache-macos-${{ env.NATIVE_CACHE_VERSION }}-${{ hashFiles('native/build-*.sh') }}
       - name: ccache
-        uses: hendrikmuhs/ccache-action@v1.2.25
+        uses: hendrikmuhs/ccache-action@v1.2.26
         with:
           key: macos-build-v2
         env:
@@ -343,7 +343,7 @@ jobs:
           echo "ACLOCAL_PATH=/usr/share/aclocal:$HOME/.local/share/aclocal" >> "$GITHUB_ENV"
       - name: sccache
         if: steps.native-cache.outputs.cache-hit != 'true' && matrix.kind == 'windows'
-        uses: hendrikmuhs/ccache-action@v1.2.25
+        uses: hendrikmuhs/ccache-action@v1.2.26
         with:
           key: native-${{ matrix.target }}-v3
           variant: sccache
