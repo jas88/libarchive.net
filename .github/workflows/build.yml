@@ -588,7 +588,7 @@ jobs:
       - name: Update Directory.Build.props for SDK version
         run: ./scripts/generate-build-props.sh
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4.39.3
+        uses: github/codeql-action/init@v4.39.5
         with:
           languages: 'csharp'
           build-mode: manual
@@ -676,7 +676,7 @@ jobs:
           dotnet test Test.LibArchive.Net/Test.LibArchive.Net.csproj --framework net8.0 --configuration Release --no-build --nologo \
             -p:UseLocalPackage=true "-p:LibArchiveNetVersion=$PACKAGE_VERSION" -p:LibArchiveNetTestNet8=true
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4.39.3
+        uses: github/codeql-action/analyze@v4.39.5
       - name: Archive production artifacts
         uses: actions/upload-artifact@v7.0.2
         with:
